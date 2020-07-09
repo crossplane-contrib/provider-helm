@@ -129,10 +129,25 @@ spec:
             forProvider:
               description: ReleaseParameters are the configurable fields of a Release.
               properties:
-                configurableField:
+                chart:
+                  description: A ChartSpec defines the chart spec for a Release
+                  properties:
+                    name:
+                      type: string
+                    repository:
+                      type: string
+                    version:
+                      type: string
+                  required:
+                  - name
+                  - repository
+                  - version
+                  type: object
+                namespace:
                   type: string
               required:
-              - configurableField
+              - chart
+              - namespace
               type: object
             providerRef:
               description: ProviderReference specifies the provider that will be used

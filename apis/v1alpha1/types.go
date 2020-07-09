@@ -17,14 +17,23 @@ limitations under the License.
 package v1alpha1
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+// A ChartSpec defines the chart spec for a Release
+type ChartSpec struct {
+	Repository string `json:"repository"`
+	Name       string `json:"name"`
+	Version    string `json:"version"`
+}
 
 // ReleaseParameters are the configurable fields of a Release.
 type ReleaseParameters struct {
-	ConfigurableField string `json:"configurableField"`
+	Chart     ChartSpec                       `json:"chart"`
+	Namespace string                          `json:"namespace"`
+	//Values    map[string]runtime.RawExtension `json:"values,omitempty"`
+	// Set
 }
 
 // ReleaseObservation are the observable fields of a Release.

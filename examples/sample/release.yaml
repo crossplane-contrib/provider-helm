@@ -1,9 +1,37 @@
 apiVersion: helm.crossplane.io/v1alpha1
 kind: Release
 metadata:
-  name: example
+  name: wordpress-example
 spec:
   forProvider:
-    configurableField: test
+    chart:
+      name: wordpress
+      repository: https://charts.bitnami.com/bitnami
+      version: 9.3.19
+    namespace: wordpress
+#    values:
+#      mariadb:
+#        enabled: false
+#      externaldb:
+#        enabled: true
+#    set:
+#      - name: wordpressBlogName
+#        value: "Hello Crossplane"
+#      - name: externalDatabase.host
+#        valueFrom:
+#          secretKeyRef:
+#            name: dbconn
+#            key: host
+#      - name: externalDatabase.user
+#        valueFrom:
+#          secretKeyRef:
+#            name: dbconn
+#            key: username
+#      - name: externalDatabase.password
+#        valueFrom:
+#          secretKeyRef:
+#            name: dbconn
+#            key: password
   providerRef:
     name: local-provider
+  reclaimPolicy: Delete

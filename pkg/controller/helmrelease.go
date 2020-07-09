@@ -101,7 +101,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		return managed.ExternalObservation{}, errors.New(errNotRelease)
 	}
 
-	fmt.Printf("Observing: %+v", cr)
+	fmt.Printf("Observing: %+v", cr.Name)
 
 	return managed.ExternalObservation{
 		ResourceExists:   true,
@@ -116,7 +116,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalCreation{}, errors.New(errNotRelease)
 	}
 
-	fmt.Printf("Creating: %+v", cr)
+	fmt.Printf("Creating: %+v", cr.Name)
 
 	return managed.ExternalCreation{}, nil
 }
@@ -127,7 +127,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalUpdate{}, errors.New(errNotRelease)
 	}
 
-	fmt.Printf("Updating: %+v", cr)
+	fmt.Printf("Updating: %+v", cr.Name)
 
 	return managed.ExternalUpdate{}, nil
 }
@@ -138,7 +138,7 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) error {
 		return errors.New(errNotRelease)
 	}
 
-	fmt.Printf("Deleting: %+v", cr)
+	fmt.Printf("Deleting: %+v", cr.Name)
 
 	return nil
 }
