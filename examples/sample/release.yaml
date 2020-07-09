@@ -1,0 +1,9 @@
+apiVersion: helm.crossplane.io/v1alpha1
+kind: Release
+metadata:
+  name: example
+spec:
+  forProvider:
+    configurableField: test
+  providerRef:
+    name: local-provider

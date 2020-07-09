@@ -1,0 +1,51 @@
+# Human readable title of application.
+title: Helm Provider
+
+overviewShort: The Helm Crossplane Provider allows you to deploy and manage Helm Releases.
+overview: |-
+  The Helm Crossplane Provider is a Crossplane Provider that enables deployment and management
+  of Helm Release on Kubernetes clusters typically provisioned by Crossplane.
+# Markdown description of this entry
+readme: |
+  `provider-helm` is a Crossplane Provider that enables deployment and management
+  of Helm Release on Kubernetes clusters typically provisioned by Crossplane:
+  - A `Provider` resource type that only points to a credentials `Secret`.
+  - A `Release` resource type that is to manage Helm Releases.
+  - A managed resource controller that reconciles `Release` objects and manages Helm releases.
+
+# Maintainer names and emails.
+maintainers:
+- name: Hasan Turken
+  email: hasan@upbound.io
+
+# Owner names and emails.
+owners:
+- name: Hasan Turken
+  email: hasan@upbound.io
+
+# Human readable company name
+company: Crossplane
+
+# Primary category describing this package
+category: Application
+
+# Type of package: Provider, Stack, or Application
+packageType: Provider
+
+# Keywords that describe this application and help search indexing
+keywords:
+- "helm"
+- "application"
+
+# Links to more information about the application (about page, source code, etc.)
+website: "https://github.com/crossplane-contrib/provider-helm"
+source: "https://github.com/crossplane-contrib/provider-helm"
+
+# RBAC ClusterRoles will be generated permitting this package to use all verbs on all
+# resources in the groups listed below.
+permissionScope: Cluster
+dependsOn:
+- crd: '*.compute.crossplane.io/v1alpha1'
+
+# License SPDX name: https://spdx.org/licenses/
+license: Apache-2.0

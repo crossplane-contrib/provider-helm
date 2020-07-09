@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: helm
+---
+apiVersion: packages.crossplane.io/v1alpha1
+kind: ClusterPackageInstall
+metadata:
+  name: provider-helm
+  namespace: helm
+spec:
+  package: "provider-helm:local"
+  imagePullPolicy: Never

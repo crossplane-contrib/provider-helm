@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provider-helm
+  labels:
+    core.crossplane.io/name: "provider-helm"
+spec:
+  selector:
+    matchLabels:
+      core.crossplane.io/name: "provider-helm"
+  replicas: 1
+  helm:
+    metadata:
+      name: "provider-helm-controller"
+      labels:
+        core.crossplane.io/name: "provider-helm"
+    spec:
+      containers:
+      - name: "provider-helm-controller"
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
