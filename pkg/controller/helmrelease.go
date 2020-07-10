@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/crossplane-contrib/provider-helm/pkg/clients"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/pkg/errors"
@@ -105,7 +106,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 	return managed.ExternalObservation{
 		ResourceExists:   true,
-		ResourceUpToDate: true,
+		ResourceUpToDate: false,
 		// ConnectionDetails: getConnectionDetails(cr, instance),
 	}, nil
 }
@@ -128,6 +129,14 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 	}
 
 	fmt.Printf("Updating: %+v", cr.Name)
+
+	n := &v1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: "helm-poc"},
+	}
+
+	if err := c.kube.Create(ctx, n); client.IgnoreNotFound(err) != nil {
+		return managed.ExternalUpdate{}, err
+	}
 
 	return managed.ExternalUpdate{}, nil
 }
