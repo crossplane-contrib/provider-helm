@@ -19,13 +19,13 @@ package controller
 import (
 	"context"
 	"fmt"
-	"github.com/crossplane-contrib/provider-helm/pkg/clients"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 
+	"github.com/crossplane-contrib/provider-helm/pkg/clients"
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -36,26 +36,33 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 
 	"github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
+	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
 	kubev1alpha1 "github.com/crossplane/crossplane/apis/kubernetes/v1alpha1"
 )
 
 const (
-	errNotRelease                  = "managed resource is not a Release custom resource"
+	errNotRelease                 = "managed resource is not a Release custom resource"
 	errProviderNotRetrieved       = "provider could not be retrieved"
-	errProviderSecretNil          = "cannot find Secret reference on Provider"
-	errNewKubernetesClient         = "cannot create new Kubernetes client"
+	errNewKubernetesClient        = "cannot create new Kubernetes kube"
 	errProviderSecretNotRetrieved = "secret referred in provider could not be retrieved"
 )
 
 // SetupRelease adds a controller that reconciles Release managed resources.
 func SetupRelease(mgr ctrl.Manager, l logging.Logger) error {
 	name := managed.ControllerName(v1alpha1.ReleaseGroupKind)
+	logger := l.WithValues("controller", name)
 
 	r := managed.NewReconciler(mgr,
 		resource.ManagedKind(v1alpha1.ReleaseGroupVersionKind),
-		managed.WithExternalConnecter(&connector{client: mgr.GetClient(), newClient: clients.NewClient}),
+		managed.WithExternalConnecter(&connector{
+			logger:          logger,
+			kube:            mgr.GetClient(),
+			newRestConfigFn: clients.NewRestConfig,
+			newKubeClientFn: clients.NewKubeClient,
+			newHelmClientFn: helmClient.NewClient,
+		}),
 		managed.WithInitializers(managed.NewNameAsExternalName(mgr.GetClient())),
-		managed.WithLogger(l.WithValues("controller", name)),
+		managed.WithLogger(logger),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))))
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -65,8 +72,11 @@ func SetupRelease(mgr ctrl.Manager, l logging.Logger) error {
 }
 
 type connector struct {
-	client    client.Client
-	newClient func(ctx context.Context, secret *v1.Secret, scheme *runtime.Scheme) (client.Client, error)
+	logger          logging.Logger
+	kube            client.Client
+	newRestConfigFn func(s *v1.Secret) (*rest.Config, error)
+	newKubeClientFn func(config *rest.Config) (client.Client, error)
+	newHelmClientFn func(log logging.Logger, config *rest.Config, namespace string) (helmClient.Client, error)
 }
 
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
@@ -77,26 +87,36 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 
 	p := &kubev1alpha1.Provider{}
 	n := meta.NamespacedNameOf(cr.Spec.ProviderReference)
-	if err := c.client.Get(ctx, n, p); err != nil {
+	if err := c.kube.Get(ctx, n, p); err != nil {
 		return nil, errors.Wrap(err, errProviderNotRetrieved)
 	}
 
 	s := &v1.Secret{}
 	n = types.NamespacedName{Namespace: p.Spec.Secret.Namespace, Name: p.Spec.Secret.Name}
-	if err := c.client.Get(ctx, n, s); err != nil {
+	if err := c.kube.Get(ctx, n, s); err != nil {
 		return nil, errors.Wrap(err, errProviderSecretNotRetrieved)
 	}
+	rc, err := c.newRestConfigFn(s)
+	if err != nil {
+		return nil, errors.Wrap(err, "cannot create new rest config using provider secret")
+	}
 
-	k, err := c.newClient(ctx, s, nil)
+	k, err := c.newKubeClientFn(rc)
+	if err != nil {
+		return nil, errors.Wrap(err, errNewKubernetesClient)
+	}
 
-	return &external{kube: k}, errors.Wrap(err, errNewKubernetesClient)
+	h, err := c.newHelmClientFn(c.logger, rc, cr.Spec.ForProvider.Namespace)
+
+	return &helmExternal{kube: k, helm: h}, errors.Wrap(err, errNewKubernetesClient)
 }
 
-type external struct {
-	kube    client.Client
+type helmExternal struct {
+	kube client.Client
+	helm helmClient.Client
 }
 
-func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
+func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
 	cr, ok := mg.(*v1alpha1.Release)
 	if !ok {
 		return managed.ExternalObservation{}, errors.New(errNotRelease)
@@ -111,7 +131,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	}, nil
 }
 
-func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
+func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
 	cr, ok := mg.(*v1alpha1.Release)
 	if !ok {
 		return managed.ExternalCreation{}, errors.New(errNotRelease)
@@ -122,7 +142,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	return managed.ExternalCreation{}, nil
 }
 
-func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
+func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
 	cr, ok := mg.(*v1alpha1.Release)
 	if !ok {
 		return managed.ExternalUpdate{}, errors.New(errNotRelease)
@@ -134,14 +154,14 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 		ObjectMeta: metav1.ObjectMeta{Name: "helm-poc"},
 	}
 
-	if err := c.kube.Create(ctx, n); client.IgnoreNotFound(err) != nil {
+	if err := e.kube.Create(ctx, n); client.IgnoreNotFound(err) != nil {
 		return managed.ExternalUpdate{}, err
 	}
 
 	return managed.ExternalUpdate{}, nil
 }
 
-func (c *external) Delete(ctx context.Context, mg resource.Managed) error {
+func (e *helmExternal) Delete(ctx context.Context, mg resource.Managed) error {
 	cr, ok := mg.(*v1alpha1.Release)
 	if !ok {
 		return errors.New(errNotRelease)
