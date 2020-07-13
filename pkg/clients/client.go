@@ -1,26 +1,22 @@
 package clients
 
 import (
-	"context"
 	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"net/url"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// NewClient returns a kubernetes client given a secret with connection
-// information.
-func NewClient(ctx context.Context, s *corev1.Secret, scheme *runtime.Scheme) (client.Client, error) {
-
+// NewRestConfig returns a rest config given a secret with connection information.
+func NewRestConfig(s *corev1.Secret) (*rest.Config, error) {
 	u, err := url.Parse(string(s.Data[runtimev1alpha1.ResourceCredentialsSecretEndpointKey]))
 	if err != nil {
 		return nil, errors.Wrapf(err, "cannot parse Kubernetes endpoint as URL")
 	}
 
-	config := &rest.Config{
+	return &rest.Config{
 		Host:     u.String(),
 		Username: string(s.Data[runtimev1alpha1.ResourceCredentialsSecretUserKey]),
 		Password: string(s.Data[runtimev1alpha1.ResourceCredentialsSecretPasswordKey]),
@@ -34,9 +30,13 @@ func NewClient(ctx context.Context, s *corev1.Secret, scheme *runtime.Scheme) (c
 			KeyData:    s.Data[runtimev1alpha1.ResourceCredentialsSecretClientKeyKey],
 		},
 		BearerToken: string(s.Data[runtimev1alpha1.ResourceCredentialsSecretTokenKey]),
-	}
+	}, nil
+}
 
-	kc, err := client.New(config, client.Options{Scheme: scheme})
+// NewKubeClient returns a kubernetes client given a secret with connection
+// information.
+func NewKubeClient(config *rest.Config) (client.Client, error) {
+	kc, err := client.New(config, client.Options{})
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot create Kubernetes client")
 	}
