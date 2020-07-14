@@ -9,14 +9,8 @@ metadata:
   name: releases.helm.crossplane.io
 spec:
   additionalPrinterColumns:
-  - JSONPath: .status.bindingPhase
-    name: STATUS
-    type: string
   - JSONPath: .status.atProvider.state
     name: STATE
-    type: string
-  - JSONPath: .spec.classRef.name
-    name: CLASS
     type: string
   - JSONPath: .metadata.creationTimestamp
     name: AGE
@@ -115,6 +109,7 @@ spec:
                 namespace:
                   type: string
                 values:
+                  description: 'TODO: investigate using map[string]interface{} instead'
                   type: string
               required:
               - chart
@@ -176,7 +171,7 @@ spec:
               properties:
                 releaseDescription:
                   type: string
-                status:
+                state:
                   description: Status is the status of a release
                   type: string
               type: object

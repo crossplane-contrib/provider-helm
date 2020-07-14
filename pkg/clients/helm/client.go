@@ -50,7 +50,7 @@ type Client interface {
 }
 
 type client struct {
-	histClient      *action.History
+	getClient       *action.Get
 	installClient   *action.Install
 	upgradeClient   *action.Upgrade
 	rollbackClient  *action.Rollback
@@ -68,8 +68,7 @@ func NewClient(log logging.Logger, config *rest.Config, namespace string) (Clien
 		return nil, err
 	}
 
-	hc := action.NewHistory(actionConfig)
-	hc.Max = 1
+	gc := action.NewGet(actionConfig)
 
 	ic := action.NewInstall(actionConfig)
 	ic.Namespace = namespace
@@ -80,7 +79,7 @@ func NewClient(log logging.Logger, config *rest.Config, namespace string) (Clien
 	rb := action.NewRollback(actionConfig)
 
 	return &client{
-		histClient:      hc,
+		getClient:       gc,
 		installClient:   ic,
 		upgradeClient:   uc,
 		rollbackClient:  rb,
@@ -129,17 +128,7 @@ func (hc *client) FetchChart(repo, name, version, username, password string) (*c
 }
 
 func (hc *client) GetLastRelease(release string) (*release.Release, error) {
-	rels, err := hc.histClient.Run(release)
-	if err != nil {
-		return nil, err
-	}
-	nl := len(rels)
-	if nl < 1 {
-		return nil, errors.New("number of releases is less than 1 for an existing release")
-	}
-	// Get newest release
-	rel := rels[nl-1]
-	return rel, nil
+	return hc.getClient.Run(release)
 }
 
 func (hc *client) Install(release string, chart *chart.Chart, vals map[string]interface{}) (*release.Release, error) {

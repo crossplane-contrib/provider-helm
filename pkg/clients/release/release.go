@@ -37,7 +37,7 @@ func GenerateObservation(in *release.Release) v1alpha1.ReleaseObservation {
 
 	relInfo := in.Info
 	if relInfo != nil {
-		o.Status = relInfo.Status
+		o.State = relInfo.Status
 		o.ReleaseDescription = relInfo.Description
 	}
 	return o

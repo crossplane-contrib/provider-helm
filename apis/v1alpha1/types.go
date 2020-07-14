@@ -37,13 +37,14 @@ type ChartSpec struct {
 type ReleaseParameters struct {
 	Chart     ChartSpec `json:"chart"`
 	Namespace string    `json:"namespace"`
-	Values    string    `json:"values,omitempty"`
+	// TODO: investigate using map[string]interface{} instead
+	Values string `json:"values,omitempty"`
 	// Set
 }
 
 // ReleaseObservation are the observable fields of a Release.
 type ReleaseObservation struct {
-	Status             release.Status `json:"status,omitempty"`
+	State              release.Status `json:"state,omitempty"`
 	ReleaseDescription string         `json:"releaseDescription,omitempty"`
 }
 
@@ -63,9 +64,7 @@ type ReleaseStatus struct {
 
 // A Release is an example API type
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="STATUS",type="string",JSONPath=".status.bindingPhase"
 // +kubebuilder:printcolumn:name="STATE",type="string",JSONPath=".status.atProvider.state"
-// +kubebuilder:printcolumn:name="CLASS",type="string",JSONPath=".spec.classRef.name"
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:resource:scope=Cluster
 type Release struct {
