@@ -29,11 +29,15 @@ type ChartSpec struct {
 	Version    string `json:"version"`
 }
 
+// HelmValues represent inline value overrides in the CR.
+// This type definition is a workaround to https://github.com/kubernetes-sigs/kubebuilder/issues/528
+//type HelmValues json.RawMessage
+
 // ReleaseParameters are the configurable fields of a Release.
 type ReleaseParameters struct {
 	Chart     ChartSpec `json:"chart"`
 	Namespace string    `json:"namespace"`
-	//Values    map[string]runtime.RawExtension `json:"values,omitempty"`
+	Values    string    `json:"values,omitempty"`
 	// Set
 }
 

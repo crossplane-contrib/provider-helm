@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 
+	"sigs.k8s.io/yaml"
+
 	"github.com/crossplane-contrib/provider-helm/pkg/clients/release"
 
 	"helm.sh/helm/v3/pkg/storage/driver"
@@ -49,13 +51,14 @@ const (
 	errNewKubernetesClient        = "cannot create new Kubernetes kube"
 	errProviderSecretNotRetrieved = "secret referred in provider could not be retrieved"
 
-	errFailedToGetLastRelease  = "failed to get last helm release"
-	errLastReleaseIsNil        = "last helm release is nil"
-	errFailedToCheckIfUpToDate = "failed to check if release is up to date"
-	errFailedToFetchChart      = "failed to fetch chart"
-	errFailedToInstall         = "failed to install release"
-	errFailedToUpgrade         = "failed to upgrade release"
-	errFailedToUninstall       = "failed to uninstall release"
+	errFailedToGetLastRelease         = "failed to get last helm release"
+	errLastReleaseIsNil               = "last helm release is nil"
+	errFailedToCheckIfUpToDate        = "failed to check if release is up to date"
+	errFailedToFetchChart             = "failed to fetch chart"
+	errFailedToInstall                = "failed to install release"
+	errFailedToUpgrade                = "failed to upgrade release"
+	errFailedToUninstall              = "failed to uninstall release"
+	errFailedToUnmarshalDesiredValues = "failed to unmarshal desired values"
 )
 
 // SetupRelease adds a controller that reconciles Release managed resources.
@@ -175,13 +178,21 @@ func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed
 	if err != nil {
 		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToFetchChart)
 	}
-	rel, err := e.helm.Install(meta.GetExternalName(cr), c, nil)
+
+	var desiredConfig map[string]interface{}
+	err = yaml.Unmarshal([]byte(cr.Spec.ForProvider.Values), &desiredConfig)
+	if err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToUnmarshalDesiredValues)
+	}
+
+	rel, err := e.helm.Install(meta.GetExternalName(cr), c, desiredConfig)
 	if err != nil {
 		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToInstall)
 	}
 	if rel == nil {
 		return managed.ExternalCreation{}, errors.New(errLastReleaseIsNil)
 	}
+
 	cr.Status.AtProvider = release.GenerateObservation(rel)
 	return managed.ExternalCreation{}, nil
 }
@@ -198,15 +209,20 @@ func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed
 	if err != nil {
 		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToFetchChart)
 	}
-	rel, err := e.helm.Upgrade(meta.GetExternalName(cr), c, nil)
+	var desiredConfig map[string]interface{}
+	err = yaml.Unmarshal([]byte(cr.Spec.ForProvider.Values), &desiredConfig)
+	if err != nil {
+		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToUnmarshalDesiredValues)
+	}
+	rel, err := e.helm.Upgrade(meta.GetExternalName(cr), c, desiredConfig)
 	if err != nil {
 		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToUpgrade)
 	}
 	if rel == nil {
 		return managed.ExternalUpdate{}, errors.New(errLastReleaseIsNil)
 	}
-	cr.Status.AtProvider = release.GenerateObservation(rel)
 
+	cr.Status.AtProvider = release.GenerateObservation(rel)
 	return managed.ExternalUpdate{}, nil
 }
 

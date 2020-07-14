@@ -10,6 +10,7 @@ spec:
       version: 9.3.19
     namespace: wordpress
 #    values:
+#      wordpressBlogName: "Hello Crossplane"
 #      mariadb:
 #        enabled: false
 #      externaldb:
