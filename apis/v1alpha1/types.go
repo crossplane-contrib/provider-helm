@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
+	"helm.sh/helm/v3/pkg/release"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -30,15 +31,16 @@ type ChartSpec struct {
 
 // ReleaseParameters are the configurable fields of a Release.
 type ReleaseParameters struct {
-	Chart     ChartSpec                       `json:"chart"`
-	Namespace string                          `json:"namespace"`
+	Chart     ChartSpec `json:"chart"`
+	Namespace string    `json:"namespace"`
 	//Values    map[string]runtime.RawExtension `json:"values,omitempty"`
 	// Set
 }
 
 // ReleaseObservation are the observable fields of a Release.
 type ReleaseObservation struct {
-	ObservableField string `json:"observableField,omitempty"`
+	Status             release.Status `json:"status,omitempty"`
+	ReleaseDescription string         `json:"releaseDescription,omitempty"`
 }
 
 // A ReleaseSpec defines the desired state of a Release.

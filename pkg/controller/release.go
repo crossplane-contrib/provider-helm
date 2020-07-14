@@ -20,10 +20,13 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/crossplane-contrib/provider-helm/pkg/clients/release"
+
+	"helm.sh/helm/v3/pkg/storage/driver"
+
 	"github.com/crossplane-contrib/provider-helm/pkg/clients"
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -45,6 +48,14 @@ const (
 	errProviderNotRetrieved       = "provider could not be retrieved"
 	errNewKubernetesClient        = "cannot create new Kubernetes kube"
 	errProviderSecretNotRetrieved = "secret referred in provider could not be retrieved"
+
+	errFailedToGetLastRelease  = "failed to get last helm release"
+	errLastReleaseIsNil        = "last helm release is nil"
+	errFailedToCheckIfUpToDate = "failed to check if release is up to date"
+	errFailedToFetchChart      = "failed to fetch chart"
+	errFailedToInstall         = "failed to install release"
+	errFailedToUpgrade         = "failed to upgrade release"
+	errFailedToUninstall       = "failed to uninstall release"
 )
 
 // SetupRelease adds a controller that reconciles Release managed resources.
@@ -84,7 +95,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	if !ok {
 		return nil, errors.New(errNotRelease)
 	}
-
+	fmt.Printf("Connecting: %+v \n", cr.Name)
 	p := &kubev1alpha1.Provider{}
 	n := meta.NamespacedNameOf(cr.Spec.ProviderReference)
 	if err := c.kube.Get(ctx, n, p); err != nil {
@@ -122,12 +133,33 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 		return managed.ExternalObservation{}, errors.New(errNotRelease)
 	}
 
-	fmt.Printf("Observing: %+v", cr.Name)
+	fmt.Printf("Observing: %+v \n", cr.Name)
+
+	rel, err := e.helm.GetLastRelease(meta.GetExternalName(cr))
+	if err == driver.ErrReleaseNotFound {
+		return managed.ExternalObservation{
+			ResourceExists: false,
+		}, nil
+	}
+
+	if err != nil {
+		return managed.ExternalObservation{}, errors.Wrap(err, errFailedToGetLastRelease)
+	}
+
+	if rel == nil {
+		return managed.ExternalObservation{}, errors.New(errLastReleaseIsNil)
+	}
+
+	cr.Status.AtProvider = release.GenerateObservation(rel)
+
+	u, err := release.IsUpToDate(&cr.Spec.ForProvider, rel)
+	if err != nil {
+		return managed.ExternalObservation{}, errors.Wrap(err, errFailedToCheckIfUpToDate)
+	}
 
 	return managed.ExternalObservation{
 		ResourceExists:   true,
-		ResourceUpToDate: false,
-		// ConnectionDetails: getConnectionDetails(cr, instance),
+		ResourceUpToDate: u,
 	}, nil
 }
 
@@ -137,8 +169,20 @@ func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed
 		return managed.ExternalCreation{}, errors.New(errNotRelease)
 	}
 
-	fmt.Printf("Creating: %+v", cr.Name)
-
+	fmt.Printf("Creating: %+v \n", cr.Name)
+	cs := cr.Spec.ForProvider.Chart
+	c, err := e.helm.FetchChart(cs.Repository, cs.Name, cs.Version, "", "")
+	if err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToFetchChart)
+	}
+	rel, err := e.helm.Install(meta.GetExternalName(cr), c, nil)
+	if err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToInstall)
+	}
+	if rel == nil {
+		return managed.ExternalCreation{}, errors.New(errLastReleaseIsNil)
+	}
+	cr.Status.AtProvider = release.GenerateObservation(rel)
 	return managed.ExternalCreation{}, nil
 }
 
@@ -148,15 +192,20 @@ func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed
 		return managed.ExternalUpdate{}, errors.New(errNotRelease)
 	}
 
-	fmt.Printf("Updating: %+v", cr.Name)
-
-	n := &v1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: "helm-poc"},
+	fmt.Printf("Updating: %+v \n", cr.Name)
+	cs := cr.Spec.ForProvider.Chart
+	c, err := e.helm.FetchChart(cs.Repository, cs.Name, cs.Version, "", "")
+	if err != nil {
+		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToFetchChart)
 	}
-
-	if err := e.kube.Create(ctx, n); client.IgnoreNotFound(err) != nil {
-		return managed.ExternalUpdate{}, err
+	rel, err := e.helm.Upgrade(meta.GetExternalName(cr), c, nil)
+	if err != nil {
+		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToUpgrade)
 	}
+	if rel == nil {
+		return managed.ExternalUpdate{}, errors.New(errLastReleaseIsNil)
+	}
+	cr.Status.AtProvider = release.GenerateObservation(rel)
 
 	return managed.ExternalUpdate{}, nil
 }
@@ -167,7 +216,6 @@ func (e *helmExternal) Delete(ctx context.Context, mg resource.Managed) error {
 		return errors.New(errNotRelease)
 	}
 
-	fmt.Printf("Deleting: %+v", cr.Name)
-
-	return nil
+	fmt.Printf("Deleting: %+v \n", cr.Name)
+	return errors.Wrap(e.helm.Uninstall(meta.GetExternalName(cr)), errFailedToUninstall)
 }

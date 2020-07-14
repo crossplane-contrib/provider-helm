@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"helm.sh/helm/v3/pkg/cli"
+
 	"k8s.io/client-go/rest"
 
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
@@ -24,9 +26,9 @@ const (
 
 type Client interface {
 	FetchChart(repo, name, version, username, password string) (*chart.Chart, error)
-	GetLastRelease(release string) (*release.Release, int, error)
-	Install(release string, chart *chart.Chart, vals map[string]interface{}) (*release.Info, error)
-	Upgrade(release string, chart *chart.Chart, vals map[string]interface{}) (*release.Info, error)
+	GetLastRelease(release string) (*release.Release, error)
+	Install(release string, chart *chart.Chart, vals map[string]interface{}) (*release.Release, error)
+	Upgrade(release string, chart *chart.Chart, vals map[string]interface{}) (*release.Release, error)
 	Rollback(release string) error
 	Uninstall(release string) error
 }
@@ -72,8 +74,9 @@ func NewClient(log logging.Logger, config *rest.Config, namespace string) (Clien
 
 func (hc *client) FetchChart(repo, name, version, username, password string) (*chart.Chart, error) {
 	cd := downloader.ChartDownloader{
-		Out:    os.Stderr,
-		Verify: downloader.VerifyNever,
+		Out:     os.Stderr,
+		Verify:  downloader.VerifyNever,
+		Getters: getter.All(&cli.EnvSettings{}),
 	}
 	if username != "" && password != "" {
 		cd.Options = append(cd.Options, getter.WithBasicAuth(username, password))
@@ -109,35 +112,27 @@ func (hc *client) FetchChart(repo, name, version, username, password string) (*c
 	return chart, nil
 }
 
-func (hc *client) GetLastRelease(release string) (*release.Release, int, error) {
+func (hc *client) GetLastRelease(release string) (*release.Release, error) {
 	rels, err := hc.histClient.Run(release)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	nl := len(rels)
 	if nl < 1 {
-		return nil, nl, errors.New("number of releases is less than 1 for an existing release")
+		return nil, errors.New("number of releases is less than 1 for an existing release")
 	}
 	// Get newest release
 	rel := rels[nl-1]
-	return rel, nl, nil
+	return rel, nil
 }
 
-func (hc *client) Install(release string, chart *chart.Chart, vals map[string]interface{}) (*release.Info, error) {
+func (hc *client) Install(release string, chart *chart.Chart, vals map[string]interface{}) (*release.Release, error) {
 	hc.installClient.ReleaseName = release
-	rel, err := hc.installClient.Run(chart, vals)
-	if rel == nil {
-		return nil, err
-	}
-	return rel.Info, err
+	return hc.installClient.Run(chart, vals)
 }
 
-func (hc *client) Upgrade(release string, chart *chart.Chart, vals map[string]interface{}) (*release.Info, error) {
-	rel, err := hc.upgradeClient.Run(release, chart, vals)
-	if rel == nil {
-		return nil, err
-	}
-	return rel.Info, err
+func (hc *client) Upgrade(release string, chart *chart.Chart, vals map[string]interface{}) (*release.Release, error) {
+	return hc.upgradeClient.Run(release, chart, vals)
 }
 
 func (hc *client) Rollback(release string) error {
