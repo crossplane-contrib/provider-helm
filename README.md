@@ -1,4 +1,4 @@
-# provider-helm
+# provider-helm (WIP)
 
 `provider-helm` is a Crossplane Provider that enables deployment and management
 of Helm Releases on Kubernetes clusters typically provisioned by Crossplane:

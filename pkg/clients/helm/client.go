@@ -30,8 +30,6 @@ import (
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chart/loader"
-	"helm.sh/helm/v3/pkg/downloader"
-	"helm.sh/helm/v3/pkg/getter"
 	"helm.sh/helm/v3/pkg/release"
 )
 
@@ -40,16 +38,23 @@ const (
 	chartCache       = "/tmp/charts"
 )
 
+const (
+	errFailedToCheckIfLocalChartExists = "failed to check if cached chart file exists"
+	errFailedToPullChart               = "failed to pull chart"
+	errFailedToLoadChart               = "failed to load chart"
+)
+
 type Client interface {
-	FetchChart(repo, name, version, username, password string) (*chart.Chart, error)
 	GetLastRelease(release string) (*release.Release, error)
-	Install(release string, chart *chart.Chart, vals map[string]interface{}) (*release.Release, error)
-	Upgrade(release string, chart *chart.Chart, vals map[string]interface{}) (*release.Release, error)
+	Install(release string, chartDef ChartDefinition, vals map[string]interface{}) (*release.Release, error)
+	Upgrade(release string, chartDef ChartDefinition, vals map[string]interface{}) (*release.Release, error)
 	Rollback(release string) error
 	Uninstall(release string) error
 }
 
 type client struct {
+	log             logging.Logger
+	pullClient      *action.Pull
 	getClient       *action.Get
 	installClient   *action.Install
 	upgradeClient   *action.Upgrade
@@ -68,6 +73,16 @@ func NewClient(log logging.Logger, config *rest.Config, namespace string) (Clien
 		return nil, err
 	}
 
+	pc := action.NewPull()
+	if _, err := os.Stat(chartCache); os.IsNotExist(err) {
+		err = os.Mkdir(chartCache, 0750)
+		if err != nil {
+			return nil, err
+		}
+	}
+	pc.DestDir = chartCache
+	pc.Settings = &cli.EnvSettings{}
+
 	gc := action.NewGet(actionConfig)
 
 	ic := action.NewInstall(actionConfig)
@@ -79,6 +94,8 @@ func NewClient(log logging.Logger, config *rest.Config, namespace string) (Clien
 	rb := action.NewRollback(actionConfig)
 
 	return &client{
+		log:             log,
+		pullClient:      pc,
 		getClient:       gc,
 		installClient:   ic,
 		upgradeClient:   uc,
@@ -87,42 +104,28 @@ func NewClient(log logging.Logger, config *rest.Config, namespace string) (Clien
 	}, nil
 }
 
-func (hc *client) FetchChart(repo, name, version, username, password string) (*chart.Chart, error) {
-	cd := downloader.ChartDownloader{
-		Out:     os.Stderr,
-		Verify:  downloader.VerifyNever,
-		Getters: getter.All(&cli.EnvSettings{}),
-	}
-	if username != "" && password != "" {
-		cd.Options = append(cd.Options, getter.WithBasicAuth(username, password))
-	}
+func (hc *client) pullAndLoadChart(repo, name, version, username, password string) (*chart.Chart, error) {
+	pc := hc.pullClient
 
-	n := fmt.Sprintf("%s-%s", name, version)
-	fn := fmt.Sprintf("%s.tgz", n)
-	chartURL := fmt.Sprintf("%s/%s", repo, fn)
+	pc.RepoURL = repo
+	pc.Version = version
+	pc.Username = username
+	pc.Password = password
 
-	if _, err := os.Stat(chartCache); os.IsNotExist(err) {
-		err = os.Mkdir(chartCache, 0750)
+	df := filepath.Join(pc.DestDir, fmt.Sprintf("%s-%s.tgz", name, version))
+	if _, err := os.Stat(df); os.IsNotExist(err) {
+		o, err := pc.Run(name)
+		hc.log.Debug(o)
 		if err != nil {
-			return nil, err
-		}
-	}
-	ef := filepath.Join(chartCache, fn)
-	if _, err := os.Stat(ef); os.IsNotExist(err) {
-		f, _, err := cd.DownloadTo(chartURL, "", chartCache)
-		if err != nil {
-			return nil, err
-		}
-		if f != ef {
-			return nil, errors.New(fmt.Sprintf("chart file was not cached to expected path, expecting %s, actual %s", ef, f))
+			return nil, errors.Wrap(err, errFailedToPullChart)
 		}
 	} else if err != nil {
-		return nil, errors.Wrap(err, "failed to check if cached chart file exists")
+		return nil, errors.Wrap(err, errFailedToCheckIfLocalChartExists)
 	}
 
-	chart, err := loader.Load(ef)
+	chart, err := loader.Load(df)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, errFailedToLoadChart)
 	}
 	return chart, nil
 }
@@ -131,15 +134,26 @@ func (hc *client) GetLastRelease(release string) (*release.Release, error) {
 	return hc.getClient.Run(release)
 }
 
-func (hc *client) Install(release string, chart *chart.Chart, vals map[string]interface{}) (*release.Release, error) {
+func (hc *client) Install(release string, chartDef ChartDefinition, vals map[string]interface{}) (*release.Release, error) {
 	hc.installClient.ReleaseName = release
-	return hc.installClient.Run(chart, vals)
+
+	c, err := hc.pullAndLoadChart(chartDef.Repository, chartDef.Name, chartDef.Version, chartDef.RepoUser, chartDef.RepoPass)
+	if err != nil {
+		return nil, err
+	}
+
+	return hc.installClient.Run(c, vals)
 }
 
-func (hc *client) Upgrade(release string, chart *chart.Chart, vals map[string]interface{}) (*release.Release, error) {
+func (hc *client) Upgrade(release string, chartDef ChartDefinition, vals map[string]interface{}) (*release.Release, error) {
 	// Reset values so that source of truth for desired state is always the CR itself
 	hc.upgradeClient.ResetValues = true
-	return hc.upgradeClient.Run(release, chart, vals)
+
+	c, err := hc.pullAndLoadChart(chartDef.Repository, chartDef.Name, chartDef.Version, chartDef.RepoUser, chartDef.RepoPass)
+	if err != nil {
+		return nil, err
+	}
+	return hc.upgradeClient.Run(release, c, vals)
 }
 
 func (hc *client) Rollback(release string) error {

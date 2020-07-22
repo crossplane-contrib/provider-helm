@@ -173,19 +173,19 @@ func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed
 	}
 
 	fmt.Printf("Creating: %+v \n", cr.Name)
-	cs := cr.Spec.ForProvider.Chart
-	c, err := e.helm.FetchChart(cs.Repository, cs.Name, cs.Version, "", "")
-	if err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToFetchChart)
-	}
-
 	var desiredConfig map[string]interface{}
-	err = yaml.Unmarshal([]byte(cr.Spec.ForProvider.Values), &desiredConfig)
+	err := yaml.Unmarshal([]byte(cr.Spec.ForProvider.Values), &desiredConfig)
 	if err != nil {
 		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToUnmarshalDesiredValues)
 	}
 
-	rel, err := e.helm.Install(meta.GetExternalName(cr), c, desiredConfig)
+	cs := cr.Spec.ForProvider.Chart
+	cd := helmClient.ChartDefinition{
+		Repository: cs.Repository,
+		Name:       cs.Name,
+		Version:    cs.Version,
+	}
+	rel, err := e.helm.Install(meta.GetExternalName(cr), cd, desiredConfig)
 	if err != nil {
 		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToInstall)
 	}
@@ -204,17 +204,19 @@ func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed
 	}
 
 	fmt.Printf("Updating: %+v \n", cr.Name)
-	cs := cr.Spec.ForProvider.Chart
-	c, err := e.helm.FetchChart(cs.Repository, cs.Name, cs.Version, "", "")
-	if err != nil {
-		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToFetchChart)
-	}
 	var desiredConfig map[string]interface{}
-	err = yaml.Unmarshal([]byte(cr.Spec.ForProvider.Values), &desiredConfig)
+	err := yaml.Unmarshal([]byte(cr.Spec.ForProvider.Values), &desiredConfig)
 	if err != nil {
 		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToUnmarshalDesiredValues)
 	}
-	rel, err := e.helm.Upgrade(meta.GetExternalName(cr), c, desiredConfig)
+
+	cs := cr.Spec.ForProvider.Chart
+	cd := helmClient.ChartDefinition{
+		Repository: cs.Repository,
+		Name:       cs.Name,
+		Version:    cs.Version,
+	}
+	rel, err := e.helm.Upgrade(meta.GetExternalName(cr), cd, desiredConfig)
 	if err != nil {
 		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToUpgrade)
 	}
