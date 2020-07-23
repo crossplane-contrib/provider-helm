@@ -14,26 +14,27 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package release
+package controller
 
 import (
+	"context"
 	"reflect"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/release"
-	"sigs.k8s.io/yaml"
 
 	"github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
 )
 
 const (
-	errChartNilInObservedRelease      = "chart field is nil in observed helm release"
-	errChartMetaNilInObservedRelease  = "chart metadata field is nil in observed helm release"
-	errFailedToUnmarshalDesiredValues = "failed to unmarshal desired values"
+	errChartNilInObservedRelease     = "chart field is nil in observed helm release"
+	errChartMetaNilInObservedRelease = "chart metadata field is nil in observed helm release"
 )
 
-// GenerateObservation generates release observation for the input release object
-func GenerateObservation(in *release.Release) v1alpha1.ReleaseObservation {
+// generateObservation generates release observation for the input release object
+func generateObservation(in *release.Release) v1alpha1.ReleaseObservation {
 	o := v1alpha1.ReleaseObservation{}
 
 	relInfo := in.Info
@@ -44,8 +45,8 @@ func GenerateObservation(in *release.Release) v1alpha1.ReleaseObservation {
 	return o
 }
 
-// IsUpToDate checks whether desired spec up to date with the observed state for a given release
-func IsUpToDate(in *v1alpha1.ReleaseParameters, observed *release.Release) (bool, error) {
+// isUpToDate checks whether desired spec up to date with the observed state for a given release
+func isUpToDate(ctx context.Context, kube client.Client, in *v1alpha1.ReleaseParameters, observed *release.Release) (bool, error) {
 	oc := observed.Chart
 	if oc == nil {
 		return false, errors.New(errChartNilInObservedRelease)
@@ -61,11 +62,11 @@ func IsUpToDate(in *v1alpha1.ReleaseParameters, observed *release.Release) (bool
 	if in.Chart.Version != ocm.Version {
 		return false, nil
 	}
-	var desiredConfig map[string]interface{}
-	err := yaml.Unmarshal([]byte(in.Values), &desiredConfig)
+	desiredConfig, err := composeValuesFromSpec(ctx, kube, in.ValuesSpec)
 	if err != nil {
-		return false, errors.Wrap(err, errFailedToUnmarshalDesiredValues)
+		return false, errors.Wrap(err, errFailedToComposeValues)
 	}
+
 	if !reflect.DeepEqual(desiredConfig, observed.Config) {
 		return false, nil
 	}

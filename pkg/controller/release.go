@@ -31,26 +31,25 @@ import (
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
 
 	"github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
 	"github.com/crossplane-contrib/provider-helm/pkg/clients"
 	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
-	"github.com/crossplane-contrib/provider-helm/pkg/clients/release"
 )
 
 const (
-	errNotRelease                     = "managed resource is not a Release custom resource"
-	errProviderNotRetrieved           = "provider could not be retrieved"
-	errNewKubernetesClient            = "cannot create new Kubernetes client"
-	errProviderSecretNotRetrieved     = "secret referred in provider could not be retrieved"
-	errFailedToGetLastRelease         = "failed to get last helm release"
-	errLastReleaseIsNil               = "last helm release is nil"
-	errFailedToCheckIfUpToDate        = "failed to check if release is up to date"
-	errFailedToInstall                = "failed to install release"
-	errFailedToUpgrade                = "failed to upgrade release"
-	errFailedToUninstall              = "failed to uninstall release"
-	errFailedToUnmarshalDesiredValues = "failed to unmarshal desired values"
+	errNotRelease                 = "managed resource is not a Release custom resource"
+	errProviderNotRetrieved       = "provider could not be retrieved"
+	errNewKubernetesClient        = "cannot create new Kubernetes client"
+	errProviderSecretNotRetrieved = "secret referred in provider could not be retrieved"
+	errFailedToGetLastRelease     = "failed to get last helm release"
+	errLastReleaseIsNil           = "last helm release is nil"
+	errFailedToCheckIfUpToDate    = "failed to check if release is up to date"
+	errFailedToInstall            = "failed to install release"
+	errFailedToUpgrade            = "failed to upgrade release"
+	errFailedToUninstall          = "failed to uninstall release"
+	errFailedToBuildChartDef      = "failed to build chart definition"
+	errFailedToComposeValues      = "failed to compose values"
 )
 
 // SetupRelease adds a controller that reconciles Release managed resources.
@@ -132,7 +131,7 @@ type helmExternal struct {
 	helm      helmClient.Client
 }
 
-func (e *helmExternal) Observe(_ context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
+func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
 	cr, ok := mg.(*v1alpha1.Release)
 	if !ok {
 		return managed.ExternalObservation{}, errors.New(errNotRelease)
@@ -155,9 +154,9 @@ func (e *helmExternal) Observe(_ context.Context, mg resource.Managed) (managed.
 		return managed.ExternalObservation{}, errors.New(errLastReleaseIsNil)
 	}
 
-	cr.Status.AtProvider = release.GenerateObservation(rel)
+	cr.Status.AtProvider = generateObservation(rel)
 
-	u, err := release.IsUpToDate(&cr.Spec.ForProvider, rel)
+	u, err := isUpToDate(ctx, e.localKube, &cr.Spec.ForProvider, rel)
 	if err != nil {
 		return managed.ExternalObservation{}, errors.Wrap(err, errFailedToCheckIfUpToDate)
 	}
@@ -176,10 +175,9 @@ func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed
 
 	e.logger.Debug("Creating")
 
-	var desiredConfig map[string]interface{}
-	err := yaml.Unmarshal([]byte(cr.Spec.ForProvider.Values), &desiredConfig)
+	cv, err := composeValuesFromSpec(ctx, e.localKube, cr.Spec.ForProvider.ValuesSpec)
 	if err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToUnmarshalDesiredValues)
+		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToComposeValues)
 	}
 
 	cd, err := chartDefFromSpec(ctx, e.localKube, cr.Spec.ForProvider.Chart)
@@ -187,7 +185,7 @@ func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed
 		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToBuildChartDef)
 	}
 
-	rel, err := e.helm.Install(meta.GetExternalName(cr), cd, desiredConfig)
+	rel, err := e.helm.Install(meta.GetExternalName(cr), cd, cv)
 	if err != nil {
 		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToInstall)
 	}
@@ -195,7 +193,7 @@ func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed
 		return managed.ExternalCreation{}, errors.New(errLastReleaseIsNil)
 	}
 
-	cr.Status.AtProvider = release.GenerateObservation(rel)
+	cr.Status.AtProvider = generateObservation(rel)
 	return managed.ExternalCreation{}, nil
 }
 
@@ -207,10 +205,9 @@ func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed
 
 	e.logger.Debug("Updating")
 
-	var desiredConfig map[string]interface{}
-	err := yaml.Unmarshal([]byte(cr.Spec.ForProvider.Values), &desiredConfig)
+	cv, err := composeValuesFromSpec(ctx, e.localKube, cr.Spec.ForProvider.ValuesSpec)
 	if err != nil {
-		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToUnmarshalDesiredValues)
+		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToComposeValues)
 	}
 
 	cd, err := chartDefFromSpec(ctx, e.localKube, cr.Spec.ForProvider.Chart)
@@ -218,7 +215,7 @@ func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed
 		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToBuildChartDef)
 	}
 
-	rel, err := e.helm.Upgrade(meta.GetExternalName(cr), cd, desiredConfig)
+	rel, err := e.helm.Upgrade(meta.GetExternalName(cr), cd, cv)
 	if err != nil {
 		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToUpgrade)
 	}
@@ -226,7 +223,7 @@ func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed
 		return managed.ExternalUpdate{}, errors.New(errLastReleaseIsNil)
 	}
 
-	cr.Status.AtProvider = release.GenerateObservation(rel)
+	cr.Status.AtProvider = generateObservation(rel)
 	return managed.ExternalUpdate{}, nil
 }
 

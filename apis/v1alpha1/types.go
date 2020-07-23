@@ -30,17 +30,45 @@ type ChartSpec struct {
 	PullSecretRef runtimev1alpha1.SecretReference `json:"pullSecretRef,omitempty"`
 }
 
-// HelmValues represent inline value overrides in the CR.
-// This type definition is a workaround to https://github.com/kubernetes-sigs/kubebuilder/issues/528
-//type HelmValues json.RawMessage
+// NamespacedName represents a namespaced object name
+type NamespacedName struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
+
+// DataKeySelector defines required spec to access a key of a configmap or secret
+type DataKeySelector struct {
+	NamespacedName `json:",inline"`
+	Key            string `json:"key"`
+	Optional       bool   `json:"optional,omitempty"`
+}
+
+// ValueFromSource represents source of a value
+type ValueFromSource struct {
+	ConfigMapKeyRef *DataKeySelector `json:"configMapKeyRef,omitempty"`
+	SecretKeyRef    *DataKeySelector `json:"secretKeyRef,omitempty"`
+}
+
+// SetVal represents a "set" value override in a Release
+type SetVal struct {
+	Name      string           `json:"name"`
+	Value     string           `json:"values,omitempty"`
+	ValueFrom *ValueFromSource `json:"ValueFrom,omitempty"`
+}
+
+// ValuesSpec defines the Helm value overrides spec for a Release
+type ValuesSpec struct {
+	// TODO: investigate using map[string]interface{} instead
+	Values     string            `json:"values,omitempty"`
+	ValuesFrom []ValueFromSource `json:"valuesFrom,omitempty"`
+	Set        []SetVal          `json:"set,omitempty"`
+}
 
 // ReleaseParameters are the configurable fields of a Release.
 type ReleaseParameters struct {
-	Chart     ChartSpec `json:"chart"`
-	Namespace string    `json:"namespace"`
-	// TODO: investigate using map[string]interface{} instead
-	Values string `json:"values,omitempty"`
-	// Set
+	Chart      ChartSpec `json:"chart"`
+	Namespace  string    `json:"namespace"`
+	ValuesSpec `json:",inline"`
 }
 
 // ReleaseObservation are the observable fields of a Release.

@@ -33,7 +33,6 @@ const (
 )
 
 const (
-	errFailedToBuildChartDef           = "failed to build chart definition"
 	errFailedToGetRepoPullSecret       = "failed to get repo pull secret"
 	errChartPullSecretMissingNamespace = "namespace must be set in chart pull secret ref"
 	errChartPullSecretMissingUsername  = "username missing in chart pull secret"

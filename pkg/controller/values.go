@@ -15,3 +15,26 @@ limitations under the License.
 */
 
 package controller
+
+import (
+	"context"
+
+	"github.com/pkg/errors"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
+
+	"github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
+)
+
+const (
+	errFailedToUnmarshalDesiredValues = "failed to unmarshal desired values"
+)
+
+func composeValuesFromSpec(_ context.Context, _ client.Client, spec v1alpha1.ValuesSpec) (map[string]interface{}, error) {
+	var composed map[string]interface{}
+	err := yaml.Unmarshal([]byte(spec.Values), &composed)
+	if err != nil {
+		return nil, errors.Wrap(err, errFailedToUnmarshalDesiredValues)
+	}
+	return composed, nil
+}
