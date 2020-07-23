@@ -19,11 +19,11 @@ package release
 import (
 	"reflect"
 
+	"github.com/pkg/errors"
+	"helm.sh/helm/v3/pkg/release"
 	"sigs.k8s.io/yaml"
 
 	"github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
-	"github.com/pkg/errors"
-	"helm.sh/helm/v3/pkg/release"
 )
 
 const (
@@ -32,6 +32,7 @@ const (
 	errFailedToUnmarshalDesiredValues = "failed to unmarshal desired values"
 )
 
+// GenerateObservation generates release observation for the input release object
 func GenerateObservation(in *release.Release) v1alpha1.ReleaseObservation {
 	o := v1alpha1.ReleaseObservation{}
 
@@ -43,6 +44,7 @@ func GenerateObservation(in *release.Release) v1alpha1.ReleaseObservation {
 	return o
 }
 
+// IsUpToDate checks whether desired spec up to date with the observed state for a given release
 func IsUpToDate(in *v1alpha1.ReleaseParameters, observed *release.Release) (bool, error) {
 	oc := observed.Chart
 	if oc == nil {

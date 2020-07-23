@@ -1,6 +1,6 @@
-package helmClient
+package helm
 
-// A ChartSpec defines the chart spec for a Release
+// ChartDefinition keeps the required information to access a Helm Chart
 type ChartDefinition struct {
 	Repository string
 	Name       string

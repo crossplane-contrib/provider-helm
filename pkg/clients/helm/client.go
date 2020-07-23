@@ -14,23 +14,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package helmClient
+package helm
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
 
-	"helm.sh/helm/v3/pkg/cli"
-
-	"k8s.io/client-go/rest"
-
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/release"
+	"k8s.io/client-go/rest"
 )
 
 const (
@@ -45,6 +43,7 @@ const (
 	errFailedToLoadChart               = "failed to load chart"
 )
 
+// Client is the interface to interact with Helm
 type Client interface {
 	GetLastRelease(release string) (*release.Release, error)
 	Install(release string, chartDef ChartDefinition, vals map[string]interface{}) (*release.Release, error)
@@ -63,6 +62,7 @@ type client struct {
 	uninstallClient *action.Uninstall
 }
 
+// NewClient returns a new Helm Client with provided config
 func NewClient(log logging.Logger, config *rest.Config, namespace string) (Client, error) {
 	rg := newRESTClientGetter(config, namespace)
 

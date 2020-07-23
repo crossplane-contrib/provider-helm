@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package helmClient
+package helm
 
 import (
 	"k8s.io/apimachinery/pkg/api/meta"

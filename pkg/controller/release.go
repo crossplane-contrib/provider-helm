@@ -19,28 +19,24 @@ package controller
 import (
 	"context"
 
-	"sigs.k8s.io/yaml"
-
-	"github.com/crossplane-contrib/provider-helm/pkg/clients/release"
-
-	"helm.sh/helm/v3/pkg/storage/driver"
-
-	"github.com/crossplane-contrib/provider-helm/pkg/clients"
-	"github.com/pkg/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/rest"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	"github.com/crossplane/crossplane-runtime/pkg/event"
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
+	kubev1alpha1 "github.com/crossplane/crossplane/apis/kubernetes/v1alpha1"
+	"github.com/pkg/errors"
+	"helm.sh/helm/v3/pkg/storage/driver"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/rest"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	"github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
+	"github.com/crossplane-contrib/provider-helm/pkg/clients"
 	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
-	kubev1alpha1 "github.com/crossplane/crossplane/apis/kubernetes/v1alpha1"
+	"github.com/crossplane-contrib/provider-helm/pkg/clients/release"
 )
 
 const (

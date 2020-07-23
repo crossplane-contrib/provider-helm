@@ -21,10 +21,10 @@ import (
 
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
 	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
