@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 
 	"sigs.k8s.io/yaml"
 
@@ -28,7 +27,6 @@ import (
 
 	"github.com/crossplane-contrib/provider-helm/pkg/clients"
 	"github.com/pkg/errors"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -46,15 +44,13 @@ import (
 )
 
 const (
-	errNotRelease                 = "managed resource is not a Release custom resource"
-	errProviderNotRetrieved       = "provider could not be retrieved"
-	errNewKubernetesClient        = "cannot create new Kubernetes kube"
-	errProviderSecretNotRetrieved = "secret referred in provider could not be retrieved"
-
+	errNotRelease                     = "managed resource is not a Release custom resource"
+	errProviderNotRetrieved           = "provider could not be retrieved"
+	errNewKubernetesClient            = "cannot create new Kubernetes client"
+	errProviderSecretNotRetrieved     = "secret referred in provider could not be retrieved"
 	errFailedToGetLastRelease         = "failed to get last helm release"
 	errLastReleaseIsNil               = "last helm release is nil"
 	errFailedToCheckIfUpToDate        = "failed to check if release is up to date"
-	errFailedToFetchChart             = "failed to fetch chart"
 	errFailedToInstall                = "failed to install release"
 	errFailedToUpgrade                = "failed to upgrade release"
 	errFailedToUninstall              = "failed to uninstall release"
@@ -70,7 +66,7 @@ func SetupRelease(mgr ctrl.Manager, l logging.Logger) error {
 		resource.ManagedKind(v1alpha1.ReleaseGroupVersionKind),
 		managed.WithExternalConnecter(&connector{
 			logger:          logger,
-			kube:            mgr.GetClient(),
+			client:          mgr.GetClient(),
 			newRestConfigFn: clients.NewRestConfig,
 			newKubeClientFn: clients.NewKubeClient,
 			newHelmClientFn: helmClient.NewClient,
@@ -87,8 +83,8 @@ func SetupRelease(mgr ctrl.Manager, l logging.Logger) error {
 
 type connector struct {
 	logger          logging.Logger
-	kube            client.Client
-	newRestConfigFn func(s *v1.Secret) (*rest.Config, error)
+	client          client.Client
+	newRestConfigFn func(creds map[string][]byte) (*rest.Config, error)
 	newKubeClientFn func(config *rest.Config) (client.Client, error)
 	newHelmClientFn func(log logging.Logger, config *rest.Config, namespace string) (helmClient.Client, error)
 }
@@ -98,19 +94,22 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	if !ok {
 		return nil, errors.New(errNotRelease)
 	}
-	fmt.Printf("Connecting: %+v \n", cr.Name)
+	l := c.logger.WithValues("request", cr.Name)
+
+	l.Debug("Connecting")
+
 	p := &kubev1alpha1.Provider{}
 	n := meta.NamespacedNameOf(cr.Spec.ProviderReference)
-	if err := c.kube.Get(ctx, n, p); err != nil {
+	if err := c.client.Get(ctx, n, p); err != nil {
 		return nil, errors.Wrap(err, errProviderNotRetrieved)
 	}
-
-	s := &v1.Secret{}
-	n = types.NamespacedName{Namespace: p.Spec.Secret.Namespace, Name: p.Spec.Secret.Name}
-	if err := c.kube.Get(ctx, n, s); err != nil {
+	key := types.NamespacedName{Namespace: p.Spec.Secret.Namespace, Name: p.Spec.Secret.Name}
+	creds, err := getSecretData(ctx, c.client, key)
+	if err != nil {
 		return nil, errors.Wrap(err, errProviderSecretNotRetrieved)
 	}
-	rc, err := c.newRestConfigFn(s)
+
+	rc, err := c.newRestConfigFn(creds)
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot create new rest config using provider secret")
 	}
@@ -122,21 +121,28 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 
 	h, err := c.newHelmClientFn(c.logger, rc, cr.Spec.ForProvider.Namespace)
 
-	return &helmExternal{kube: k, helm: h}, errors.Wrap(err, errNewKubernetesClient)
+	return &helmExternal{
+		logger:    l,
+		localKube: c.client,
+		kube:      k,
+		helm:      h,
+	}, errors.Wrap(err, errNewKubernetesClient)
 }
 
 type helmExternal struct {
-	kube client.Client
-	helm helmClient.Client
+	logger    logging.Logger
+	localKube client.Client
+	kube      client.Client
+	helm      helmClient.Client
 }
 
-func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
+func (e *helmExternal) Observe(_ context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
 	cr, ok := mg.(*v1alpha1.Release)
 	if !ok {
 		return managed.ExternalObservation{}, errors.New(errNotRelease)
 	}
 
-	fmt.Printf("Observing: %+v \n", cr.Name)
+	e.logger.Debug("Observing")
 
 	rel, err := e.helm.GetLastRelease(meta.GetExternalName(cr))
 	if err == driver.ErrReleaseNotFound {
@@ -172,19 +178,19 @@ func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed
 		return managed.ExternalCreation{}, errors.New(errNotRelease)
 	}
 
-	fmt.Printf("Creating: %+v \n", cr.Name)
+	e.logger.Debug("Creating")
+
 	var desiredConfig map[string]interface{}
 	err := yaml.Unmarshal([]byte(cr.Spec.ForProvider.Values), &desiredConfig)
 	if err != nil {
 		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToUnmarshalDesiredValues)
 	}
 
-	cs := cr.Spec.ForProvider.Chart
-	cd := helmClient.ChartDefinition{
-		Repository: cs.Repository,
-		Name:       cs.Name,
-		Version:    cs.Version,
+	cd, err := chartDefFromSpec(ctx, e.localKube, cr.Spec.ForProvider.Chart)
+	if err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToBuildChartDef)
 	}
+
 	rel, err := e.helm.Install(meta.GetExternalName(cr), cd, desiredConfig)
 	if err != nil {
 		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToInstall)
@@ -203,19 +209,19 @@ func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed
 		return managed.ExternalUpdate{}, errors.New(errNotRelease)
 	}
 
-	fmt.Printf("Updating: %+v \n", cr.Name)
+	e.logger.Debug("Updating")
+
 	var desiredConfig map[string]interface{}
 	err := yaml.Unmarshal([]byte(cr.Spec.ForProvider.Values), &desiredConfig)
 	if err != nil {
 		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToUnmarshalDesiredValues)
 	}
 
-	cs := cr.Spec.ForProvider.Chart
-	cd := helmClient.ChartDefinition{
-		Repository: cs.Repository,
-		Name:       cs.Name,
-		Version:    cs.Version,
+	cd, err := chartDefFromSpec(ctx, e.localKube, cr.Spec.ForProvider.Chart)
+	if err != nil {
+		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToBuildChartDef)
 	}
+
 	rel, err := e.helm.Upgrade(meta.GetExternalName(cr), cd, desiredConfig)
 	if err != nil {
 		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToUpgrade)
@@ -228,12 +234,13 @@ func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed
 	return managed.ExternalUpdate{}, nil
 }
 
-func (e *helmExternal) Delete(ctx context.Context, mg resource.Managed) error {
+func (e *helmExternal) Delete(_ context.Context, mg resource.Managed) error {
 	cr, ok := mg.(*v1alpha1.Release)
 	if !ok {
 		return errors.New(errNotRelease)
 	}
 
-	fmt.Printf("Deleting: %+v \n", cr.Name)
+	e.logger.Debug("Deleting")
+
 	return errors.Wrap(e.helm.Uninstall(meta.GetExternalName(cr)), errFailedToUninstall)
 }

@@ -97,6 +97,19 @@ spec:
                   properties:
                     name:
                       type: string
+                    pullSecretRef:
+                      description: A SecretReference is a reference to a secret in an arbitrary namespace.
+                      properties:
+                        name:
+                          description: Name of the secret.
+                          type: string
+                        namespace:
+                          description: Namespace of the secret.
+                          type: string
+                      required:
+                      - name
+                      - namespace
+                      type: object
                     repository:
                       type: string
                     version:

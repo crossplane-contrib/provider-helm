@@ -24,9 +24,10 @@ import (
 
 // A ChartSpec defines the chart spec for a Release
 type ChartSpec struct {
-	Repository string `json:"repository"`
-	Name       string `json:"name"`
-	Version    string `json:"version"`
+	Repository    string                          `json:"repository"`
+	Name          string                          `json:"name"`
+	Version       string                          `json:"version"`
+	PullSecretRef runtimev1alpha1.SecretReference `json:"pullSecretRef,omitempty"`
 }
 
 // HelmValues represent inline value overrides in the CR.

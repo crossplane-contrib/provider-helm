@@ -34,8 +34,9 @@ import (
 )
 
 const (
-	helmDriverSecret = "secret"
-	chartCache       = "/tmp/charts"
+	helmDriverSecret  = "secret"
+	chartCache        = "/tmp/charts"
+	releaseMaxHistory = 20
 )
 
 const (
@@ -87,6 +88,7 @@ func NewClient(log logging.Logger, config *rest.Config, namespace string) (Clien
 
 	ic := action.NewInstall(actionConfig)
 	ic.Namespace = namespace
+	ic.CreateNamespace = true
 
 	uc := action.NewUpgrade(actionConfig)
 	uic := action.NewUninstall(actionConfig)
@@ -148,6 +150,7 @@ func (hc *client) Install(release string, chartDef ChartDefinition, vals map[str
 func (hc *client) Upgrade(release string, chartDef ChartDefinition, vals map[string]interface{}) (*release.Release, error) {
 	// Reset values so that source of truth for desired state is always the CR itself
 	hc.upgradeClient.ResetValues = true
+	hc.upgradeClient.MaxHistory = releaseMaxHistory
 
 	c, err := hc.pullAndLoadChart(chartDef.Repository, chartDef.Name, chartDef.Version, chartDef.RepoUser, chartDef.RepoPass)
 	if err != nil {
