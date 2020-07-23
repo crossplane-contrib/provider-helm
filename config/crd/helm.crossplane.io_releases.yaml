@@ -140,7 +140,6 @@ spec:
                               optional:
                                 type: boolean
                             required:
-                            - key
                             - name
                             - namespace
                             type: object
@@ -156,14 +155,13 @@ spec:
                               optional:
                                 type: boolean
                             required:
-                            - key
                             - name
                             - namespace
                             type: object
                         type: object
                       name:
                         type: string
-                      values:
+                      value:
                         type: string
                     required:
                     - name
@@ -188,7 +186,6 @@ spec:
                           optional:
                             type: boolean
                         required:
-                        - key
                         - name
                         - namespace
                         type: object
@@ -204,7 +201,6 @@ spec:
                           optional:
                             type: boolean
                         required:
-                        - key
                         - name
                         - namespace
                         type: object

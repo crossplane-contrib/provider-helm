@@ -38,8 +38,8 @@ type NamespacedName struct {
 
 // DataKeySelector defines required spec to access a key of a configmap or secret
 type DataKeySelector struct {
-	NamespacedName `json:",inline"`
-	Key            string `json:"key"`
+	NamespacedName `json:",inline,omitempty"`
+	Key            string `json:"key,omitempty"`
 	Optional       bool   `json:"optional,omitempty"`
 }
 
@@ -52,7 +52,7 @@ type ValueFromSource struct {
 // SetVal represents a "set" value override in a Release
 type SetVal struct {
 	Name      string           `json:"name"`
-	Value     string           `json:"values,omitempty"`
+	Value     string           `json:"value,omitempty"`
 	ValueFrom *ValueFromSource `json:"ValueFrom,omitempty"`
 }
 
