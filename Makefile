@@ -22,8 +22,6 @@ NPROCS ?= 1
 # to half the number of CPU cores.
 GO_TEST_PARALLEL := $(shell echo $$(( $(NPROCS) / 2 )))
 
-GO_INTEGRATION_TESTS_SUBDIRS = test
-
 GO_STATIC_PACKAGES = $(GO_PROJECT)/cmd/provider
 GO_LDFLAGS += -X $(GO_PROJECT)/pkg/version.Version=$(VERSION)
 GO_SUBDIRS += cmd pkg apis
@@ -88,9 +86,6 @@ test-integration: $(KIND) $(KUBECTL)
 	@$(ROOT_DIR)/cluster/local/integration_tests.sh || $(FAIL)
 	@$(OK) integration tests passed
 
-go-integration:
-	GO_TEST_FLAGS="-timeout 1h -v" GO_TAGS=integration $(MAKE) go.test.integration
-
 # Update the submodules, such as the common build scripts.
 submodules:
 	@git submodule sync
@@ -99,10 +94,10 @@ submodules:
 # This is for running out-of-cluster locally, and is for convenience. Running
 # this make target will print out the command which was used. For more control,
 # try running the binary directly with different arguments.
-run: go.build
+run: $(KUBECTL) generate
 	@$(INFO) Running Crossplane locally out-of-cluster . . .
-	@# To see other arguments that can be provided, run the command with --help instead
-	$(GO_OUT_DIR)/provider --debug
+	@$(KUBECTL) apply -f config/crd/ -R
+	go run cmd/provider/main.go -d
 
 dev: $(KIND) $(KUBECTL)
 	@$(INFO) Creating kind cluster
@@ -157,4 +152,4 @@ clean-package:
 manifests:
 	@$(INFO) Deprecated. Run make generate instead.
 
-.PHONY: cobertura reviewable submodules fallthrough test-integration run clean-package build-package manifests go-integration dev dev-clean
+.PHONY: cobertura reviewable submodules fallthrough test-integration run clean-package build-package manifests dev dev-clean

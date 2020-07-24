@@ -28,45 +28,28 @@ spec:
   package: "crossplane-contrib/provider-helm:latest"
 ```
 
-## Developing
+## Design 
+
+See [the design document](https://github.com/crossplane/crossplane/blob/master/design/one-pager-helm-provider.md).
+
+## Developing locally
 
 Run against a Kubernetes cluster:
 ```
 make run
 ```
 
-Install `latest` into Kubernetes cluster where Crossplane is installed:
-```
-make install
-```
+## Testing in Local Cluster
 
-Install local build into [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/)
-cluster where Crossplane is installed:
-```
-make install-local
-```
+Create a provider for local cluster. See [Kubernetes native providers](https://github.com/crossplane/crossplane/blob/master/design/one-pager-k8s-native-providers.md#proposal-kubernetes-provider-kind)
+for more information.
 
-Build, push, and install:
-```
-make all
-```
-
-Build image:
-```
-make image
-```
-
-Push image:
-```
-make push
-```
-
-Build binary:
-```
-make build
-```
-
-Build package:
-```
-make build-package
-```
+1. Deploy [RBAC for local cluster](examples/provider/local-service-account.yaml)
+2. Get the token secret name for the created service account:
+   
+    ```
+    kubectl get sa helm-provider -n crossplane-system
+    ```
+3. Replace `spec.credentialsSecretRef.name` with the token secret name in [local-provider.yaml](examples/provider/local-provider.yaml).
+4. Deploy [local-provider.yaml](examples/provider/local-provider.yaml).
+5. Now you can create `Release` resources with provider reference, see [sample release.yaml](examples/sample/release.yaml).
