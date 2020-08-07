@@ -121,6 +121,42 @@ spec:
                   type: object
                 namespace:
                   type: string
+                patchesFrom:
+                  items:
+                    description: ValueFromSource represents source of a value
+                    properties:
+                      configMapKeyRef:
+                        description: DataKeySelector defines required spec to access a key of a configmap or secret
+                        properties:
+                          key:
+                            type: string
+                          name:
+                            type: string
+                          namespace:
+                            type: string
+                          optional:
+                            type: boolean
+                        required:
+                        - name
+                        - namespace
+                        type: object
+                      secretKeyRef:
+                        description: DataKeySelector defines required spec to access a key of a configmap or secret
+                        properties:
+                          key:
+                            type: string
+                          name:
+                            type: string
+                          namespace:
+                            type: string
+                          optional:
+                            type: boolean
+                        required:
+                        - name
+                        - namespace
+                        type: object
+                    type: object
+                  type: array
                 set:
                   items:
                     description: SetVal represents a "set" value override in a Release

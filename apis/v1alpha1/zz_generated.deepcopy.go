@@ -149,6 +149,13 @@ func (in *ReleaseObservation) DeepCopy() *ReleaseObservation {
 func (in *ReleaseParameters) DeepCopyInto(out *ReleaseParameters) {
 	*out = *in
 	out.Chart = in.Chart
+	if in.PatchesFrom != nil {
+		in, out := &in.PatchesFrom, &out.PatchesFrom
+		*out = make([]ValueFromSource, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 	in.ValuesSpec.DeepCopyInto(&out.ValuesSpec)
 }
 

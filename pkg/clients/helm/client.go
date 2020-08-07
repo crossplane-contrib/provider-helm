@@ -29,6 +29,7 @@ import (
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/release"
 	"k8s.io/client-go/rest"
+	ktype "sigs.k8s.io/kustomize/api/types"
 )
 
 const (
@@ -46,8 +47,8 @@ const (
 // Client is the interface to interact with Helm
 type Client interface {
 	GetLastRelease(release string) (*release.Release, error)
-	Install(release string, chartDef ChartDefinition, vals map[string]interface{}) (*release.Release, error)
-	Upgrade(release string, chartDef ChartDefinition, vals map[string]interface{}) (*release.Release, error)
+	Install(release string, chartDef ChartDefinition, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error)
+	Upgrade(release string, chartDef ChartDefinition, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error)
 	Rollback(release string) error
 	Uninstall(release string) error
 }
@@ -136,7 +137,7 @@ func (hc *client) GetLastRelease(release string) (*release.Release, error) {
 	return hc.getClient.Run(release)
 }
 
-func (hc *client) Install(release string, chartDef ChartDefinition, vals map[string]interface{}) (*release.Release, error) {
+func (hc *client) Install(release string, chartDef ChartDefinition, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error) {
 	hc.installClient.ReleaseName = release
 
 	c, err := hc.pullAndLoadChart(chartDef.Repository, chartDef.Name, chartDef.Version, chartDef.RepoUser, chartDef.RepoPass)
@@ -144,10 +145,17 @@ func (hc *client) Install(release string, chartDef ChartDefinition, vals map[str
 		return nil, err
 	}
 
+	if len(patches) > 0 {
+		hc.installClient.PostRenderer = &KustomizationRender{
+			patches: patches,
+			logger:  hc.log,
+		}
+	}
+
 	return hc.installClient.Run(c, vals)
 }
 
-func (hc *client) Upgrade(release string, chartDef ChartDefinition, vals map[string]interface{}) (*release.Release, error) {
+func (hc *client) Upgrade(release string, chartDef ChartDefinition, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error) {
 	// Reset values so that source of truth for desired state is always the CR itself
 	hc.upgradeClient.ResetValues = true
 	hc.upgradeClient.MaxHistory = releaseMaxHistory
@@ -156,6 +164,14 @@ func (hc *client) Upgrade(release string, chartDef ChartDefinition, vals map[str
 	if err != nil {
 		return nil, err
 	}
+
+	if len(patches) > 0 {
+		hc.installClient.PostRenderer = &KustomizationRender{
+			patches: patches,
+			logger:  hc.log,
+		}
+	}
+
 	return hc.upgradeClient.Run(release, c, vals)
 }
 
