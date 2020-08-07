@@ -50,6 +50,7 @@ const (
 	errFailedToUninstall          = "failed to uninstall release"
 	errFailedToBuildChartDef      = "failed to build chart definition"
 	errFailedToComposeValues      = "failed to compose values"
+	errFailedToCreateRestConfig   = "cannot create new rest config using provider secret"
 )
 
 // SetupRelease adds a controller that reconciles Release managed resources.
@@ -106,7 +107,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 
 	rc, err := c.newRestConfigFn(creds)
 	if err != nil {
-		return nil, errors.Wrap(err, "cannot create new rest config using provider secret")
+		return nil, errors.Wrap(err, errFailedToCreateRestConfig)
 	}
 
 	k, err := c.newKubeClientFn(rc)

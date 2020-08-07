@@ -77,7 +77,7 @@ func composeValuesFromSpec(ctx context.Context, kube client.Client, spec v1alpha
 		}
 
 		if v == "" {
-			return nil, errors.Wrap(err, errMissingValueForSet)
+			return nil, errors.New(errMissingValueForSet)
 		}
 
 		if err := strvals.ParseInto(fmt.Sprintf("%s=%s", s.Name, v), base); err != nil {

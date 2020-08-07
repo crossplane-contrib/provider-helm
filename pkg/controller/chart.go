@@ -52,11 +52,11 @@ func chartDefFromSpec(ctx context.Context, kube client.Client, spec v1alpha1.Cha
 		}
 		repoUser = string(d[keyRepoUsername])
 		if repoUser == "" {
-			return helmClient.ChartDefinition{}, errors.Wrap(err, errChartPullSecretMissingUsername)
+			return helmClient.ChartDefinition{}, errors.New(errChartPullSecretMissingUsername)
 		}
 		repoPass = string(d[keyRepoPassword])
 		if repoPass == "" {
-			return helmClient.ChartDefinition{}, errors.Wrap(err, errChartPullSecretMissingPassword)
+			return helmClient.ChartDefinition{}, errors.New(errChartPullSecretMissingPassword)
 		}
 	}
 

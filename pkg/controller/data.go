@@ -35,9 +35,10 @@ const (
 	errFailedToGetConfigMap = "failed to get configmap from namespace \"%s\""
 	errConfigMapDataIsNil   = "configmap data is nil"
 
-	errSourceNotSetForValueFrom     = "source not set for value from"
-	errFailedToGetDataFromSecretRef = "failed to get data from secret ref"
-	errMissingKeyForValuesFrom      = "missing key \"%s\" in values from source"
+	errSourceNotSetForValueFrom        = "source not set for value from"
+	errFailedToGetDataFromSecretRef    = "failed to get data from secret ref"
+	errFailedToGetDataFromConfigMapRef = "failed to get data from configmap ref"
+	errMissingKeyForValuesFrom         = "missing key \"%s\" in values from source"
 )
 
 func getSecretData(ctx context.Context, kube client.Client, nn types.NamespacedName) (map[string][]byte, error) {
@@ -86,10 +87,10 @@ func getDataValueFromSource(ctx context.Context, kube client.Client, source v1al
 		r := source.ConfigMapKeyRef
 		d, err := getConfigMapData(ctx, kube, types.NamespacedName{Name: r.Name, Namespace: r.Namespace})
 		if kerrors.IsNotFound(errors.Cause(err)) && !r.Optional {
-			return "", errors.Wrap(err, errFailedToGetDataFromSecretRef)
+			return "", errors.Wrap(err, errFailedToGetDataFromConfigMapRef)
 		}
 		if err != nil && !kerrors.IsNotFound(errors.Cause(err)) {
-			return "", errors.Wrap(err, errFailedToGetDataFromSecretRef)
+			return "", errors.Wrap(err, errFailedToGetDataFromConfigMapRef)
 		}
 		k := defaultKey
 		if r.Key != "" {
