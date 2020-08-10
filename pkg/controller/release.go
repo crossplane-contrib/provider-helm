@@ -51,6 +51,7 @@ const (
 	errFailedToBuildChartDef      = "failed to build chart definition"
 	errFailedToComposeValues      = "failed to compose values"
 	errFailedToCreateRestConfig   = "cannot create new rest config using provider secret"
+	errFailedToLoadPatches        = "failed to load patches"
 )
 
 // SetupRelease adds a controller that reconciles Release managed resources.
@@ -186,7 +187,12 @@ func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed
 		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToBuildChartDef)
 	}
 
-	rel, err := e.helm.Install(meta.GetExternalName(cr), cd, cv)
+	p, err := getPatchesFromSpec(ctx, e.localKube, cr.Spec.ForProvider.PatchesFrom)
+	if err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToLoadPatches)
+	}
+
+	rel, err := e.helm.Install(meta.GetExternalName(cr), cd, cv, p)
 	if err != nil {
 		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToInstall)
 	}
@@ -216,7 +222,12 @@ func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed
 		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToBuildChartDef)
 	}
 
-	rel, err := e.helm.Upgrade(meta.GetExternalName(cr), cd, cv)
+	p, err := getPatchesFromSpec(ctx, e.localKube, cr.Spec.ForProvider.PatchesFrom)
+	if err != nil {
+		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToLoadPatches)
+	}
+
+	rel, err := e.helm.Upgrade(meta.GetExternalName(cr), cd, cv, p)
 	if err != nil {
 		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToUpgrade)
 	}

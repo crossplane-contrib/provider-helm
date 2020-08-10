@@ -66,9 +66,10 @@ type ValuesSpec struct {
 
 // ReleaseParameters are the configurable fields of a Release.
 type ReleaseParameters struct {
-	Chart      ChartSpec `json:"chart"`
-	Namespace  string    `json:"namespace"`
-	ValuesSpec `json:",inline"`
+	Chart       ChartSpec         `json:"chart"`
+	Namespace   string            `json:"namespace"`
+	PatchesFrom []ValueFromSource `json:"patchesFrom,omitempty"`
+	ValuesSpec  `json:",inline"`
 }
 
 // ReleaseObservation are the observable fields of a Release.

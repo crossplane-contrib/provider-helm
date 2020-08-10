@@ -5,26 +5,23 @@ import (
 	"fmt"
 	"testing"
 
-	"helm.sh/helm/v3/pkg/storage/driver"
-
-	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
-
-	"helm.sh/helm/v3/pkg/chart"
-
-	"helm.sh/helm/v3/pkg/release"
-
 	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
+	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 	kubev1alpha1 "github.com/crossplane/crossplane/apis/kubernetes/v1alpha1"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
+	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v3/pkg/storage/driver"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/kustomize/api/types"
 
 	"github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
 	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
@@ -68,8 +65,8 @@ func helmRelase(rm ...helmReleaseModifier) *v1alpha1.Release {
 }
 
 type MockGetLastReleaseFn func(release string) (*release.Release, error)
-type MockInstallFn func(release string, chartDef helmClient.ChartDefinition, vals map[string]interface{}) (*release.Release, error)
-type MockUpgradeFn func(release string, chartDef helmClient.ChartDefinition, vals map[string]interface{}) (*release.Release, error)
+type MockInstallFn func(release string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (*release.Release, error)
+type MockUpgradeFn func(release string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (*release.Release, error)
 type MockRollBackFn func(release string) error
 type MockUninstallFn func(release string) error
 
@@ -85,12 +82,12 @@ func (c *MockHelmClient) GetLastRelease(release string) (*release.Release, error
 	return c.MockGetLastRelease(release)
 }
 
-func (c *MockHelmClient) Install(release string, chartDef helmClient.ChartDefinition, vals map[string]interface{}) (*release.Release, error) {
-	return c.MockInstall(release, chartDef, vals)
+func (c *MockHelmClient) Install(release string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (*release.Release, error) {
+	return c.MockInstall(release, chartDef, vals, patches)
 }
 
-func (c *MockHelmClient) Upgrade(release string, chartDef helmClient.ChartDefinition, vals map[string]interface{}) (*release.Release, error) {
-	return c.MockUpgrade(release, chartDef, vals)
+func (c *MockHelmClient) Upgrade(release string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (*release.Release, error) {
+	return c.MockUpgrade(release, chartDef, vals, patches)
 }
 
 func (c *MockHelmClient) Rollback(release string) error {
@@ -429,7 +426,7 @@ func Test_helmExternal_Create(t *testing.T) {
 		"InstalledFailed": {
 			args: args{
 				helm: &MockHelmClient{
-					MockInstall: func(r string, chartDef helmClient.ChartDefinition, vals map[string]interface{}) (hr *release.Release, err error) {
+					MockInstall: func(r string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
 						return nil, errBoom
 					},
 				},
@@ -442,7 +439,7 @@ func Test_helmExternal_Create(t *testing.T) {
 		"InstalledButLastReleaseIsNil": {
 			args: args{
 				helm: &MockHelmClient{
-					MockInstall: func(r string, chartDef helmClient.ChartDefinition, vals map[string]interface{}) (hr *release.Release, err error) {
+					MockInstall: func(r string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
 						return nil, nil
 					},
 				},
@@ -455,7 +452,7 @@ func Test_helmExternal_Create(t *testing.T) {
 		"Success": {
 			args: args{
 				helm: &MockHelmClient{
-					MockInstall: func(r string, chartDef helmClient.ChartDefinition, vals map[string]interface{}) (hr *release.Release, err error) {
+					MockInstall: func(r string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
 						return &release.Release{}, nil
 					},
 				},
@@ -507,7 +504,7 @@ func Test_helmExternal_Update(t *testing.T) {
 		"UpgradeFailed": {
 			args: args{
 				helm: &MockHelmClient{
-					MockUpgrade: func(r string, chartDef helmClient.ChartDefinition, vals map[string]interface{}) (hr *release.Release, err error) {
+					MockUpgrade: func(r string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
 						return nil, errBoom
 					},
 				},
@@ -520,7 +517,7 @@ func Test_helmExternal_Update(t *testing.T) {
 		"UpgradedButLastReleaseIsNil": {
 			args: args{
 				helm: &MockHelmClient{
-					MockUpgrade: func(r string, chartDef helmClient.ChartDefinition, vals map[string]interface{}) (hr *release.Release, err error) {
+					MockUpgrade: func(r string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
 						return nil, nil
 					},
 				},
@@ -533,7 +530,7 @@ func Test_helmExternal_Update(t *testing.T) {
 		"Success": {
 			args: args{
 				helm: &MockHelmClient{
-					MockUpgrade: func(r string, chartDef helmClient.ChartDefinition, vals map[string]interface{}) (hr *release.Release, err error) {
+					MockUpgrade: func(r string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
 						return &release.Release{}, nil
 					},
 				},
