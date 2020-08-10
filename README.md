@@ -34,12 +34,25 @@ See [the design document](https://github.com/crossplane/crossplane/blob/master/d
 
 ## Developing locally
 
-Run against a Kubernetes cluster:
+Start a local development environment with Kind where `crossplane` is installed:
+
+```
+make local-dev
+```
+
+Run controller against the cluster:
+
 ```
 make run
 ```
 
-## Testing in Local Cluster
+Since controller is running outside of the Kind cluster, you need to make api server accessible (on a separate terminal):
+
+```
+sudo kubectl proxy --port=80
+```
+
+### Testing in Local Cluster
 
 Create a provider for local cluster. See [Kubernetes native providers](https://github.com/crossplane/crossplane/blob/master/design/one-pager-k8s-native-providers.md#proposal-kubernetes-provider-kind)
 for more information.
@@ -53,3 +66,9 @@ for more information.
 3. Replace `spec.credentialsSecretRef.name` with the token secret name in [local-provider.yaml](examples/provider/local-provider.yaml).
 4. Deploy [local-provider.yaml](examples/provider/local-provider.yaml).
 5. Now you can create `Release` resources with provider reference, see [sample release.yaml](examples/sample/release.yaml).
+
+### Cleanup
+
+```
+make local.down
+```

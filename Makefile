@@ -46,6 +46,16 @@ IMAGES = provider-helm
 -include build/makelib/image.mk
 
 # ====================================================================================
+# Setup Local Dev
+HELM_VERSION ?= v2.16.7
+HELM_CHARTS = ""
+HELM_BASE_URL = ""
+HELM_S3_BUCKET = ""
+-include build/makelib/helm.mk
+-include build/makelib/local.mk
+
+local-dev: local.up local.deploy.crossplane
+# ====================================================================================
 # Targets
 
 # run `make help` to see the targets and options
