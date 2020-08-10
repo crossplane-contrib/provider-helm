@@ -8,8 +8,6 @@ require (
 	github.com/crossplane/crossplane-tools v0.0.0-20200412230150-efd0edd4565b
 	github.com/google/go-cmp v0.4.0
 	github.com/pkg/errors v0.9.1
-	golang.org/x/tools v0.0.0-20191018212557-ed542cd5b28a // indirect
-	golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543 // indirect
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	helm.sh/helm/v3 v3.2.4
 	k8s.io/api v0.18.5

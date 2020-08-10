@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	kustomizationFileName = "kustomization.yaml"
-	helmOutputFileName    = "helm-output.yaml"
+	kustomizationFileName  = "kustomization.yaml"
+	helmOutputFileName     = "helm-output.yaml"
+	helmTempDirNamePattern = "helm-post-render"
 )
 
 // KustomizationRender Implements helm PostRenderer interface
@@ -26,7 +27,7 @@ type KustomizationRender struct {
 
 // Run runs a set of Kustomize patches against yaml input and returns the patched content.
 func (kr KustomizationRender) Run(renderedManifests *bytes.Buffer) (modifiedManifests *bytes.Buffer, err error) {
-	d, err := ioutil.TempDir("", "helm-post-render")
+	d, err := ioutil.TempDir("", helmTempDirNamePattern)
 	if err != nil {
 		return nil, err
 	}
