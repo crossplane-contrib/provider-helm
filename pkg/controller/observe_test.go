@@ -4,10 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/pkg/errors"
-
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 	"github.com/google/go-cmp/cmp"
+	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -281,10 +280,41 @@ func Test_isUpToDate(t *testing.T) {
 				err: nil,
 			},
 		},
+		"SuccessPatchesAdded": {
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				in: &v1alpha1.ReleaseParameters{
+					Chart: v1alpha1.ChartSpec{
+						Name:    testChart,
+						Version: testVersion,
+					},
+					ValuesSpec: v1alpha1.ValuesSpec{
+						Values: testReleaseConfigStr,
+					},
+				},
+				observed: &release.Release{
+					Chart: &chart.Chart{
+						Raw: nil,
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: testVersion,
+						},
+					},
+					Config: testReleaseConfig,
+				},
+			},
+			want: want{
+				out: true,
+				err: nil,
+			},
+		},
 	}
+
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got, gotErr := isUpToDate(context.Background(), tc.args.kube, tc.args.in, tc.args.observed)
+			got, gotErr := isUpToDate(context.Background(), tc.args.kube, tc.args.in, tc.args.observed, v1alpha1.ReleaseStatus{})
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
 				t.Fatalf("isUpToDate(...): -want error, +got error: %s", diff)
 			}

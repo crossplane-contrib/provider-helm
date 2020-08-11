@@ -31,7 +31,206 @@ patches:
   target:
     kind: Deployment
 `
+	testMockPatchSha = "magicsha"
 )
+
+func Test_ShaOf(t *testing.T) {
+	pd := types.Patch{
+		Patch: "- op: add\n  path: /spec/template/spec/nodeSelector\n  value:\n    node.size: really-big\n    aws.az: us-west-2a\n    patch.name: " + testCMName,
+		Target: &types.Selector{
+			Gvk: resid.Gvk{
+				Kind: "Deployment",
+			},
+		},
+	}
+	type args struct {
+		patches []types.Patch
+	}
+
+	type want struct {
+		sha string
+		err error
+	}
+	cases := map[string]struct {
+		args
+		want
+	}{
+		"SuccessSha": {
+			args: args{
+				patches: []types.Patch{
+					pd,
+				},
+			},
+			want: want{
+				sha: "a38aee2ef839c3e754444bf80c625900d4b38102591083069bd8f5e55389e8c2",
+				err: nil,
+			},
+		},
+		"Success2Sha": {
+			args: args{
+				patches: []types.Patch{
+					pd,
+					pd,
+				},
+			},
+			want: want{
+				sha: "770183113f382b18c0a0c0343e735852023331b38db70de4f2111aa85d765ec9",
+				err: nil,
+			},
+		},
+		"SuccessEmptyPatchSha": {
+			args: args{
+				patches: []types.Patch{},
+			},
+			want: want{
+				sha: "",
+				err: nil,
+			},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			p := patchSha{}
+			got, gotErr := p.shaOf(tc.args.patches)
+
+			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
+				t.Fatalf("shaOf(...): -want error, +got error: %s", diff)
+			}
+
+			if diff := cmp.Diff(tc.want.sha, got); diff != "" {
+				t.Errorf("shaOf(...): -want result, +got result: %s", diff)
+			}
+		})
+	}
+}
+
+type mockShaOf struct {
+	sum string
+	err error
+}
+
+func (m mockShaOf) shaOf(patches []types.Patch) (string, error) {
+	return m.sum, m.err
+}
+
+type mockPatchGet struct {
+	patches []types.Patch
+	err     error
+}
+
+func (m mockPatchGet) getFromSpec(ctx context.Context, kube client.Client, vals []v1alpha1.ValueFromSource) ([]types.Patch, error) {
+	return m.patches, m.err
+}
+
+func Test_PatchHasUpdates(t *testing.T) {
+	pd := types.Patch{
+		Patch: "- op: add\n  path: /spec/template/spec/nodeSelector\n  value:\n    node.size: really-big\n    aws.az: us-west-2a\n    patch.name: " + testCMName,
+		Target: &types.Selector{
+			Gvk: resid.Gvk{
+				Kind: "Deployment",
+			},
+		},
+	}
+	type args struct {
+		existingSha           string
+		getPatchesFromSpec    []types.Patch
+		getPatchesFromSpecErr error
+		shaOf                 string
+		shaOfErr              error
+	}
+
+	type want struct {
+		updates bool
+		err     error
+	}
+	cases := map[string]struct {
+		args
+		want
+	}{
+		"SuccessNoUpdates": {
+			args: args{
+				shaOf: testMockPatchSha,
+				getPatchesFromSpec: []types.Patch{
+					pd,
+				},
+				existingSha: testMockPatchSha,
+			},
+			want: want{
+				updates: false,
+				err:     nil,
+			},
+		},
+		"SuccessUpdatesNewSha": {
+			args: args{
+				shaOf: testMockPatchSha,
+				getPatchesFromSpec: []types.Patch{
+					pd,
+				},
+				existingSha: "",
+			},
+			want: want{
+				updates: true,
+				err:     nil,
+			},
+		},
+		"SuccessUpdatesDifferentSha": {
+			args: args{
+				shaOf: testMockPatchSha,
+				getPatchesFromSpec: []types.Patch{
+					pd,
+				},
+				existingSha: "nonMatchingSha",
+			},
+			want: want{
+				updates: true,
+				err:     nil,
+			},
+		},
+		"ErrGetPatches": {
+			args: args{
+				getPatchesFromSpecErr: fmt.Errorf("boom"),
+			},
+			want: want{
+				updates: false,
+				err:     fmt.Errorf("boom"),
+			},
+		},
+		"ErrGetSha": {
+			args: args{
+				shaOfErr: fmt.Errorf("boom"),
+			},
+			want: want{
+				updates: false,
+				err:     fmt.Errorf("boom"),
+			},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			p := patch{
+				patchHasher: mockShaOf{
+					sum: tc.shaOf,
+					err: tc.shaOfErr,
+				},
+				patchGetter: mockPatchGet{
+					patches: tc.args.getPatchesFromSpec,
+					err:     tc.args.getPatchesFromSpecErr,
+				},
+			}
+			s := v1alpha1.ReleaseStatus{
+				PatchesSha: tc.existingSha,
+			}
+			got, gotErr := p.hasUpdates(context.Background(), nil, nil, s)
+
+			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
+				t.Fatalf("Patch.hasUpdates(...): -want error, +got error: %s", diff)
+			}
+			if diff := cmp.Diff(tc.want.updates, got); diff != "" {
+				t.Errorf("Patch.hasUpdates(...): -want result, +got result: %s", diff)
+			}
+		})
+	}
+}
 
 func Test_getPatchesFromSpec(t *testing.T) {
 	type args struct {
@@ -194,12 +393,14 @@ func Test_getPatchesFromSpec(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got, gotErr := getPatchesFromSpec(context.Background(), tc.args.kube, tc.args.spec)
+			pg := patchGet{}
+			got, gotErr := pg.getFromSpec(context.Background(), tc.args.kube, tc.args.spec)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
-				t.Fatalf("getPatchesFromSpec(...): -want error, +got error: %s", diff)
+				t.Fatalf("getFromSpec(...): -want error, +got error: %s", diff)
 			}
+
 			if diff := cmp.Diff(tc.want.out, got); diff != "" {
-				t.Errorf("getPatchesFromSpec(...): -want result, +got result: %s", diff)
+				t.Errorf("getFromSpec(...): -want result, +got result: %s", diff)
 			}
 		})
 	}

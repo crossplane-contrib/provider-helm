@@ -20,10 +20,9 @@ import (
 	"context"
 	"reflect"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/release"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
 )
@@ -46,7 +45,7 @@ func generateObservation(in *release.Release) v1alpha1.ReleaseObservation {
 }
 
 // isUpToDate checks whether desired spec up to date with the observed state for a given release
-func isUpToDate(ctx context.Context, kube client.Client, in *v1alpha1.ReleaseParameters, observed *release.Release) (bool, error) {
+func isUpToDate(ctx context.Context, kube client.Client, in *v1alpha1.ReleaseParameters, observed *release.Release, s v1alpha1.ReleaseStatus) (bool, error) {
 	oc := observed.Chart
 	if oc == nil {
 		return false, errors.New(errChartNilInObservedRelease)
@@ -68,6 +67,15 @@ func isUpToDate(ctx context.Context, kube client.Client, in *v1alpha1.ReleasePar
 	}
 
 	if !reflect.DeepEqual(desiredConfig, observed.Config) {
+		return false, nil
+	}
+
+	changed, err := newPatcher().hasUpdates(ctx, kube, in.PatchesFrom, s)
+	if err != nil {
+		return false, errors.Wrap(err, errFailedToLoadPatches)
+	}
+
+	if changed {
 		return false, nil
 	}
 

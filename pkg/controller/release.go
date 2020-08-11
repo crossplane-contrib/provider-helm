@@ -52,6 +52,7 @@ const (
 	errFailedToComposeValues      = "failed to compose values"
 	errFailedToCreateRestConfig   = "cannot create new rest config using provider secret"
 	errFailedToLoadPatches        = "failed to load patches"
+	errFailedToUpdatePatchSha     = "failed to update patch sha"
 )
 
 // SetupRelease adds a controller that reconciles Release managed resources.
@@ -123,6 +124,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 		localKube: c.client,
 		kube:      k,
 		helm:      h,
+		patch:     newPatcher(),
 	}, errors.Wrap(err, errNewKubernetesClient)
 }
 
@@ -131,6 +133,7 @@ type helmExternal struct {
 	localKube client.Client
 	kube      client.Client
 	helm      helmClient.Client
+	patch     Patcher
 }
 
 func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
@@ -157,8 +160,7 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 	}
 
 	cr.Status.AtProvider = generateObservation(rel)
-
-	u, err := isUpToDate(ctx, e.localKube, &cr.Spec.ForProvider, rel)
+	u, err := isUpToDate(ctx, e.localKube, &cr.Spec.ForProvider, rel, cr.Status)
 	if err != nil {
 		return managed.ExternalObservation{}, errors.Wrap(err, errFailedToCheckIfUpToDate)
 	}
@@ -171,6 +173,7 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 
 func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
 	cr, ok := mg.(*v1alpha1.Release)
+
 	if !ok {
 		return managed.ExternalCreation{}, errors.New(errNotRelease)
 	}
@@ -187,7 +190,7 @@ func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed
 		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToBuildChartDef)
 	}
 
-	p, err := getPatchesFromSpec(ctx, e.localKube, cr.Spec.ForProvider.PatchesFrom)
+	p, err := e.patch.getFromSpec(ctx, e.localKube, cr.Spec.ForProvider.PatchesFrom)
 	if err != nil {
 		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToLoadPatches)
 	}
@@ -196,11 +199,18 @@ func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed
 	if err != nil {
 		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToInstall)
 	}
+
 	if rel == nil {
 		return managed.ExternalCreation{}, errors.New(errLastReleaseIsNil)
 	}
 
+	sha, err := e.patch.shaOf(p)
+	if err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, errFailedToUpdatePatchSha)
+	}
+	cr.Status.PatchesSha = sha
 	cr.Status.AtProvider = generateObservation(rel)
+
 	return managed.ExternalCreation{}, nil
 }
 
@@ -222,7 +232,7 @@ func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed
 		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToBuildChartDef)
 	}
 
-	p, err := getPatchesFromSpec(ctx, e.localKube, cr.Spec.ForProvider.PatchesFrom)
+	p, err := e.patch.getFromSpec(ctx, e.localKube, cr.Spec.ForProvider.PatchesFrom)
 	if err != nil {
 		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToLoadPatches)
 	}
@@ -234,6 +244,12 @@ func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed
 	if rel == nil {
 		return managed.ExternalUpdate{}, errors.New(errLastReleaseIsNil)
 	}
+
+	sha, err := e.patch.shaOf(p)
+	if err != nil {
+		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToUpdatePatchSha)
+	}
+	cr.Status.PatchesSha = sha
 
 	cr.Status.AtProvider = generateObservation(rel)
 	return managed.ExternalUpdate{}, nil
