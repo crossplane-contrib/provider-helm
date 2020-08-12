@@ -47,11 +47,17 @@ IMAGES = provider-helm
 
 # ====================================================================================
 # Setup Local Dev
+# TODO(hasan): Workaround since including helm.mk in build module requires a helm chart and this repo has no helm chart
 HELM_VERSION ?= v2.16.7
-HELM_CHARTS = ""
-HELM_BASE_URL = ""
-HELM_S3_BUCKET = ""
--include build/makelib/helm.mk
+HELM := $(TOOLS_HOST_DIR)/helm-$(HELM_VERSION)
+$(HELM):
+	@$(INFO) installing helm $(HOSTOS)-$(HOSTARCH)
+	@mkdir -p $(TOOLS_HOST_DIR)/tmp-helm
+	@curl -fsSL https://storage.googleapis.com/kubernetes-helm/helm-$(HELM_VERSION)-$(HOSTOS)-$(HOSTARCH).tar.gz | tar -xz -C $(TOOLS_HOST_DIR)/tmp-helm
+	@mv $(TOOLS_HOST_DIR)/tmp-helm/$(HOSTOS)-$(HOSTARCH)/helm $(HELM)
+	@rm -fr $(TOOLS_HOST_DIR)/tmp-helm
+	@$(OK) installing helm $(HOSTOS)-$(HOSTARCH)
+
 -include build/makelib/local.mk
 
 local-dev: local.up local.deploy.crossplane
