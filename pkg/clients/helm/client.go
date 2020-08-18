@@ -166,7 +166,7 @@ func (hc *client) Upgrade(release string, chartDef ChartDefinition, vals map[str
 	}
 
 	if len(patches) > 0 {
-		hc.installClient.PostRenderer = &KustomizationRender{
+		hc.upgradeClient.PostRenderer = &KustomizationRender{
 			patches: patches,
 			logger:  hc.log,
 		}

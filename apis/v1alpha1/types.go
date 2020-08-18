@@ -88,6 +88,7 @@ type ReleaseSpec struct {
 type ReleaseStatus struct {
 	runtimev1alpha1.ResourceStatus `json:",inline"`
 	AtProvider                     ReleaseObservation `json:"atProvider,omitempty"`
+	PatchesSha                     string             `json:"patchesSha,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -342,6 +342,8 @@ spec:
                 - type
                 type: object
               type: array
+            patchesSha:
+              type: string
           type: object
       required:
       - spec
