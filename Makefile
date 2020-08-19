@@ -47,17 +47,6 @@ IMAGES = provider-helm
 
 # ====================================================================================
 # Setup Local Dev
-# TODO(hasan): Workaround since including helm.mk in build module requires a helm chart and this repo has no helm chart
-HELM_VERSION ?= v2.16.7
-HELM := $(TOOLS_HOST_DIR)/helm-$(HELM_VERSION)
-$(HELM):
-	@$(INFO) installing helm $(HOSTOS)-$(HOSTARCH)
-	@mkdir -p $(TOOLS_HOST_DIR)/tmp-helm
-	@curl -fsSL https://storage.googleapis.com/kubernetes-helm/helm-$(HELM_VERSION)-$(HOSTOS)-$(HOSTARCH).tar.gz | tar -xz -C $(TOOLS_HOST_DIR)/tmp-helm
-	@mv $(TOOLS_HOST_DIR)/tmp-helm/$(HOSTOS)-$(HOSTARCH)/helm $(HELM)
-	@rm -fr $(TOOLS_HOST_DIR)/tmp-helm
-	@$(OK) installing helm $(HOSTOS)-$(HOSTARCH)
-
 -include build/makelib/local.mk
 
 local-dev: local.up local.deploy.crossplane
@@ -92,15 +81,6 @@ check-diff: reviewable
 	@$(INFO) checking that branch is clean
 	@test -z "$$(git status --porcelain)" || $(FAIL)
 	@$(OK) branch is clean
-
-# integration tests
-e2e.run: test-integration
-
-# Run integration tests.
-test-integration: $(KIND) $(KUBECTL)
-	@$(INFO) running integration tests using kind $(KIND_VERSION)
-	@$(ROOT_DIR)/cluster/local/integration_tests.sh || $(FAIL)
-	@$(OK) integration tests passed
 
 # Update the submodules, such as the common build scripts.
 submodules:
@@ -168,4 +148,4 @@ clean-package:
 manifests:
 	@$(INFO) Deprecated. Run make generate instead.
 
-.PHONY: cobertura reviewable submodules fallthrough test-integration run clean-package build-package manifests dev dev-clean
+.PHONY: cobertura reviewable submodules fallthrough run clean-package build-package manifests dev dev-clean

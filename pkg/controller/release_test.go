@@ -470,6 +470,7 @@ func Test_helmExternal_Create(t *testing.T) {
 				localKube: tc.args.localKube,
 				kube:      tc.args.kube,
 				helm:      tc.args.helm,
+				patch:     newPatcher(),
 			}
 			_, gotErr := e.Create(context.Background(), tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
@@ -548,6 +549,7 @@ func Test_helmExternal_Update(t *testing.T) {
 				localKube: tc.args.localKube,
 				kube:      tc.args.kube,
 				helm:      tc.args.helm,
+				patch:     newPatcher(),
 			}
 			_, gotErr := e.Update(context.Background(), tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
