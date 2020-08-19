@@ -9,7 +9,7 @@ spec:
     matchLabels:
       core.crossplane.io/name: "provider-helm"
   replicas: 1
-  helm:
+  template:
     metadata:
       name: "provider-helm-controller"
       labels:
