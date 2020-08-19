@@ -1,4 +1,8 @@
-# provider-helm (WIP)
+[![Build Status](https://jenkinsci.upbound.io/job/crossplane/job/provider-helm/job/provider-helm/job/master/badge/icon)](https://jenkinsci.upbound.io/job/crossplane/job/provider-helm/job/provider-helm/job/master/)
+[![GitHub release](https://img.shields.io/github/release/crossplane-contrib/provider-helm/all.svg?style=flat-square)](https://github.com/crossplane-contrib/provider-helm/releases)
+[![Go Report Card](https://goreportcard.com/badge/github.com/crossplane-contrib/provider-helm)](https://goreportcard.com/report/github.com/crossplane-contrib/provider-helm)
+
+# provider-helm
 
 `provider-helm` is a Crossplane Provider that enables deployment and management
 of Helm Releases on Kubernetes clusters typically provisioned by Crossplane:
