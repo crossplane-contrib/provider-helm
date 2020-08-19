@@ -45,7 +45,7 @@ source: "https://github.com/crossplane-contrib/provider-helm"
 # resources in the groups listed below.
 permissionScope: Cluster
 dependsOn:
-- crd: '*.compute.crossplane.io/v1alpha1'
+- crd: '*.kubernetes.crossplane.io/v1alpha1'
 
 # License SPDX name: https://spdx.org/licenses/
 license: Apache-2.0
