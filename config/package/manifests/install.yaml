@@ -26,3 +26,5 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: XDG_CACHE_HOME
+          value: /tmp
