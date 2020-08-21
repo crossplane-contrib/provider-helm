@@ -19,11 +19,11 @@ package controller
 import (
 	"context"
 
+	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
 	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
 )
 
@@ -39,32 +39,29 @@ const (
 	errChartPullSecretMissingPassword  = "password missing in chart pull secret"
 )
 
-func chartDefFromSpec(ctx context.Context, kube client.Client, spec v1alpha1.ChartSpec) (helmClient.ChartDefinition, error) {
+func repoCredsFromSecret(ctx context.Context, kube client.Client, secretRef runtimev1alpha1.SecretReference) (*helmClient.RepoCreds, error) {
 	repoUser := ""
 	repoPass := ""
-	if spec.PullSecretRef.Name != "" {
-		if spec.PullSecretRef.Namespace == "" {
-			return helmClient.ChartDefinition{}, errors.New(errChartPullSecretMissingNamespace)
+	if secretRef.Name != "" {
+		if secretRef.Namespace == "" {
+			return nil, errors.New(errChartPullSecretMissingNamespace)
 		}
-		d, err := getSecretData(ctx, kube, types.NamespacedName{Name: spec.PullSecretRef.Name, Namespace: spec.PullSecretRef.Namespace})
+		d, err := getSecretData(ctx, kube, types.NamespacedName{Name: secretRef.Name, Namespace: secretRef.Namespace})
 		if err != nil {
-			return helmClient.ChartDefinition{}, errors.Wrap(err, errFailedToGetRepoPullSecret)
+			return nil, errors.Wrap(err, errFailedToGetRepoPullSecret)
 		}
 		repoUser = string(d[keyRepoUsername])
 		if repoUser == "" {
-			return helmClient.ChartDefinition{}, errors.New(errChartPullSecretMissingUsername)
+			return nil, errors.New(errChartPullSecretMissingUsername)
 		}
 		repoPass = string(d[keyRepoPassword])
 		if repoPass == "" {
-			return helmClient.ChartDefinition{}, errors.New(errChartPullSecretMissingPassword)
+			return nil, errors.New(errChartPullSecretMissingPassword)
 		}
 	}
 
-	return helmClient.ChartDefinition{
-		Repository: spec.Repository,
-		Name:       spec.Name,
-		Version:    spec.Version,
-		RepoUser:   repoUser,
-		RepoPass:   repoPass,
+	return &helmClient.RepoCreds{
+		Username: repoUser,
+		Password: repoPass,
 	}, nil
 }

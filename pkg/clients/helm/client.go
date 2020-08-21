@@ -18,8 +18,10 @@ package helm
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/pkg/errors"
@@ -30,6 +32,8 @@ import (
 	"helm.sh/helm/v3/pkg/release"
 	"k8s.io/client-go/rest"
 	ktype "sigs.k8s.io/kustomize/api/types"
+
+	"github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
 )
 
 const (
@@ -42,15 +46,17 @@ const (
 	errFailedToCheckIfLocalChartExists = "failed to check if cached chart file exists"
 	errFailedToPullChart               = "failed to pull chart"
 	errFailedToLoadChart               = "failed to load chart"
+	errUnexpectedDirContentTmpl        = "expected 1 .tgz chart file, got [%s]"
 )
 
 // Client is the interface to interact with Helm
 type Client interface {
 	GetLastRelease(release string) (*release.Release, error)
-	Install(release string, chartDef ChartDefinition, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error)
-	Upgrade(release string, chartDef ChartDefinition, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error)
+	Install(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error)
+	Upgrade(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error)
 	Rollback(release string) error
 	Uninstall(release string) error
+	PullAndLoadChart(spec *v1alpha1.ChartSpec, creds *RepoCreds) (*chart.Chart, error)
 }
 
 type client struct {
@@ -76,12 +82,14 @@ func NewClient(log logging.Logger, config *rest.Config, namespace string) (Clien
 	}
 
 	pc := action.NewPull()
+
 	if _, err := os.Stat(chartCache); os.IsNotExist(err) {
 		err = os.Mkdir(chartCache, 0750)
 		if err != nil {
 			return nil, err
 		}
 	}
+
 	pc.DestDir = chartCache
 	pc.Settings = &cli.EnvSettings{}
 
@@ -107,26 +115,87 @@ func NewClient(log logging.Logger, config *rest.Config, namespace string) (Clien
 	}, nil
 }
 
-func (hc *client) pullAndLoadChart(repo, name, version, username, password string) (*chart.Chart, error) {
-	pc := hc.pullClient
-
-	pc.RepoURL = repo
-	pc.Version = version
-	pc.Username = username
-	pc.Password = password
-
-	df := filepath.Join(pc.DestDir, fmt.Sprintf("%s-%s.tgz", name, version))
-	if _, err := os.Stat(df); os.IsNotExist(err) {
-		o, err := pc.Run(name)
-		hc.log.Debug(o)
-		if err != nil {
-			return nil, errors.Wrap(err, errFailedToPullChart)
+func getChartFileName(dir string) (string, error) {
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	if len(files) != 1 {
+		fileNames := make([]string, 0, len(files))
+		for _, f := range files {
+			fileNames = append(fileNames, f.Name())
 		}
-	} else if err != nil {
-		return nil, errors.Wrap(err, errFailedToCheckIfLocalChartExists)
+		return "", errors.Errorf(errUnexpectedDirContentTmpl, strings.Join(fileNames, ","))
+	}
+	return files[0].Name(), nil
+}
+
+// Pulls latest chart version. Returns absolute chartFilePath or error.
+func (hc *client) pullLatestChartVersion(spec *v1alpha1.ChartSpec, creds *RepoCreds) (string, error) {
+	tmpDir, err := ioutil.TempDir(chartCache, "")
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			hc.log.WithValues("tmpDir", tmpDir).Info("failed to remove temporary directory")
+		}
+	}()
+
+	if err := hc.pullChart(spec, creds, tmpDir); err != nil {
+		return "", nil
 	}
 
-	chart, err := loader.Load(df)
+	chartFileName, err := getChartFileName(tmpDir)
+	if err != nil {
+		return "", err
+	}
+
+	chartFilePath := filepath.Join(chartCache, chartFileName)
+	if err := os.Rename(filepath.Join(tmpDir, chartFileName), chartFilePath); err != nil {
+		return "", nil
+	}
+	return chartFilePath, nil
+}
+
+func (hc *client) pullChart(spec *v1alpha1.ChartSpec, creds *RepoCreds, chartDir string) error {
+	pc := hc.pullClient
+
+	pc.RepoURL = spec.Repository
+	pc.Version = spec.Version
+	pc.Username = creds.Username
+	pc.Password = creds.Password
+
+	pc.DestDir = chartDir
+
+	o, err := pc.Run(spec.Name)
+	hc.log.Debug(o)
+	if err != nil {
+		return errors.Wrap(err, errFailedToPullChart)
+	}
+	return nil
+}
+
+func (hc *client) PullAndLoadChart(spec *v1alpha1.ChartSpec, creds *RepoCreds) (*chart.Chart, error) {
+	var chartFilePath string
+	var err error
+	if spec.Version == "" {
+		chartFilePath, err = hc.pullLatestChartVersion(spec, creds)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		chartFilePath = filepath.Join(chartCache, fmt.Sprintf("%s-%s.tgz", spec.Name, spec.Version))
+		if _, err := os.Stat(chartFilePath); os.IsNotExist(err) {
+			if err = hc.pullChart(spec, creds, chartCache); err != nil {
+				return nil, err
+			}
+		} else if err != nil {
+			return nil, errors.Wrap(err, errFailedToCheckIfLocalChartExists)
+		}
+	}
+
+	chart, err := loader.Load(chartFilePath)
 	if err != nil {
 		return nil, errors.Wrap(err, errFailedToLoadChart)
 	}
@@ -137,13 +206,8 @@ func (hc *client) GetLastRelease(release string) (*release.Release, error) {
 	return hc.getClient.Run(release)
 }
 
-func (hc *client) Install(release string, chartDef ChartDefinition, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error) {
+func (hc *client) Install(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error) {
 	hc.installClient.ReleaseName = release
-
-	c, err := hc.pullAndLoadChart(chartDef.Repository, chartDef.Name, chartDef.Version, chartDef.RepoUser, chartDef.RepoPass)
-	if err != nil {
-		return nil, err
-	}
 
 	if len(patches) > 0 {
 		hc.installClient.PostRenderer = &KustomizationRender{
@@ -152,18 +216,13 @@ func (hc *client) Install(release string, chartDef ChartDefinition, vals map[str
 		}
 	}
 
-	return hc.installClient.Run(c, vals)
+	return hc.installClient.Run(chart, vals)
 }
 
-func (hc *client) Upgrade(release string, chartDef ChartDefinition, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error) {
+func (hc *client) Upgrade(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error) {
 	// Reset values so that source of truth for desired state is always the CR itself
 	hc.upgradeClient.ResetValues = true
 	hc.upgradeClient.MaxHistory = releaseMaxHistory
-
-	c, err := hc.pullAndLoadChart(chartDef.Repository, chartDef.Name, chartDef.Version, chartDef.RepoUser, chartDef.RepoPass)
-	if err != nil {
-		return nil, err
-	}
 
 	if len(patches) > 0 {
 		hc.upgradeClient.PostRenderer = &KustomizationRender{
@@ -172,7 +231,7 @@ func (hc *client) Upgrade(release string, chartDef ChartDefinition, vals map[str
 		}
 	}
 
-	return hc.upgradeClient.Run(release, c, vals)
+	return hc.upgradeClient.Run(release, chart, vals)
 }
 
 func (hc *client) Rollback(release string) error {

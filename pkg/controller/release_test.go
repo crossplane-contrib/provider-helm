@@ -52,7 +52,11 @@ func helmRelase(rm ...helmReleaseModifier) *v1alpha1.Release {
 					Name: providerName,
 				},
 			},
-			ForProvider: v1alpha1.ReleaseParameters{},
+			ForProvider: v1alpha1.ReleaseParameters{
+				Chart: v1alpha1.ChartSpec{
+					Version: testVersion,
+				},
+			},
 		},
 		Status: v1alpha1.ReleaseStatus{},
 	}
@@ -65,29 +69,31 @@ func helmRelase(rm ...helmReleaseModifier) *v1alpha1.Release {
 }
 
 type MockGetLastReleaseFn func(release string) (*release.Release, error)
-type MockInstallFn func(release string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (*release.Release, error)
-type MockUpgradeFn func(release string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (*release.Release, error)
+type MockInstallFn func(release string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (*release.Release, error)
+type MockUpgradeFn func(release string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (*release.Release, error)
 type MockRollBackFn func(release string) error
 type MockUninstallFn func(release string) error
+type MockPullAndLoadChartFn func(spec *v1alpha1.ChartSpec, creds *helmClient.RepoCreds) (*chart.Chart, error)
 
 type MockHelmClient struct {
-	MockGetLastRelease MockGetLastReleaseFn
-	MockInstall        MockInstallFn
-	MockUpgrade        MockUpgradeFn
-	MockRollBack       MockRollBackFn
-	MockUninstall      MockUninstallFn
+	MockGetLastRelease   MockGetLastReleaseFn
+	MockInstall          MockInstallFn
+	MockUpgrade          MockUpgradeFn
+	MockRollBack         MockRollBackFn
+	MockUninstall        MockUninstallFn
+	MockPullAndLoadChart MockPullAndLoadChartFn
 }
 
 func (c *MockHelmClient) GetLastRelease(release string) (*release.Release, error) {
 	return c.MockGetLastRelease(release)
 }
 
-func (c *MockHelmClient) Install(release string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (*release.Release, error) {
-	return c.MockInstall(release, chartDef, vals, patches)
+func (c *MockHelmClient) Install(release string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (*release.Release, error) {
+	return c.MockInstall(release, chart, vals, patches)
 }
 
-func (c *MockHelmClient) Upgrade(release string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (*release.Release, error) {
-	return c.MockUpgrade(release, chartDef, vals, patches)
+func (c *MockHelmClient) Upgrade(release string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (*release.Release, error) {
+	return c.MockUpgrade(release, chart, vals, patches)
 }
 
 func (c *MockHelmClient) Rollback(release string) error {
@@ -96,6 +102,13 @@ func (c *MockHelmClient) Rollback(release string) error {
 
 func (c *MockHelmClient) Uninstall(release string) error {
 	return c.MockUninstall(release)
+}
+
+func (c *MockHelmClient) PullAndLoadChart(spec *v1alpha1.ChartSpec, creds *helmClient.RepoCreds) (*chart.Chart, error) {
+	if c.MockPullAndLoadChart != nil {
+		return c.MockPullAndLoadChart(spec, creds)
+	}
+	return nil, nil
 }
 
 type notHelmRelease struct {
@@ -407,6 +420,7 @@ func Test_helmExternal_Create(t *testing.T) {
 		kube      client.Client
 		helm      helmClient.Client
 		mg        resource.Managed
+		updateFn  func(ctx context.Context, obj runtime.Object, opts ...client.UpdateOption) error
 	}
 	type want struct {
 		err error
@@ -426,7 +440,7 @@ func Test_helmExternal_Create(t *testing.T) {
 		"InstalledFailed": {
 			args: args{
 				helm: &MockHelmClient{
-					MockInstall: func(r string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
+					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
 						return nil, errBoom
 					},
 				},
@@ -439,24 +453,53 @@ func Test_helmExternal_Create(t *testing.T) {
 		"InstalledButLastReleaseIsNil": {
 			args: args{
 				helm: &MockHelmClient{
-					MockInstall: func(r string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
+					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
 						return nil, nil
 					},
 				},
 				mg: helmRelase(),
 			},
 			want: want{
-				err: errors.New(errLastReleaseIsNil),
+				err: errors.Wrap(errors.New(errLastReleaseIsNil), errFailedToInstall),
 			},
 		},
 		"Success": {
 			args: args{
 				helm: &MockHelmClient{
-					MockInstall: func(r string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
+					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
 						return &release.Release{}, nil
 					},
 				},
 				mg: helmRelase(),
+			},
+			want: want{
+				err: nil,
+			},
+		},
+		"LatestVersion": {
+			args: args{
+				helm: &MockHelmClient{
+					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
+						return &release.Release{}, nil
+					},
+					MockPullAndLoadChart: func(spec *v1alpha1.ChartSpec, creds *helmClient.RepoCreds) (*chart.Chart, error) {
+						return &chart.Chart{
+							Metadata: &chart.Metadata{
+								Version: testVersion,
+							},
+						}, nil
+					},
+				},
+				mg: helmRelase(func(r *v1alpha1.Release) {
+					r.Spec.ForProvider.Chart.Version = ""
+				}),
+				updateFn: func(ctx context.Context, obj runtime.Object, opts ...client.UpdateOption) error {
+					cr := obj.(*v1alpha1.Release)
+					if diff := cmp.Diff(cr.Spec.ForProvider.Chart.Version, testVersion); diff != "" {
+						t.Fatalf("updateFn(...): -want version, +got version: %s", diff)
+					}
+					return nil
+				},
 			},
 			want: want{
 				err: nil,
@@ -471,6 +514,11 @@ func Test_helmExternal_Create(t *testing.T) {
 				kube:      tc.args.kube,
 				helm:      tc.args.helm,
 				patch:     newPatcher(),
+			}
+			if tc.args.updateFn != nil {
+				e.localKube = &test.MockClient{
+					MockUpdate: tc.args.updateFn,
+				}
 			}
 			_, gotErr := e.Create(context.Background(), tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
@@ -505,7 +553,7 @@ func Test_helmExternal_Update(t *testing.T) {
 		"UpgradeFailed": {
 			args: args{
 				helm: &MockHelmClient{
-					MockUpgrade: func(r string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
+					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
 						return nil, errBoom
 					},
 				},
@@ -518,20 +566,20 @@ func Test_helmExternal_Update(t *testing.T) {
 		"UpgradedButLastReleaseIsNil": {
 			args: args{
 				helm: &MockHelmClient{
-					MockUpgrade: func(r string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
+					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
 						return nil, nil
 					},
 				},
 				mg: helmRelase(),
 			},
 			want: want{
-				err: errors.New(errLastReleaseIsNil),
+				err: errors.Wrap(errors.New(errLastReleaseIsNil), errFailedToUpgrade),
 			},
 		},
 		"Success": {
 			args: args{
 				helm: &MockHelmClient{
-					MockUpgrade: func(r string, chartDef helmClient.ChartDefinition, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
+					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
 						return &release.Release{}, nil
 					},
 				},
