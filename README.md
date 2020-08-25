@@ -62,14 +62,17 @@ Create a provider for local cluster. See [Kubernetes native providers](https://g
 for more information.
 
 1. Deploy [RBAC for local cluster](examples/provider/local-service-account.yaml)
-2. Get the token secret name for the created service account:
-   
+
     ```
-    kubectl get sa helm-provider -n crossplane-system
+    kubectl apply -f examples/provider/local-service-account.yaml
     ```
-3. Replace `spec.credentialsSecretRef.name` with the token secret name in [local-provider.yaml](examples/provider/local-provider.yaml).
-4. Deploy [local-provider.yaml](examples/provider/local-provider.yaml).
-5. Now you can create `Release` resources with provider reference, see [sample release.yaml](examples/sample/release.yaml).
+1. Deploy [local-provider.yaml](examples/provider/local-provider.yaml) by replacing `spec.credentialsSecretRef.name` with the token secret name.
+
+    ```
+    EXP="s/<helm-provider-token-secret-name>/$(kubectl get sa helm-provider -n crossplane-system -o jsonpath="{.secrets[0].name}")/g"
+    cat examples/provider/local-provider.yaml | sed -e "${EXP}" | kubectl apply -f -
+    ```
+1. Now you can create `Release` resources with provider reference, see [sample release.yaml](examples/sample/release.yaml).
 
 ### Cleanup
 

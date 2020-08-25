@@ -76,12 +76,14 @@ type ReleaseParameters struct {
 type ReleaseObservation struct {
 	State              release.Status `json:"state,omitempty"`
 	ReleaseDescription string         `json:"releaseDescription,omitempty"`
+	Revision           int            `json:"revision,omitempty"`
 }
 
 // A ReleaseSpec defines the desired state of a Release.
 type ReleaseSpec struct {
 	runtimev1alpha1.ResourceSpec `json:",inline"`
 	ForProvider                  ReleaseParameters `json:"forProvider"`
+	RollbackLimit                *int32            `json:"rollbackLimit,omitempty"`
 }
 
 // A ReleaseStatus represents the observed state of a Release.
@@ -89,6 +91,8 @@ type ReleaseStatus struct {
 	runtimev1alpha1.ResourceStatus `json:",inline"`
 	AtProvider                     ReleaseObservation `json:"atProvider,omitempty"`
 	PatchesSha                     string             `json:"patchesSha,omitempty"`
+	Failed                         int32              `json:"failed,omitempty"`
+	Synced                         bool               `json:"synced,omitempty"`
 }
 
 // +kubebuilder:object:root=true

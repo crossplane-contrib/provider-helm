@@ -140,7 +140,7 @@ type helmExternal struct {
 	patch     Patcher
 }
 
-func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
+func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) { // nolint:gocyclo
 	cr, ok := mg.(*v1alpha1.Release)
 	if !ok {
 		return managed.ExternalObservation{}, errors.New(errNotRelease)
@@ -164,20 +164,29 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 	}
 
 	cr.Status.AtProvider = generateObservation(rel)
-	u, err := isUpToDate(ctx, e.localKube, &cr.Spec.ForProvider, rel, cr.Status)
+	s, err := isUpToDate(ctx, e.localKube, &cr.Spec.ForProvider, rel, cr.Status)
 	if err != nil {
 		return managed.ExternalObservation{}, errors.Wrap(err, errFailedToCheckIfUpToDate)
+	}
+	cr.Status.Synced = s
+	shouldCallUpdate := !s
+
+	if cr.Status.AtProvider.State == release.StatusDeployed && s {
+		cr.Status.Failed = 0
+	} else if cr.Status.AtProvider.State == release.StatusFailed &&
+		cr.Spec.RollbackLimit != nil && cr.Status.Failed < *cr.Spec.RollbackLimit {
+		shouldCallUpdate = true
 	}
 
 	return managed.ExternalObservation{
 		ResourceExists:   true,
-		ResourceUpToDate: u,
+		ResourceUpToDate: !shouldCallUpdate,
 	}, nil
 }
 
-type chartAction func(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error)
+type deployFunc func(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error)
 
-func (e *helmExternal) run(ctx context.Context, cr *v1alpha1.Release, action chartAction) error { // nolint:gocyclo
+func (e *helmExternal) deploy(ctx context.Context, cr *v1alpha1.Release, deployF deployFunc) error { // nolint:gocyclo
 	cv, err := composeValuesFromSpec(ctx, e.localKube, cr.Spec.ForProvider.ValuesSpec)
 	if err != nil {
 		return errors.Wrap(err, errFailedToComposeValues)
@@ -204,7 +213,7 @@ func (e *helmExternal) run(ctx context.Context, cr *v1alpha1.Release, action cha
 		}
 	}
 
-	rel, err := action(meta.GetExternalName(cr), chart, cv, p)
+	rel, err := deployF(meta.GetExternalName(cr), chart, cv, p)
 
 	if err != nil {
 		return err
@@ -231,7 +240,7 @@ func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed
 	}
 
 	e.logger.Debug("Creating")
-	return managed.ExternalCreation{}, errors.Wrap(e.run(ctx, cr, e.helm.Install), errFailedToInstall)
+	return managed.ExternalCreation{}, errors.Wrap(e.deploy(ctx, cr, e.helm.Install), errFailedToInstall)
 }
 
 func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
@@ -240,8 +249,26 @@ func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed
 		return managed.ExternalUpdate{}, errors.New(errNotRelease)
 	}
 
+	if cr.Spec.RollbackLimit != nil &&
+		cr.Status.Synced && cr.Status.AtProvider.State == release.StatusFailed {
+		e.logger.Debug("Last release failed")
+		if cr.Status.Failed < *cr.Spec.RollbackLimit {
+			// Rollback
+			e.logger.Debug("Will rollback to retry")
+			cr.Status.Failed++
+			if cr.Status.AtProvider.Revision < 2 {
+				e.logger.Debug("Uninstalling")
+				return managed.ExternalUpdate{}, e.helm.Uninstall(meta.GetExternalName(cr))
+			}
+			e.logger.Debug("Rolling back to previous release version")
+			return managed.ExternalUpdate{}, e.helm.Rollback(meta.GetExternalName(cr))
+		}
+		e.logger.Debug("Reached max rollback retries, will not retry")
+		return managed.ExternalUpdate{}, nil
+	}
+
 	e.logger.Debug("Updating")
-	return managed.ExternalUpdate{}, errors.Wrap(e.run(ctx, cr, e.helm.Upgrade), errFailedToUpgrade)
+	return managed.ExternalUpdate{}, errors.Wrap(e.deploy(ctx, cr, e.helm.Upgrade), errFailedToUpgrade)
 }
 
 func (e *helmExternal) Delete(_ context.Context, mg resource.Managed) error {

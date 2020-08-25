@@ -3,11 +3,15 @@ kind: Release
 metadata:
   name: wordpress-example
 spec:
+#  rollbackLimit: 3
   forProvider:
     chart:
       name: wordpress
       repository: https://charts.bitnami.com/bitnami
       version: 9.3.19
+#      pullSecretRef:
+#        name: museum-creds
+#        namespace: default
     namespace: wordpress
     values: |
       param1: value1
@@ -15,17 +19,17 @@ spec:
     set:
       - name: param1
         value: value2
-    valuesFrom:
-      - configMapKeyRef:
-          key: values.yaml
-          name: default-vals
-          namespace: wordpress
-          optional: false
-      - secretKeyRef:
-          key: svalues.yaml
-          name: svals
-          namespace: wordpress
-          optional: false
+#    valuesFrom:
+#      - configMapKeyRef:
+#          key: values.yaml
+#          name: default-vals
+#          namespace: wordpress
+#          optional: false
+#      - secretKeyRef:
+#          key: svalues.yaml
+#          name: svals
+#          namespace: wordpress
+#          optional: false
   providerRef:
     name: local-provider
   reclaimPolicy: Delete

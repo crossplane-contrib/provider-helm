@@ -40,12 +40,20 @@ func generateObservation(in *release.Release) v1alpha1.ReleaseObservation {
 	if relInfo != nil {
 		o.State = relInfo.Status
 		o.ReleaseDescription = relInfo.Description
+		o.Revision = in.Version
 	}
 	return o
 }
 
 // isUpToDate checks whether desired spec up to date with the observed state for a given release
-func isUpToDate(ctx context.Context, kube client.Client, in *v1alpha1.ReleaseParameters, observed *release.Release, s v1alpha1.ReleaseStatus) (bool, error) {
+func isUpToDate(ctx context.Context, kube client.Client, in *v1alpha1.ReleaseParameters, observed *release.Release, s v1alpha1.ReleaseStatus) (bool, error) { // nolint:gocyclo
+	if observed.Info != nil &&
+		(observed.Info.Status == release.StatusPendingInstall ||
+			observed.Info.Status == release.StatusPendingUpgrade ||
+			observed.Info.Status == release.StatusPendingRollback) {
+		return false, nil
+	}
+
 	oc := observed.Chart
 	if oc == nil {
 		return false, errors.New(errChartNilInObservedRelease)

@@ -550,6 +550,79 @@ func Test_helmExternal_Update(t *testing.T) {
 				err: errors.New(errNotRelease),
 			},
 		},
+		"RetryUninstallFails": {
+			args: args{
+				helm: &MockHelmClient{
+					MockUninstall: func(release string) error {
+						return errBoom
+					},
+				},
+				mg: helmRelase(func(r *v1alpha1.Release) {
+					l := int32(3)
+					r.Spec.RollbackLimit = &l
+					r.Status.Synced = true
+					r.Status.AtProvider.Revision = 1
+					r.Status.AtProvider.State = release.StatusFailed
+				}),
+			},
+			want: want{
+				err: errBoom,
+			},
+		},
+		"RetryRollbackFails": {
+			args: args{
+				helm: &MockHelmClient{
+					MockRollBack: func(release string) error {
+						return errBoom
+					},
+				},
+				mg: helmRelase(func(r *v1alpha1.Release) {
+					l := int32(3)
+					r.Spec.RollbackLimit = &l
+					r.Status.Synced = true
+					r.Status.AtProvider.Revision = 3
+					r.Status.AtProvider.State = release.StatusFailed
+				}),
+			},
+			want: want{
+				err: errBoom,
+			},
+		},
+		"RetryRollbackSuccess": {
+			args: args{
+				helm: &MockHelmClient{
+					MockRollBack: func(release string) error {
+						return nil
+					},
+				},
+				mg: helmRelase(func(r *v1alpha1.Release) {
+					l := int32(3)
+					r.Spec.RollbackLimit = &l
+					r.Status.Synced = true
+					r.Status.AtProvider.Revision = 3
+					r.Status.AtProvider.State = release.StatusFailed
+				}),
+			},
+			want: want{
+				err: nil,
+			},
+		},
+		"MaxRetry": {
+			args: args{
+				helm: &MockHelmClient{},
+				mg: helmRelase(func(r *v1alpha1.Release) {
+					l := int32(3)
+					r.Spec.RollbackLimit = &l
+					r.Status.Failed = 3
+					r.Status.Synced = true
+					r.Status.AtProvider.Revision = 3
+					r.Status.AtProvider.State = release.StatusFailed
+				}),
+			},
+			want: want{
+				err: nil,
+			},
+		},
 		"UpgradeFailed": {
 			args: args{
 				helm: &MockHelmClient{
