@@ -174,8 +174,8 @@ func (in *ReleaseSpec) DeepCopyInto(out *ReleaseSpec) {
 	*out = *in
 	in.ResourceSpec.DeepCopyInto(&out.ResourceSpec)
 	in.ForProvider.DeepCopyInto(&out.ForProvider)
-	if in.RollbackLimit != nil {
-		in, out := &in.RollbackLimit, &out.RollbackLimit
+	if in.RollbackRetriesLimit != nil {
+		in, out := &in.RollbackRetriesLimit, &out.RollbackRetriesLimit
 		*out = new(int32)
 		**out = **in
 	}

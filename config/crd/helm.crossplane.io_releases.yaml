@@ -161,7 +161,11 @@ spec:
                   items:
                     description: SetVal represents a "set" value override in a Release
                     properties:
-                      ValueFrom:
+                      name:
+                        type: string
+                      value:
+                        type: string
+                      valueFrom:
                         description: ValueFromSource represents source of a value
                         properties:
                           configMapKeyRef:
@@ -195,10 +199,6 @@ spec:
                             - namespace
                             type: object
                         type: object
-                      name:
-                        type: string
-                      value:
-                        type: string
                     required:
                     - name
                     type: object
@@ -278,6 +278,7 @@ spec:
               - Delete
               type: string
             rollbackLimit:
+              description: RollbackRetriesLimit is max number of attempts to retry Helm deployment by rolling back the release.
               format: int32
               type: integer
             writeConnectionSecretToRef:

@@ -40,7 +40,7 @@ const (
 	errMissingValueForSet             = "missing value for --set"
 )
 
-func composeValuesFromSpec(ctx context.Context, kube client.Client, spec v1alpha1.ValuesSpec) (map[string]interface{}, error) { // nolint:gocyclo
+func composeValuesFromSpec(ctx context.Context, kube client.Client, spec v1alpha1.ValuesSpec) (map[string]interface{}, error) {
 	base := map[string]interface{}{}
 
 	for _, vf := range spec.ValuesFrom {

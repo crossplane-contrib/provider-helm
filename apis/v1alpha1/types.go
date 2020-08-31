@@ -53,7 +53,7 @@ type ValueFromSource struct {
 type SetVal struct {
 	Name      string           `json:"name"`
 	Value     string           `json:"value,omitempty"`
-	ValueFrom *ValueFromSource `json:"ValueFrom,omitempty"`
+	ValueFrom *ValueFromSource `json:"valueFrom,omitempty"`
 }
 
 // ValuesSpec defines the Helm value overrides spec for a Release
@@ -83,7 +83,8 @@ type ReleaseObservation struct {
 type ReleaseSpec struct {
 	runtimev1alpha1.ResourceSpec `json:",inline"`
 	ForProvider                  ReleaseParameters `json:"forProvider"`
-	RollbackLimit                *int32            `json:"rollbackLimit,omitempty"`
+	// RollbackRetriesLimit is max number of attempts to retry Helm deployment by rolling back the release.
+	RollbackRetriesLimit *int32 `json:"rollbackLimit,omitempty"`
 }
 
 // A ReleaseStatus represents the observed state of a Release.

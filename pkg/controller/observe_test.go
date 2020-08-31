@@ -99,9 +99,35 @@ func Test_isUpToDate(t *testing.T) {
 		args
 		want
 	}{
+		"InfoNilInObserved": {
+			args: args{
+				observed: &release.Release{
+					Info: nil,
+				},
+			},
+			want: want{
+				out: false,
+				err: errors.New(errReleaseInfoNilInObservedRelease),
+			},
+		},
+		"PendingReturnsNotUpToDate": {
+			args: args{
+				observed: &release.Release{
+					Info: &release.Info{
+						Status: release.StatusPendingUpgrade,
+					},
+					Chart:  nil,
+					Config: testReleaseConfig,
+				},
+			},
+			want: want{
+				out: false,
+			},
+		},
 		"ChartNilInObserved": {
 			args: args{
 				observed: &release.Release{
+					Info:   &release.Info{},
 					Chart:  nil,
 					Config: testReleaseConfig,
 				},
@@ -114,6 +140,7 @@ func Test_isUpToDate(t *testing.T) {
 		"ChartMetaNilInObserved": {
 			args: args{
 				observed: &release.Release{
+					Info: &release.Info{},
 					Chart: &chart.Chart{
 						Raw:      nil,
 						Metadata: nil,
@@ -141,6 +168,7 @@ func Test_isUpToDate(t *testing.T) {
 					},
 				},
 				observed: &release.Release{
+					Info: &release.Info{},
 					Chart: &chart.Chart{
 						Raw: nil,
 						Metadata: &chart.Metadata{
@@ -175,6 +203,7 @@ func Test_isUpToDate(t *testing.T) {
 					},
 				},
 				observed: &release.Release{
+					Info: &release.Info{},
 					Chart: &chart.Chart{
 						Raw: nil,
 						Metadata: &chart.Metadata{
@@ -205,6 +234,7 @@ func Test_isUpToDate(t *testing.T) {
 					},
 				},
 				observed: &release.Release{
+					Info: &release.Info{},
 					Chart: &chart.Chart{
 						Raw: nil,
 						Metadata: &chart.Metadata{
@@ -235,6 +265,7 @@ func Test_isUpToDate(t *testing.T) {
 					},
 				},
 				observed: &release.Release{
+					Info: &release.Info{},
 					Chart: &chart.Chart{
 						Raw: nil,
 						Metadata: &chart.Metadata{
@@ -265,6 +296,7 @@ func Test_isUpToDate(t *testing.T) {
 					},
 				},
 				observed: &release.Release{
+					Info: &release.Info{},
 					Chart: &chart.Chart{
 						Raw: nil,
 						Metadata: &chart.Metadata{
@@ -295,6 +327,7 @@ func Test_isUpToDate(t *testing.T) {
 					},
 				},
 				observed: &release.Release{
+					Info: &release.Info{},
 					Chart: &chart.Chart{
 						Raw: nil,
 						Metadata: &chart.Metadata{

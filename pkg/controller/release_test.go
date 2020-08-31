@@ -54,6 +54,7 @@ func helmRelase(rm ...helmReleaseModifier) *v1alpha1.Release {
 			},
 			ForProvider: v1alpha1.ReleaseParameters{
 				Chart: v1alpha1.ChartSpec{
+					Name:    testChart,
 					Version: testVersion,
 				},
 			},
@@ -370,10 +371,10 @@ func Test_helmExternal_Observe(t *testing.T) {
 				mg: helmRelase(),
 			},
 			want: want{
-				err: errors.Wrap(errors.New(errChartNilInObservedRelease), errFailedToCheckIfUpToDate),
+				err: errors.Wrap(errors.New(errReleaseInfoNilInObservedRelease), errFailedToCheckIfUpToDate),
 			},
 		},
-		"UpdateDate": {
+		"Synced_ButShouldRollback": {
 			args: args{
 				localKube: nil,
 				kube:      nil,
@@ -381,12 +382,46 @@ func Test_helmExternal_Observe(t *testing.T) {
 					MockGetLastRelease: func(r string) (hr *release.Release, err error) {
 						return &release.Release{
 							Name: r,
+							Info: &release.Info{
+								Status: release.StatusFailed,
+							},
 							Chart: &chart.Chart{
 								Metadata: &chart.Metadata{
 									Name:    testChart,
 									Version: testVersion,
 								},
 							},
+							Config: map[string]interface{}{},
+						}, nil
+					},
+				},
+				mg: helmRelase(func(r *v1alpha1.Release) {
+					rl := int32(3)
+					r.Spec.RollbackRetriesLimit = &rl
+					r.Status.Failed = 0
+				}),
+			},
+			want: want{
+				out: managed.ExternalObservation{ResourceExists: true, ResourceUpToDate: false},
+				err: nil,
+			},
+		},
+		"UpToDate": {
+			args: args{
+				localKube: nil,
+				kube:      nil,
+				helm: &MockHelmClient{
+					MockGetLastRelease: func(r string) (hr *release.Release, err error) {
+						return &release.Release{
+							Name: r,
+							Info: &release.Info{},
+							Chart: &chart.Chart{
+								Metadata: &chart.Metadata{
+									Name:    testChart,
+									Version: testVersion,
+								},
+							},
+							Config: map[string]interface{}{},
 						}, nil
 					},
 				},
@@ -406,9 +441,13 @@ func Test_helmExternal_Observe(t *testing.T) {
 				kube:      tc.args.kube,
 				helm:      tc.args.helm,
 			}
-			_, gotErr := e.Observe(context.Background(), tc.args.mg)
+			got, gotErr := e.Observe(context.Background(), tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
 				t.Fatalf("e.Observe(...): -want error, +got error: %s", diff)
+			}
+
+			if diff := cmp.Diff(tc.want.out, got); diff != "" {
+				t.Fatalf("e.Observe(...): -want out, +got out: %s", diff)
 			}
 		})
 	}
@@ -559,7 +598,7 @@ func Test_helmExternal_Update(t *testing.T) {
 				},
 				mg: helmRelase(func(r *v1alpha1.Release) {
 					l := int32(3)
-					r.Spec.RollbackLimit = &l
+					r.Spec.RollbackRetriesLimit = &l
 					r.Status.Synced = true
 					r.Status.AtProvider.Revision = 1
 					r.Status.AtProvider.State = release.StatusFailed
@@ -578,7 +617,7 @@ func Test_helmExternal_Update(t *testing.T) {
 				},
 				mg: helmRelase(func(r *v1alpha1.Release) {
 					l := int32(3)
-					r.Spec.RollbackLimit = &l
+					r.Spec.RollbackRetriesLimit = &l
 					r.Status.Synced = true
 					r.Status.AtProvider.Revision = 3
 					r.Status.AtProvider.State = release.StatusFailed
@@ -597,7 +636,7 @@ func Test_helmExternal_Update(t *testing.T) {
 				},
 				mg: helmRelase(func(r *v1alpha1.Release) {
 					l := int32(3)
-					r.Spec.RollbackLimit = &l
+					r.Spec.RollbackRetriesLimit = &l
 					r.Status.Synced = true
 					r.Status.AtProvider.Revision = 3
 					r.Status.AtProvider.State = release.StatusFailed
@@ -612,7 +651,7 @@ func Test_helmExternal_Update(t *testing.T) {
 				helm: &MockHelmClient{},
 				mg: helmRelase(func(r *v1alpha1.Release) {
 					l := int32(3)
-					r.Spec.RollbackLimit = &l
+					r.Spec.RollbackRetriesLimit = &l
 					r.Status.Failed = 3
 					r.Status.Synced = true
 					r.Status.AtProvider.Revision = 3
