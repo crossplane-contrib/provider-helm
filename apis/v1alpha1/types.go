@@ -53,7 +53,7 @@ type ValueFromSource struct {
 type SetVal struct {
 	Name      string           `json:"name"`
 	Value     string           `json:"value,omitempty"`
-	ValueFrom *ValueFromSource `json:"ValueFrom,omitempty"`
+	ValueFrom *ValueFromSource `json:"valueFrom,omitempty"`
 }
 
 // ValuesSpec defines the Helm value overrides spec for a Release
@@ -76,12 +76,15 @@ type ReleaseParameters struct {
 type ReleaseObservation struct {
 	State              release.Status `json:"state,omitempty"`
 	ReleaseDescription string         `json:"releaseDescription,omitempty"`
+	Revision           int            `json:"revision,omitempty"`
 }
 
 // A ReleaseSpec defines the desired state of a Release.
 type ReleaseSpec struct {
 	runtimev1alpha1.ResourceSpec `json:",inline"`
 	ForProvider                  ReleaseParameters `json:"forProvider"`
+	// RollbackRetriesLimit is max number of attempts to retry Helm deployment by rolling back the release.
+	RollbackRetriesLimit *int32 `json:"rollbackLimit,omitempty"`
 }
 
 // A ReleaseStatus represents the observed state of a Release.
@@ -89,6 +92,8 @@ type ReleaseStatus struct {
 	runtimev1alpha1.ResourceStatus `json:",inline"`
 	AtProvider                     ReleaseObservation `json:"atProvider,omitempty"`
 	PatchesSha                     string             `json:"patchesSha,omitempty"`
+	Failed                         int32              `json:"failed,omitempty"`
+	Synced                         bool               `json:"synced,omitempty"`
 }
 
 // +kubebuilder:object:root=true

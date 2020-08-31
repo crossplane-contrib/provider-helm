@@ -28,8 +28,9 @@ import (
 )
 
 const (
-	errChartNilInObservedRelease     = "chart field is nil in observed helm release"
-	errChartMetaNilInObservedRelease = "chart metadata field is nil in observed helm release"
+	errReleaseInfoNilInObservedRelease = "release info is nil in observed helm release"
+	errChartNilInObservedRelease       = "chart field is nil in observed helm release"
+	errChartMetaNilInObservedRelease   = "chart metadata field is nil in observed helm release"
 )
 
 // generateObservation generates release observation for the input release object
@@ -40,12 +41,21 @@ func generateObservation(in *release.Release) v1alpha1.ReleaseObservation {
 	if relInfo != nil {
 		o.State = relInfo.Status
 		o.ReleaseDescription = relInfo.Description
+		o.Revision = in.Version
 	}
 	return o
 }
 
 // isUpToDate checks whether desired spec up to date with the observed state for a given release
 func isUpToDate(ctx context.Context, kube client.Client, in *v1alpha1.ReleaseParameters, observed *release.Release, s v1alpha1.ReleaseStatus) (bool, error) {
+	if observed.Info == nil {
+		return false, errors.New(errReleaseInfoNilInObservedRelease)
+	}
+
+	if isPending(observed.Info.Status) {
+		return false, nil
+	}
+
 	oc := observed.Chart
 	if oc == nil {
 		return false, errors.New(errChartNilInObservedRelease)
@@ -80,4 +90,8 @@ func isUpToDate(ctx context.Context, kube client.Client, in *v1alpha1.ReleasePar
 	}
 
 	return true, nil
+}
+
+func isPending(s release.Status) bool {
+	return s == release.StatusPendingInstall || s == release.StatusPendingUpgrade || s == release.StatusPendingRollback
 }
