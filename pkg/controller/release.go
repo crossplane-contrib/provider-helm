@@ -19,8 +19,7 @@ package controller
 import (
 	"context"
 
-	v1alpha12 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
-
+	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
 	"github.com/crossplane/crossplane-runtime/pkg/event"
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
@@ -128,7 +127,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 
 	// TODO(hasan): Remove below HACK, once https://github.com/crossplane/crossplane/issues/1687 resolved
 	// HACK
-	p.Status.SetConditions(v1alpha12.Available())
+	p.Status.SetConditions(runtimev1alpha1.Available())
 	if err := c.client.Status().Update(ctx, p); err != nil {
 		return nil, errors.Wrap(err, "Failed to update ProviderConfig status")
 	}
@@ -242,6 +241,7 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1alpha1.Release, action 
 	}
 	cr.Status.PatchesSha = sha
 	cr.Status.AtProvider = generateObservation(rel)
+	cr.Status.SetConditions(runtimev1alpha1.Available())
 
 	return nil
 }
