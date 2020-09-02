@@ -10,7 +10,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/pkg/test"
-	kubev1alpha1 "github.com/crossplane/crossplane/apis/kubernetes/v1alpha1"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
@@ -23,7 +22,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/api/types"
 
-	"github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
+	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
+	helmv1alpha1 "github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
 	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
 )
 
@@ -40,7 +40,7 @@ const (
 
 type helmReleaseModifier func(release *v1alpha1.Release)
 
-func helmRelase(rm ...helmReleaseModifier) *v1alpha1.Release {
+func helmRelease(rm ...helmReleaseModifier) *v1alpha1.Release {
 	r := &v1alpha1.Release{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      testReleaseName,
@@ -48,7 +48,7 @@ func helmRelase(rm ...helmReleaseModifier) *v1alpha1.Release {
 		},
 		Spec: v1alpha1.ReleaseSpec{
 			ResourceSpec: runtimev1alpha1.ResourceSpec{
-				ProviderReference: &corev1.ObjectReference{
+				ProviderConfigReference: &runtimev1alpha1.Reference{
 					Name: providerName,
 				},
 			},
@@ -117,12 +117,17 @@ type notHelmRelease struct {
 }
 
 func Test_connector_Connect(t *testing.T) {
-	provider := kubev1alpha1.Provider{
+	providerConfig := helmv1alpha1.ProviderConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: providerName},
-		Spec: kubev1alpha1.ProviderSpec{
-			Secret: runtimev1alpha1.SecretReference{
-				Name:      providerSecretName,
-				Namespace: providerSecretNamespace,
+		Spec: helmv1alpha1.ProviderConfigSpec{
+			ProviderConfigSpec: runtimev1alpha1.ProviderConfigSpec{
+				CredentialsSecretRef: &runtimev1alpha1.SecretKeySelector{
+					SecretReference: runtimev1alpha1.SecretReference{
+						Name:      providerSecretName,
+						Namespace: providerSecretNamespace,
+					},
+					Key: "",
+				},
 			},
 		},
 	}
@@ -159,13 +164,13 @@ func Test_connector_Connect(t *testing.T) {
 				client: &test.MockClient{
 					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
 						if key.Name == providerName {
-							*obj.(*kubev1alpha1.Provider) = provider
+							*obj.(*helmv1alpha1.ProviderConfig) = providerConfig
 							return errBoom
 						}
 						return nil
 					},
 				},
-				mg: helmRelase(),
+				mg: helmRelease(),
 			},
 			want: want{
 				err: errors.Wrap(errBoom, errProviderNotRetrieved),
@@ -176,7 +181,7 @@ func Test_connector_Connect(t *testing.T) {
 				client: &test.MockClient{
 					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
 						if key.Name == providerName {
-							*obj.(*kubev1alpha1.Provider) = provider
+							*obj.(*helmv1alpha1.ProviderConfig) = providerConfig
 							return nil
 						}
 						if key.Name == providerSecretName && key.Namespace == providerSecretNamespace {
@@ -185,7 +190,7 @@ func Test_connector_Connect(t *testing.T) {
 						return errBoom
 					},
 				},
-				mg: helmRelase(),
+				mg: helmRelease(),
 			},
 			want: want{
 				err: errors.Wrap(errors.Wrap(errBoom, fmt.Sprintf(errFailedToGetSecret, providerSecretNamespace)), errProviderSecretNotRetrieved),
@@ -196,7 +201,7 @@ func Test_connector_Connect(t *testing.T) {
 				client: &test.MockClient{
 					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
 						if key.Name == providerName {
-							*obj.(*kubev1alpha1.Provider) = provider
+							*obj.(*helmv1alpha1.ProviderConfig) = providerConfig
 							return nil
 						}
 						if key.Name == providerSecretName && key.Namespace == providerSecretNamespace {
@@ -209,7 +214,7 @@ func Test_connector_Connect(t *testing.T) {
 				newRestConfigFn: func(creds map[string][]byte) (config *rest.Config, err error) {
 					return nil, errBoom
 				},
-				mg: helmRelase(),
+				mg: helmRelease(),
 			},
 			want: want{
 				err: errors.Wrap(errBoom, errFailedToCreateRestConfig),
@@ -220,7 +225,7 @@ func Test_connector_Connect(t *testing.T) {
 				client: &test.MockClient{
 					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
 						if key.Name == providerName {
-							*obj.(*kubev1alpha1.Provider) = provider
+							*obj.(*helmv1alpha1.ProviderConfig) = providerConfig
 							return nil
 						}
 						if key.Name == providerSecretName && key.Namespace == providerSecretNamespace {
@@ -236,7 +241,7 @@ func Test_connector_Connect(t *testing.T) {
 				newKubeClientFn: func(config *rest.Config) (c client.Client, err error) {
 					return nil, errBoom
 				},
-				mg: helmRelase(),
+				mg: helmRelease(),
 			},
 			want: want{
 				err: errors.Wrap(errBoom, errNewKubernetesClient),
@@ -247,7 +252,7 @@ func Test_connector_Connect(t *testing.T) {
 				client: &test.MockClient{
 					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
 						if key.Name == providerName {
-							*obj.(*kubev1alpha1.Provider) = provider
+							*obj.(*helmv1alpha1.ProviderConfig) = providerConfig
 							return nil
 						}
 						if key.Name == providerSecretName && key.Namespace == providerSecretNamespace {
@@ -266,7 +271,7 @@ func Test_connector_Connect(t *testing.T) {
 				newHelmClientFn: func(log logging.Logger, config *rest.Config, namespace string) (h helmClient.Client, err error) {
 					return &MockHelmClient{}, nil
 				},
-				mg: helmRelase(),
+				mg: helmRelease(),
 			},
 			want: want{
 				err: nil,
@@ -322,7 +327,7 @@ func Test_helmExternal_Observe(t *testing.T) {
 						return nil, driver.ErrReleaseNotFound
 					},
 				},
-				mg: helmRelase(),
+				mg: helmRelease(),
 			},
 			want: want{
 				out: managed.ExternalObservation{ResourceExists: false},
@@ -338,7 +343,7 @@ func Test_helmExternal_Observe(t *testing.T) {
 						return nil, errBoom
 					},
 				},
-				mg: helmRelase(),
+				mg: helmRelease(),
 			},
 			want: want{
 				err: errors.Wrap(errBoom, errFailedToGetLastRelease),
@@ -353,7 +358,7 @@ func Test_helmExternal_Observe(t *testing.T) {
 						return nil, nil
 					},
 				},
-				mg: helmRelase(),
+				mg: helmRelease(),
 			},
 			want: want{
 				err: errors.New(errLastReleaseIsNil),
@@ -368,7 +373,7 @@ func Test_helmExternal_Observe(t *testing.T) {
 						return &release.Release{}, nil
 					},
 				},
-				mg: helmRelase(),
+				mg: helmRelease(),
 			},
 			want: want{
 				err: errors.Wrap(errors.New(errReleaseInfoNilInObservedRelease), errFailedToCheckIfUpToDate),
@@ -395,7 +400,7 @@ func Test_helmExternal_Observe(t *testing.T) {
 						}, nil
 					},
 				},
-				mg: helmRelase(func(r *v1alpha1.Release) {
+				mg: helmRelease(func(r *v1alpha1.Release) {
 					rl := int32(3)
 					r.Spec.RollbackRetriesLimit = &rl
 					r.Status.Failed = 0
@@ -425,7 +430,7 @@ func Test_helmExternal_Observe(t *testing.T) {
 						}, nil
 					},
 				},
-				mg: helmRelase(),
+				mg: helmRelease(),
 			},
 			want: want{
 				out: managed.ExternalObservation{ResourceExists: true, ResourceUpToDate: true},
@@ -483,7 +488,7 @@ func Test_helmExternal_Create(t *testing.T) {
 						return nil, errBoom
 					},
 				},
-				mg: helmRelase(),
+				mg: helmRelease(),
 			},
 			want: want{
 				err: errors.Wrap(errBoom, errFailedToInstall),
@@ -496,7 +501,7 @@ func Test_helmExternal_Create(t *testing.T) {
 						return nil, nil
 					},
 				},
-				mg: helmRelase(),
+				mg: helmRelease(),
 			},
 			want: want{
 				err: errors.Wrap(errors.New(errLastReleaseIsNil), errFailedToInstall),
@@ -509,7 +514,7 @@ func Test_helmExternal_Create(t *testing.T) {
 						return &release.Release{}, nil
 					},
 				},
-				mg: helmRelase(),
+				mg: helmRelease(),
 			},
 			want: want{
 				err: nil,
@@ -529,7 +534,7 @@ func Test_helmExternal_Create(t *testing.T) {
 						}, nil
 					},
 				},
-				mg: helmRelase(func(r *v1alpha1.Release) {
+				mg: helmRelease(func(r *v1alpha1.Release) {
 					r.Spec.ForProvider.Chart.Version = ""
 				}),
 				updateFn: func(ctx context.Context, obj runtime.Object, opts ...client.UpdateOption) error {
@@ -596,7 +601,7 @@ func Test_helmExternal_Update(t *testing.T) {
 						return errBoom
 					},
 				},
-				mg: helmRelase(func(r *v1alpha1.Release) {
+				mg: helmRelease(func(r *v1alpha1.Release) {
 					l := int32(3)
 					r.Spec.RollbackRetriesLimit = &l
 					r.Status.Synced = true
@@ -615,7 +620,7 @@ func Test_helmExternal_Update(t *testing.T) {
 						return errBoom
 					},
 				},
-				mg: helmRelase(func(r *v1alpha1.Release) {
+				mg: helmRelease(func(r *v1alpha1.Release) {
 					l := int32(3)
 					r.Spec.RollbackRetriesLimit = &l
 					r.Status.Synced = true
@@ -634,7 +639,7 @@ func Test_helmExternal_Update(t *testing.T) {
 						return nil
 					},
 				},
-				mg: helmRelase(func(r *v1alpha1.Release) {
+				mg: helmRelease(func(r *v1alpha1.Release) {
 					l := int32(3)
 					r.Spec.RollbackRetriesLimit = &l
 					r.Status.Synced = true
@@ -649,7 +654,7 @@ func Test_helmExternal_Update(t *testing.T) {
 		"MaxRetry": {
 			args: args{
 				helm: &MockHelmClient{},
-				mg: helmRelase(func(r *v1alpha1.Release) {
+				mg: helmRelease(func(r *v1alpha1.Release) {
 					l := int32(3)
 					r.Spec.RollbackRetriesLimit = &l
 					r.Status.Failed = 3
@@ -669,7 +674,7 @@ func Test_helmExternal_Update(t *testing.T) {
 						return nil, errBoom
 					},
 				},
-				mg: helmRelase(),
+				mg: helmRelease(),
 			},
 			want: want{
 				err: errors.Wrap(errBoom, errFailedToUpgrade),
@@ -682,7 +687,7 @@ func Test_helmExternal_Update(t *testing.T) {
 						return nil, nil
 					},
 				},
-				mg: helmRelase(),
+				mg: helmRelease(),
 			},
 			want: want{
 				err: errors.Wrap(errors.New(errLastReleaseIsNil), errFailedToUpgrade),
@@ -695,7 +700,7 @@ func Test_helmExternal_Update(t *testing.T) {
 						return &release.Release{}, nil
 					},
 				},
-				mg: helmRelase(),
+				mg: helmRelease(),
 			},
 			want: want{
 				err: nil,
@@ -748,7 +753,7 @@ func Test_helmExternal_Delete(t *testing.T) {
 						return errBoom
 					},
 				},
-				mg: helmRelase(),
+				mg: helmRelease(),
 			},
 			want: want{
 				err: errors.Wrap(errBoom, errFailedToUninstall),
@@ -761,7 +766,7 @@ func Test_helmExternal_Delete(t *testing.T) {
 						return nil
 					},
 				},
-				mg: helmRelase(),
+				mg: helmRelease(),
 			},
 			want: want{
 				err: nil,

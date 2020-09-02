@@ -30,6 +30,6 @@ spec:
 #          name: svals
 #          namespace: wordpress
 #          optional: false
-  providerRef:
-    name: local-provider
+  providerConfigRef:
+    name: local-provider-config
   reclaimPolicy: Delete
