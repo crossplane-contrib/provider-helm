@@ -14,7 +14,7 @@ import (
 	"github.com/pkg/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
+	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
 )
 
 func Test_composeValuesFromSpec(t *testing.T) {

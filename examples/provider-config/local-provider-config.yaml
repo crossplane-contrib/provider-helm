@@ -1,0 +1,11 @@
+apiVersion: helm.crossplane.io/v1alpha1
+kind: ProviderConfig
+metadata:
+  name: local-provider-config
+spec:
+  credentialsSecretRef:
+    # Get secret name from service account
+    name: <helm-provider-token-secret-name>
+    namespace: crossplane-system
+    # We rely on multiple keys in ProviderConfig secret, so, ignoring "spec.credentialsSecretRef.key"
+    key: ignore

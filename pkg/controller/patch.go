@@ -12,7 +12,7 @@ import (
 	ktypes "sigs.k8s.io/kustomize/api/types"
 	"sigs.k8s.io/yaml"
 
-	"github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
+	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
 )
 
 const (

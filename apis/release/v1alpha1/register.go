@@ -37,14 +37,14 @@ var (
 	SchemeBuilder = &scheme.Builder{GroupVersion: SchemeGroupVersion}
 )
 
-// ProviderConfig type metadata.
+// Release type metadata.
 var (
-	ProviderConfigKind             = reflect.TypeOf(ProviderConfig{}).Name()
-	ProviderConfigGroupKind        = schema.GroupKind{Group: Group, Kind: ProviderConfigKind}.String()
-	ProviderConfigKindAPIVersion   = ProviderConfigKind + "." + SchemeGroupVersion.String()
-	ProviderConfigGroupVersionKind = SchemeGroupVersion.WithKind(ProviderConfigKind)
+	ReleaseKind             = reflect.TypeOf(Release{}).Name()
+	ReleaseGroupKind        = schema.GroupKind{Group: Group, Kind: ReleaseKind}.String()
+	ReleaseKindAPIVersion   = ReleaseKind + "." + SchemeGroupVersion.String()
+	ReleaseGroupVersionKind = SchemeGroupVersion.WithKind(ReleaseKind)
 )
 
 func init() {
-	SchemeBuilder.Register(&ProviderConfig{}, &ProviderConfigList{})
+	SchemeBuilder.Register(&Release{}, &ReleaseList{})
 }

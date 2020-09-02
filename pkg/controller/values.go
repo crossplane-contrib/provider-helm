@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
+	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
 )
 
 const (

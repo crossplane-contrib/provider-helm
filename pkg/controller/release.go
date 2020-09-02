@@ -24,7 +24,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
-	kubev1alpha1 "github.com/crossplane/crossplane/apis/kubernetes/v1alpha1"
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
@@ -35,13 +34,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ktype "sigs.k8s.io/kustomize/api/types"
 
-	"github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
+	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
+	helmv1alpha1 "github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
 	"github.com/crossplane-contrib/provider-helm/pkg/clients"
 	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
 )
 
 const (
 	errNotRelease                 = "managed resource is not a Release custom resource"
+	errProviderConfigNotSet       = "provider config is not set"
 	errProviderNotRetrieved       = "provider could not be retrieved"
 	errNewKubernetesClient        = "cannot create new Kubernetes client"
 	errProviderSecretNotRetrieved = "secret referred in provider could not be retrieved"
@@ -100,17 +101,24 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 
 	l.Debug("Connecting")
 
-	p := &kubev1alpha1.Provider{}
-	n := meta.NamespacedNameOf(cr.Spec.ProviderReference)
+	p := &helmv1alpha1.ProviderConfig{}
+
+	if cr.GetProviderConfigReference() == nil {
+		return nil, errors.New(errProviderConfigNotSet)
+	}
+
+	n := types.NamespacedName{Name: cr.GetProviderConfigReference().Name}
 	if err := c.client.Get(ctx, n, p); err != nil {
 		return nil, errors.Wrap(err, errProviderNotRetrieved)
 	}
-	key := types.NamespacedName{Namespace: p.Spec.Secret.Namespace, Name: p.Spec.Secret.Name}
+	key := types.NamespacedName{Namespace: p.Spec.CredentialsSecretRef.Namespace, Name: p.Spec.CredentialsSecretRef.Name}
 	creds, err := getSecretData(ctx, c.client, key)
 	if err != nil {
 		return nil, errors.Wrap(err, errProviderSecretNotRetrieved)
 	}
 
+	// We rely on multiple keys in ProviderConfig secret, so, ignoring "p.Spec.CredentialsSecretRef.Key"
+	// TODO(hasan): Consider relying only "kubeconfig" key
 	rc, err := c.newRestConfigFn(creds)
 	if err != nil {
 		return nil, errors.Wrap(err, errFailedToCreateRestConfig)

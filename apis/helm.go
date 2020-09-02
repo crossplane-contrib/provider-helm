@@ -14,18 +14,20 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package apis contains Kubernetes API for the Template provider.
+// Package apis contains Kubernetes API for the Helm provider.
 package apis
 
 import (
 	"k8s.io/apimachinery/pkg/runtime"
 
-	"github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
+	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
+	helmv1alpha1 "github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
 )
 
 func init() {
 	// Register the types with the Scheme so the components can map objects to GroupVersionKinds and back
 	AddToSchemes = append(AddToSchemes,
+		helmv1alpha1.SchemeBuilder.AddToScheme,
 		v1alpha1.SchemeBuilder.AddToScheme,
 	)
 }

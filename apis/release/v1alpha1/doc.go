@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package v1alpha1 contains the core resources of the Helm provider.
+// Package v1alpha1 contains the v1alpha1 group release resource of the Helm provider.
 // +kubebuilder:object:generate=true
 // +groupName=helm.crossplane.io
 // +versionName=v1alpha1

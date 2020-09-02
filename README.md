@@ -58,19 +58,16 @@ sudo kubectl proxy --port=80
 
 ### Testing in Local Cluster
 
-Create a provider for local cluster. See [Kubernetes native providers](https://github.com/crossplane/crossplane/blob/master/design/one-pager-k8s-native-providers.md#proposal-kubernetes-provider-kind)
-for more information.
-
-1. Deploy [RBAC for local cluster](examples/provider/local-service-account.yaml)
+1. Deploy [RBAC for local cluster](examples/provider-config/local-service-account.yaml)
 
     ```
-    kubectl apply -f examples/provider/local-service-account.yaml
+    kubectl apply -f examples/provider-config/local-service-account.yaml
     ```
-1. Deploy [local-provider.yaml](examples/provider/local-provider.yaml) by replacing `spec.credentialsSecretRef.name` with the token secret name.
+1. Deploy [local-provider.yaml](examples/provider-config/local-provider-config.yaml) by replacing `spec.credentialsSecretRef.name` with the token secret name.
 
     ```
     EXP="s/<helm-provider-token-secret-name>/$(kubectl get sa helm-provider -n crossplane-system -o jsonpath="{.secrets[0].name}")/g"
-    cat examples/provider/local-provider.yaml | sed -e "${EXP}" | kubectl apply -f -
+    cat examples/provider-config/local-provider-config.yaml | sed -e "${EXP}" | kubectl apply -f -
     ```
 1. Now you can create `Release` resources with provider reference, see [sample release.yaml](examples/sample/release.yaml).
 
