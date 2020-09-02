@@ -234,6 +234,9 @@ func Test_connector_Connect(t *testing.T) {
 						}
 						return errBoom
 					},
+					MockStatusUpdate: func(ctx context.Context, obj runtime.Object, opts ...client.UpdateOption) error {
+						return nil
+					},
 				},
 				newRestConfigFn: func(creds map[string][]byte) (config *rest.Config, err error) {
 					return &rest.Config{}, nil
@@ -260,6 +263,9 @@ func Test_connector_Connect(t *testing.T) {
 							return nil
 						}
 						return errBoom
+					},
+					MockStatusUpdate: func(ctx context.Context, obj runtime.Object, opts ...client.UpdateOption) error {
+						return nil
 					},
 				},
 				newRestConfigFn: func(creds map[string][]byte) (config *rest.Config, err error) {

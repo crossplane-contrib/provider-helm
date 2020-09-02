@@ -19,6 +19,8 @@ package controller
 import (
 	"context"
 
+	v1alpha12 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
+
 	"github.com/crossplane/crossplane-runtime/pkg/event"
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
@@ -123,6 +125,14 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	if err != nil {
 		return nil, errors.Wrap(err, errFailedToCreateRestConfig)
 	}
+
+	// TODO(hasan): Remove below HACK, once https://github.com/crossplane/crossplane/issues/1687 resolved
+	// HACK
+	p.Status.SetConditions(v1alpha12.Available())
+	if err := c.client.Status().Update(ctx, p); err != nil {
+		return nil, errors.Wrap(err, "Failed to update ProviderConfig status")
+	}
+	// END OF HACK
 
 	k, err := c.newKubeClientFn(rc)
 	if err != nil {

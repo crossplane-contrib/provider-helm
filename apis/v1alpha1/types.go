@@ -26,9 +26,15 @@ type ProviderConfigSpec struct {
 	runtimev1alpha1.ProviderConfigSpec `json:",inline"`
 }
 
+// A ProviderConfigStatus defines the status of a Provider.
+type ProviderConfigStatus struct {
+	runtimev1alpha1.ResourceStatus `json:",inline"`
+}
+
 // +kubebuilder:object:root=true
 
 // A ProviderConfig configures a Helm 'provider', i.e. a connection to a particular
+// +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:printcolumn:name="SECRET-NAME",type="string",JSONPath=".spec.credentialsSecretRef.name",priority=1
 // +kubebuilder:resource:scope=Cluster,categories={crossplane,provider,helm}
@@ -37,6 +43,11 @@ type ProviderConfig struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec ProviderConfigSpec `json:"spec"`
+
+	// TODO(hasan): Remove below HACK, once https://github.com/crossplane/crossplane/issues/1687 resolved
+	// HACK
+	Status ProviderConfigStatus `json:"status,omitempty"`
+	// END OF HACK
 }
 
 // +kubebuilder:object:root=true
