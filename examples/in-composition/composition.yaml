@@ -1,0 +1,237 @@
+apiVersion: apiextensions.crossplane.io/v1alpha1
+kind: Composition
+metadata:
+  name: wordpressclusters.example.crossplane.io
+spec:
+  writeConnectionSecretsToNamespace: crossplane-system
+  reclaimPolicy: Delete
+  from:
+    apiVersion: example.crossplane.io/v1alpha1
+    kind: WordpressCluster
+  to:
+    - base:
+        apiVersion: compute.gcp.crossplane.io/v1beta1
+        kind: Network
+        spec:
+          forProvider:
+            autoCreateSubnetworks: false
+            routingConfig:
+              routingMode: REGIONAL
+          providerRef:
+            name: gcp-provider
+          reclaimPolicy: Delete
+      patches:
+        - fromFieldPath: "metadata.name"
+          toFieldPath: "metadata.name"
+    - base:
+        apiVersion: container.gcp.crossplane.io/v1beta1
+        kind: GKECluster
+        spec:
+          providerRef:
+            name: gcp-provider
+          forProvider:
+            addonsConfig:
+              kubernetesDashboard:
+                disabled: true
+              networkPolicyConfig:
+                disabled: false
+            databaseEncryption:
+              state: DECRYPTED
+            defaultMaxPodsConstraint:
+              maxPodsPerNode: 110
+            description: Host Cluster instance of basic tier
+            ipAllocationPolicy:
+              createSubnetwork: true
+              useIpAliases: true
+            networkPolicy:
+              enabled: true
+            legacyAbac:
+              enabled: false
+            podSecurityPolicyConfig:
+              enabled: false
+            verticalPodAutoscaling:
+              enabled: true
+            masterAuth:
+              username: admin
+            loggingService: logging.googleapis.com/kubernetes
+            monitoringService: monitoring.googleapis.com/kubernetes
+            networkRef:
+              name: gcp-wordpressclusters-network
+            location: us-central1
+            locations:
+              - us-central1-a
+              - us-central1-f
+          writeConnectionSecretToRef:
+            namespace: crossplane-system
+          reclaimPolicy: Delete
+      patches:
+        - fromFieldPath: "metadata.name"
+          toFieldPath: "spec.forProvider.networkRef.name"
+        - fromFieldPath: "metadata.name"
+          toFieldPath: "metadata.name"
+        - fromFieldPath: "metadata.name"
+          toFieldPath: "metadata.annotations[crossplane.io/external-name]"
+          transforms:
+            - type: string
+              string:
+                fmt: "hc-%s"
+        - fromFieldPath: "metadata.labels"
+          toFieldPath: "metadata.labels"
+        - fromFieldPath: "metadata.annotations[crossplane.io/external-name]"
+          toFieldPath: "metadata.annotations[crossplane.io/external-name]"
+        - fromFieldPath: "metadata.name"
+          toFieldPath: "spec.writeConnectionSecretToRef.name"
+        - fromFieldPath: "spec.clusterVersion"
+          toFieldPath: "spec.forProvider.initialClusterVersion"
+      connectionDetails:
+        - fromConnectionSecretKey: kubeconfig
+    - base:
+        apiVersion: container.gcp.crossplane.io/v1alpha1
+        kind: NodePool
+        spec:
+          providerRef:
+            name: gcp-provider
+          reclaimPolicy: Delete
+          forProvider:
+            initialNodeCount: 1
+            locations:
+              - us-central1-a
+              - us-central1-f
+            autoscaling:
+              enabled: true
+              minNodeCount: 1
+              maxNodeCount: 10
+            config:
+              diskSizeGb: 100
+              diskType: pd-standard
+              imageType: COS
+              machineType: n1-standard-4
+              metadata:
+                disable-legacy-endpoints: "true"
+              oauthScopes:
+                - https://www.googleapis.com/auth/devstorage.read_only
+                - https://www.googleapis.com/auth/logging.write
+                - https://www.googleapis.com/auth/monitoring
+                - https://www.googleapis.com/auth/servicecontrol
+                - https://www.googleapis.com/auth/service.management.readonly
+                - https://www.googleapis.com/auth/trace.append
+                - https://www.googleapis.com/auth/cloud-platform
+              preemptible: false
+              serviceAccount: default
+              shieldedInstanceConfig:
+                enableIntegrityMonitoring: true
+                enableSecureBoot: true
+            clusterSelector:
+              matchControllerRef: true
+            management:
+              autoRepair: true
+              autoUpgrade: true
+            maxPodsConstraint:
+              maxPodsPerNode: 110
+      patches:
+        - fromFieldPath: "spec.clusterVersion"
+          toFieldPath: "spec.forProvider.version"
+    - base:
+        apiVersion: database.gcp.crossplane.io/v1beta1
+        kind: CloudSQLInstance
+        spec:
+          forProvider:
+            databaseVersion: MYSQL_5_6
+            region: us-central1
+            settings:
+              tier: db-custom-1-3840
+              dataDiskType: PD_SSD
+              ipConfiguration:
+                ipv4Enabled: true
+                authorizedNetworks:
+                  - value: "0.0.0.0/0"
+          writeConnectionSecretToRef:
+            namespace: crossplane-system
+          providerRef:
+            name: gcp-provider
+          reclaimPolicy: Delete
+      patches:
+        - fromFieldPath: "metadata.uid"
+          toFieldPath: "spec.writeConnectionSecretToRef.name"
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-mysql"
+        - fromFieldPath: "spec.parameters.storageGB"
+          toFieldPath: "spec.forProvider.settings.dataDiskSizeGb"
+    - base:
+        apiVersion: helm.crossplane.io/v1alpha1
+        kind: ProviderConfig
+        spec:
+          credentialsSecretRef:
+            key: kubeconfig
+      patches:
+        - fromFieldPath: metadata.name
+          toFieldPath: metadata.name
+        - fromFieldPath: spec.writeConnectionSecretToRef.namespace
+          toFieldPath: spec.credentialsSecretRef.namespace
+        - fromFieldPath: spec.writeConnectionSecretToRef.name
+          toFieldPath: spec.credentialsSecretRef.name
+    - base:
+        apiVersion: helm.crossplane.io/v1alpha1
+        kind: Release
+        metadata:
+          annotations: 
+            crossplane.io/external-name: wordpress
+        spec:
+          forProvider:
+            chart:
+              name: wordpress
+              repository: https://turkenh.github.io/bitnami-charts
+              version: 9.5.1
+            namespace: wordpress
+            values: |
+              mariadb:
+                enabled: false
+              externalDatabase:
+                create: true
+                database: wordpress
+                port: 3306
+
+            set: 
+              - name: externalDatabase.host
+                valueFrom: 
+                  secretKeyRef: 
+                    name: 
+                    namespace: crossplane-system
+                    key: endpoint
+              - name: externalDatabase.user
+                valueFrom: 
+                  secretKeyRef: 
+                    name: 
+                    namespace: crossplane-system
+                    key: username
+              - name: externalDatabase.password
+                valueFrom: 
+                  secretKeyRef: 
+                    name: 
+                    namespace: crossplane-system
+                    key: password
+      patches:
+        - fromFieldPath: metadata.name
+          toFieldPath: spec.providerConfigRef.name
+        - fromFieldPath: "metadata.uid"
+          toFieldPath: spec.forProvider.set[0].valueFrom.secretKeyRef.name
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-mysql"
+        - fromFieldPath: "metadata.uid"
+          toFieldPath: spec.forProvider.set[1].valueFrom.secretKeyRef.name
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-mysql"
+        - fromFieldPath: "metadata.uid"
+          toFieldPath: spec.forProvider.set[2].valueFrom.secretKeyRef.name
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-mysql"
+
+            
