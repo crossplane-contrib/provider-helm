@@ -1,0 +1,6 @@
+apiVersion: example.crossplane.io/v1alpha1
+kind: WordpressCluster
+metadata:
+  name: mycluster
+spec:
+  clusterVersion: 1.15.12-gke.16
