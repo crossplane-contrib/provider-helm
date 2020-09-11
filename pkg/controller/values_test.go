@@ -37,7 +37,9 @@ func Test_composeValuesFromSpec(t *testing.T) {
 					MockGet: nil,
 				},
 				spec: v1alpha1.ValuesSpec{
-					Values:     testReleaseConfigStr,
+					Values: runtime.RawExtension{
+						Raw: []byte(testReleaseConfigStr),
+					},
 					ValuesFrom: nil,
 					Set:        nil,
 				},
@@ -53,7 +55,9 @@ func Test_composeValuesFromSpec(t *testing.T) {
 					MockGet: nil,
 				},
 				spec: v1alpha1.ValuesSpec{
-					Values:     "invalid-yaml",
+					Values: runtime.RawExtension{
+						Raw: []byte("invalid-yaml"),
+					},
 					ValuesFrom: nil,
 					Set:        nil,
 				},
@@ -177,11 +181,13 @@ func Test_composeValuesFromSpec(t *testing.T) {
 					MockGet: nil,
 				},
 				spec: v1alpha1.ValuesSpec{
-					Values: `
+					Values: runtime.RawExtension{
+						Raw: []byte(`
 keyA: valA
 keyB:
   subKeyA: subValA
-`,
+`),
+					},
 					ValuesFrom: nil,
 					Set: []v1alpha1.SetVal{
 						{
@@ -236,11 +242,13 @@ keyB:
 					},
 				},
 				spec: v1alpha1.ValuesSpec{
-					Values: `
+					Values: runtime.RawExtension{
+						Raw: []byte(`
 keyA: valA
 keyB:
   subKeyA: subValA
-`,
+`),
+					},
 					ValuesFrom: nil,
 					Set: []v1alpha1.SetVal{
 						{
@@ -280,11 +288,13 @@ keyB:
 					},
 				},
 				spec: v1alpha1.ValuesSpec{
-					Values: `
+					Values: runtime.RawExtension{
+						Raw: []byte(`
 keyA: valA
 keyB:
   subKeyA: subValA
-`,
+`),
+					},
 					ValuesFrom: nil,
 					Set: []v1alpha1.SetVal{
 						{

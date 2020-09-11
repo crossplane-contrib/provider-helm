@@ -185,14 +185,13 @@ spec:
               repository: https://turkenh.github.io/bitnami-charts
               version: 9.5.1
             namespace: wordpress
-            values: |
+            values:
               mariadb:
                 enabled: false
               externalDatabase:
                 create: true
                 database: wordpress
                 port: 3306
-
             set: 
               - name: externalDatabase.host
                 valueFrom: 
