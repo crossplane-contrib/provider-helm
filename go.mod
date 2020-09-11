@@ -10,10 +10,9 @@ require (
 	github.com/pkg/errors v0.9.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	helm.sh/helm/v3 v3.2.4
-	k8s.io/api v0.18.6
-	k8s.io/apimachinery v0.18.6
-	k8s.io/cli-runtime v0.18.5 // indirect
-	k8s.io/client-go v0.18.6
+	k8s.io/api v0.18.8
+	k8s.io/apimachinery v0.18.8
+	k8s.io/client-go v0.18.8
 	rsc.io/letsencrypt v0.0.3 // indirect
 	sigs.k8s.io/controller-runtime v0.6.2
 	sigs.k8s.io/controller-tools v0.3.0

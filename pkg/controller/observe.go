@@ -18,11 +18,11 @@ package controller
 
 import (
 	"context"
-	"reflect"
 
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/release"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
 )
@@ -76,7 +76,24 @@ func isUpToDate(ctx context.Context, kube client.Client, in *v1alpha1.ReleasePar
 		return false, errors.Wrap(err, errFailedToComposeValues)
 	}
 
-	if !reflect.DeepEqual(desiredConfig, observed.Config) {
+	d, err := yaml.Marshal(desiredConfig)
+	if err != nil {
+		return false, err
+	}
+
+	observedConfig := observed.Config
+	if observedConfig == nil {
+		// If no config provider, desiredConfig returns as empty map. However, observed would be nil in this case.
+		// We know both empty and nil are same.
+		observedConfig = make(map[string]interface{})
+	}
+
+	o, err := yaml.Marshal(observedConfig)
+	if err != nil {
+		return false, err
+	}
+
+	if string(d) != string(o) {
 		return false, nil
 	}
 
