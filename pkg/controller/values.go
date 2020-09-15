@@ -57,7 +57,7 @@ func composeValuesFromSpec(ctx context.Context, kube client.Client, spec v1alpha
 	}
 
 	var inlineVals map[string]interface{}
-	err := yaml.Unmarshal([]byte(spec.Values), &inlineVals)
+	err := yaml.Unmarshal(spec.Values.Raw, &inlineVals)
 	if err != nil {
 		return nil, errors.Wrap(err, errFailedToUnmarshalDesiredValues)
 	}

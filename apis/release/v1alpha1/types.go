@@ -20,6 +20,7 @@ import (
 	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
 	"helm.sh/helm/v3/pkg/release"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
 // A ChartSpec defines the chart spec for a Release
@@ -58,10 +59,9 @@ type SetVal struct {
 
 // ValuesSpec defines the Helm value overrides spec for a Release
 type ValuesSpec struct {
-	// TODO: investigate using map[string]interface{} instead
-	Values     string            `json:"values,omitempty"`
-	ValuesFrom []ValueFromSource `json:"valuesFrom,omitempty"`
-	Set        []SetVal          `json:"set,omitempty"`
+	Values     runtime.RawExtension `json:"values,omitempty"`
+	ValuesFrom []ValueFromSource    `json:"valuesFrom,omitempty"`
+	Set        []SetVal             `json:"set,omitempty"`
 }
 
 // ReleaseParameters are the configurable fields of a Release.

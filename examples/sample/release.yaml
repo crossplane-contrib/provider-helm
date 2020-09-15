@@ -13,7 +13,7 @@ spec:
 #        name: museum-creds
 #        namespace: default
     namespace: wordpress
-    values: |
+    values:
       param1: value1
       param2: 1
     set:

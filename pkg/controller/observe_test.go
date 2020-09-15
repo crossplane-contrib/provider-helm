@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"k8s.io/apimachinery/pkg/runtime"
+
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
@@ -164,7 +166,10 @@ func Test_isUpToDate(t *testing.T) {
 						Version: testVersion,
 					},
 					ValuesSpec: v1alpha1.ValuesSpec{
-						Values: "invalid-yaml",
+						Values: runtime.RawExtension{
+							Raw:    []byte("invalid-yaml"),
+							Object: nil,
+						},
 					},
 				},
 				observed: &release.Release{
@@ -199,7 +204,9 @@ func Test_isUpToDate(t *testing.T) {
 						Version: testVersion,
 					},
 					ValuesSpec: v1alpha1.ValuesSpec{
-						Values: testReleaseConfigStr,
+						Values: runtime.RawExtension{
+							Raw: []byte(testReleaseConfigStr),
+						},
 					},
 				},
 				observed: &release.Release{
@@ -230,7 +237,9 @@ func Test_isUpToDate(t *testing.T) {
 						Version: "another-version",
 					},
 					ValuesSpec: v1alpha1.ValuesSpec{
-						Values: testReleaseConfigStr,
+						Values: runtime.RawExtension{
+							Raw: []byte(testReleaseConfigStr),
+						},
 					},
 				},
 				observed: &release.Release{
@@ -261,7 +270,9 @@ func Test_isUpToDate(t *testing.T) {
 						Version: testVersion,
 					},
 					ValuesSpec: v1alpha1.ValuesSpec{
-						Values: "keyA: valX",
+						Values: runtime.RawExtension{
+							Raw: []byte("keyA: valX"),
+						},
 					},
 				},
 				observed: &release.Release{
@@ -292,7 +303,9 @@ func Test_isUpToDate(t *testing.T) {
 						Version: testVersion,
 					},
 					ValuesSpec: v1alpha1.ValuesSpec{
-						Values: testReleaseConfigStr,
+						Values: runtime.RawExtension{
+							Raw: []byte(testReleaseConfigStr),
+						},
 					},
 				},
 				observed: &release.Release{
@@ -323,7 +336,9 @@ func Test_isUpToDate(t *testing.T) {
 						Version: testVersion,
 					},
 					ValuesSpec: v1alpha1.ValuesSpec{
-						Values: testReleaseConfigStr,
+						Values: runtime.RawExtension{
+							Raw: []byte(testReleaseConfigStr),
+						},
 					},
 				},
 				observed: &release.Release{

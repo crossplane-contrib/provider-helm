@@ -210,8 +210,7 @@ spec:
                     type: object
                   type: array
                 values:
-                  description: 'TODO: investigate using map[string]interface{} instead'
-                  type: string
+                  type: object
                 valuesFrom:
                   items:
                     description: ValueFromSource represents source of a value
