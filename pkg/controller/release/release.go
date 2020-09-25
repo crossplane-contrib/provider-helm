@@ -57,6 +57,7 @@ const (
 	errFailedToGetRepoCreds       = "failed to get user name and password from secret reference"
 	errFailedToComposeValues      = "failed to compose values"
 	errFailedToCreateRestConfig   = "cannot create new rest config using provider secret"
+	errFailedToTrackUsage         = "cannot track provider config usage"
 	errFailedToLoadPatches        = "failed to load patches"
 	errFailedToUpdatePatchSha     = "failed to update patch sha"
 	errFailedToSetVersion         = "failed to update chart spec with the latest version"
@@ -72,6 +73,7 @@ func Setup(mgr ctrl.Manager, l logging.Logger) error {
 		managed.WithExternalConnecter(&connector{
 			logger:          logger,
 			client:          mgr.GetClient(),
+			usage:           resource.NewProviderConfigUsageTracker(mgr.GetClient(), &helmv1alpha1.ProviderConfigUsage{}),
 			newRestConfigFn: clients.NewRestConfig,
 			newKubeClientFn: clients.NewKubeClient,
 			newHelmClientFn: helmClient.NewClient,
@@ -89,6 +91,7 @@ func Setup(mgr ctrl.Manager, l logging.Logger) error {
 type connector struct {
 	logger          logging.Logger
 	client          client.Client
+	usage           resource.Tracker
 	newRestConfigFn func(creds map[string][]byte) (*rest.Config, error)
 	newKubeClientFn func(config *rest.Config) (client.Client, error)
 	newHelmClientFn func(log logging.Logger, config *rest.Config, namespace string) (helmClient.Client, error)
@@ -107,6 +110,10 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 
 	if cr.GetProviderConfigReference() == nil {
 		return nil, errors.New(errProviderConfigNotSet)
+	}
+
+	if err := c.usage.Track(ctx, cr); err != nil {
+		return nil, errors.Wrap(err, errFailedToTrackUsage)
 	}
 
 	n := types.NamespacedName{Name: cr.GetProviderConfigReference().Name}
@@ -132,6 +139,9 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	}
 
 	h, err := c.newHelmClientFn(c.logger, rc, cr.Spec.ForProvider.Namespace)
+	if err != nil {
+		return nil, errors.Wrap(err, errNewKubernetesClient)
+	}
 
 	return &helmExternal{
 		logger:    l,
@@ -139,7 +149,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 		kube:      k,
 		helm:      h,
 		patch:     newPatcher(),
-	}, errors.Wrap(err, errNewKubernetesClient)
+	}, nil
 }
 
 type helmExternal struct {

@@ -132,10 +132,10 @@ github.com/coreos/pkg v0.0.0-20180928190104-399ea9e2e55f/go.mod h1:E3G3o1h8I7cfc
 github.com/cpuguy83/go-md2man v1.0.10/go.mod h1:SmD6nW6nTyfqj6ABTjUi3V3JVMnlJmwcJI5acqYI6dE=
 github.com/cpuguy83/go-md2man/v2 v2.0.0/go.mod h1:maD7wRr/U5Z6m/iR4s+kqSMx2CaBsrgA7czyZG/E6dU=
 github.com/creack/pty v1.1.7/go.mod h1:lj5s0c3V2DBrqTV7llrYr5NG6My20zk30Fl46Y7DoTY=
-github.com/crossplane/crossplane-runtime v0.9.1-0.20200924144923-240dbf0821e6 h1:7/A3T9mNnythycZYtSsAlEPdQtgvsGBsopTn2HIthKw=
-github.com/crossplane/crossplane-runtime v0.9.1-0.20200924144923-240dbf0821e6/go.mod h1:cJl5ZZONisre4v6wTmbrC8Jh3AI+erq/lNaxZzv9tnU=
-github.com/crossplane/crossplane-tools v0.0.0-20200923030414-95b434323cd4 h1:0kPoB8KBZSAP6HNeC/B3bs+LyRsMflpJDRtTYPzZ6AU=
-github.com/crossplane/crossplane-tools v0.0.0-20200923030414-95b434323cd4/go.mod h1:C735A9X0x0lR8iGVOOxb49Mt70Ua4EM2b7PGaRPBLd4=
+github.com/crossplane/crossplane-runtime v0.9.1-0.20201001234308-3f1afd106a8c h1:jPqFF7MSj5ENEkY6PA2glEJsK5c80Koky5Hz6W04VAY=
+github.com/crossplane/crossplane-runtime v0.9.1-0.20201001234308-3f1afd106a8c/go.mod h1:cJl5ZZONisre4v6wTmbrC8Jh3AI+erq/lNaxZzv9tnU=
+github.com/crossplane/crossplane-tools v0.0.0-20201001224552-fb258cc0eb30 h1:NoiOGZCsnrpY4U6sqfiz0RQhi+ohWxFu58rQGoX7MVE=
+github.com/crossplane/crossplane-tools v0.0.0-20201001224552-fb258cc0eb30/go.mod h1:C735A9X0x0lR8iGVOOxb49Mt70Ua4EM2b7PGaRPBLd4=
 github.com/cyphar/filepath-securejoin v0.2.2 h1:jCwT2GTP+PY5nBz3c/YL5PAIbusElVrPujOBSCj8xRg=
 github.com/cyphar/filepath-securejoin v0.2.2/go.mod h1:FpkQEhXnPnOthhzymB7CGsFk2G9VLXONKD9G7QGMM+4=
 github.com/dave/jennifer v1.3.0 h1:p3tl41zjjCZTNBytMwrUuiAnherNUZktlhPTKoF/sEk=
