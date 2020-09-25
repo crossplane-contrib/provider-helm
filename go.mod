@@ -3,11 +3,13 @@ module github.com/crossplane-contrib/provider-helm
 go 1.13
 
 require (
-	github.com/crossplane/crossplane v0.11.1
-	github.com/crossplane/crossplane-runtime v0.9.1-0.20200827134951-29150890d4c1
-	github.com/crossplane/crossplane-tools v0.0.0-20200827141855-f51a6598f2bc
+	github.com/crossplane/crossplane-runtime v0.9.1-0.20200924144923-240dbf0821e6
+	github.com/crossplane/crossplane-tools v0.0.0-20200923030414-95b434323cd4
+	github.com/go-logr/zapr v0.1.1 // indirect
+	github.com/golang/groupcache v0.0.0-20190702054246-869f871628b6 // indirect
 	github.com/google/go-cmp v0.4.0
 	github.com/pkg/errors v0.9.1
+	github.com/prometheus/client_golang v1.1.0 // indirect
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	helm.sh/helm/v3 v3.2.4
 	k8s.io/api v0.18.8
