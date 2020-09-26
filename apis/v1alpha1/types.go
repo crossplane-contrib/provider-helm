@@ -43,11 +43,6 @@ type ProviderConfig struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec ProviderConfigSpec `json:"spec"`
-
-	// TODO(hasan): Remove below HACK, once https://github.com/crossplane/crossplane/issues/1687 resolved
-	// HACK
-	Status ProviderConfigStatus `json:"status,omitempty"`
-	// END OF HACK
 }
 
 // +kubebuilder:object:root=true

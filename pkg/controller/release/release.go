@@ -126,14 +126,6 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 		return nil, errors.Wrap(err, errFailedToCreateRestConfig)
 	}
 
-	// TODO(hasan): Remove below HACK, once https://github.com/crossplane/crossplane/issues/1687 resolved
-	// HACK
-	p.Status.SetConditions(runtimev1alpha1.Available())
-	if err := c.client.Status().Update(ctx, p); err != nil {
-		return nil, errors.Wrap(err, "Failed to update ProviderConfig status")
-	}
-	// END OF HACK
-
 	k, err := c.newKubeClientFn(rc)
 	if err != nil {
 		return nil, errors.Wrap(err, errNewKubernetesClient)
