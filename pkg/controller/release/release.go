@@ -14,17 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package release
 
 import (
 	"context"
 
-	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
-	"github.com/crossplane/crossplane-runtime/pkg/event"
-	"github.com/crossplane/crossplane-runtime/pkg/logging"
-	"github.com/crossplane/crossplane-runtime/pkg/meta"
-	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
-	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
@@ -34,6 +28,13 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ktype "sigs.k8s.io/kustomize/api/types"
+
+	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
+	"github.com/crossplane/crossplane-runtime/pkg/event"
+	"github.com/crossplane/crossplane-runtime/pkg/logging"
+	"github.com/crossplane/crossplane-runtime/pkg/meta"
+	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
+	"github.com/crossplane/crossplane-runtime/pkg/resource"
 
 	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
 	helmv1alpha1 "github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
@@ -61,8 +62,8 @@ const (
 	errFailedToSetVersion         = "failed to update chart spec with the latest version"
 )
 
-// SetupRelease adds a controller that reconciles Release managed resources.
-func SetupRelease(mgr ctrl.Manager, l logging.Logger) error {
+// Setup adds a controller that reconciles Release managed resources.
+func Setup(mgr ctrl.Manager, l logging.Logger) error {
 	name := managed.ControllerName(v1alpha1.ReleaseGroupKind)
 	logger := l.WithValues("controller", name)
 
