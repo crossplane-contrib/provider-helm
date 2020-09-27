@@ -78,7 +78,6 @@ func Setup(mgr ctrl.Manager, l logging.Logger) error {
 			newKubeClientFn: clients.NewKubeClient,
 			newHelmClientFn: helmClient.NewClient,
 		}),
-		managed.WithInitializers(managed.NewNameAsExternalName(mgr.GetClient())),
 		managed.WithLogger(logger),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))))
 
