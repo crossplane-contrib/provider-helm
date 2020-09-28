@@ -183,6 +183,16 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 	}
 
 	cr.Status.AtProvider = generateObservation(rel)
+
+	// Determining whether the release is up to date may involve reading values
+	// from secrets, configmaps, etc. This will fail if said dependencies have
+	// been deleted. We don't need to determine whether we're up to date in
+	// order to delete the release, so if we know we're about to be deleted we
+	// return early to avoid blocking unnecessarily on missing dependencies.
+	if meta.WasDeleted(cr) {
+		return managed.ExternalObservation{ResourceExists: true}, nil
+	}
+
 	s, err := isUpToDate(ctx, e.localKube, &cr.Spec.ForProvider, rel, cr.Status)
 	if err != nil {
 		return managed.ExternalObservation{}, errors.Wrap(err, errFailedToCheckIfUpToDate)

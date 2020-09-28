@@ -387,6 +387,26 @@ func Test_helmExternal_Observe(t *testing.T) {
 				err: errors.New(errLastReleaseIsNil),
 			},
 		},
+		"ReleaseIsBeingDeleted": {
+			args: args{
+				localKube: nil,
+				kube:      nil,
+				helm: &MockHelmClient{
+					MockGetLastRelease: func(r string) (hr *release.Release, err error) {
+						return &release.Release{}, nil
+					},
+				},
+				mg: helmRelease(
+					func(release *v1alpha1.Release) {
+						now := metav1.Now()
+						release.SetDeletionTimestamp(&now)
+					},
+				),
+			},
+			want: want{
+				out: managed.ExternalObservation{ResourceExists: true},
+			},
+		},
 		"FailedToCheckIsUpToDate": {
 			args: args{
 				localKube: nil,
