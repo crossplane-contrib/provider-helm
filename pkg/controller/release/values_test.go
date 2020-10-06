@@ -1,4 +1,4 @@
-package controller
+package release
 
 import (
 	"context"
@@ -9,10 +9,11 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 
-	"github.com/crossplane/crossplane-runtime/pkg/test"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/crossplane/crossplane-runtime/pkg/test"
 
 	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
 )

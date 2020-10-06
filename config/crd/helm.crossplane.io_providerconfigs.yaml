@@ -63,16 +63,8 @@ spec:
               type: object
           type: object
         status:
-          description: 'TODO(hasan): Remove below HACK, once https://github.com/crossplane/crossplane/issues/1687 resolved HACK'
+          description: A ProviderConfigStatus defines the status of a Provider.
           properties:
-            bindingPhase:
-              description: Phase represents the binding phase of a managed resource or claim. Unbindable resources cannot be bound, typically because they are currently unavailable, or still being created. Unbound resource are available for binding, and Bound resources have successfully bound to another resource. Deprecated. See https://github.com/crossplane/crossplane/issues/1670
-              enum:
-              - Unbindable
-              - Unbound
-              - Bound
-              - Released
-              type: string
             conditions:
               description: Conditions of the resource.
               items:
@@ -101,6 +93,10 @@ spec:
                 - type
                 type: object
               type: array
+            users:
+              description: Users of this provider configuration.
+              format: int64
+              type: integer
           type: object
       required:
       - spec

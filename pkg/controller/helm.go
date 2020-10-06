@@ -19,14 +19,18 @@ package controller
 import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/crossplane-contrib/provider-helm/pkg/controller/config"
+	"github.com/crossplane-contrib/provider-helm/pkg/controller/release"
+
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
 )
 
-// Setup creates all Template controllers with the supplied logger and adds them to
-// the supplied manager.
+// Setup creates all Helm controllers with the supplied logger and adds them
+// to the supplied manager.
 func Setup(mgr ctrl.Manager, l logging.Logger) error {
 	for _, setup := range []func(ctrl.Manager, logging.Logger) error{
-		SetupRelease,
+		config.Setup,
+		release.Setup,
 	} {
 		if err := setup(mgr, l); err != nil {
 			return err

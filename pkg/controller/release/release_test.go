@@ -1,15 +1,10 @@
-package controller
+package release
 
 import (
 	"context"
 	"fmt"
 	"testing"
 
-	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
-	"github.com/crossplane/crossplane-runtime/pkg/logging"
-	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
-	"github.com/crossplane/crossplane-runtime/pkg/resource"
-	"github.com/crossplane/crossplane-runtime/pkg/test"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
@@ -21,6 +16,12 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/api/types"
+
+	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
+	"github.com/crossplane/crossplane-runtime/pkg/logging"
+	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
+	"github.com/crossplane/crossplane-runtime/pkg/resource"
+	"github.com/crossplane/crossplane-runtime/pkg/test"
 
 	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
 	helmv1alpha1 "github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
@@ -142,6 +143,7 @@ func Test_connector_Connect(t *testing.T) {
 		newRestConfigFn func(creds map[string][]byte) (*rest.Config, error)
 		newKubeClientFn func(config *rest.Config) (client.Client, error)
 		newHelmClientFn func(log logging.Logger, config *rest.Config, namespace string) (helmClient.Client, error)
+		usage           resource.Tracker
 		mg              resource.Managed
 	}
 	type want struct {
@@ -159,6 +161,15 @@ func Test_connector_Connect(t *testing.T) {
 				err: errors.New(errNotRelease),
 			},
 		},
+		"FailedToTrackUsage": {
+			args: args{
+				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return errBoom }),
+				mg:    helmRelease(),
+			},
+			want: want{
+				err: errors.Wrap(errBoom, errFailedToTrackUsage),
+			},
+		},
 		"FailedToGetProvider": {
 			args: args{
 				client: &test.MockClient{
@@ -170,7 +181,8 @@ func Test_connector_Connect(t *testing.T) {
 						return nil
 					},
 				},
-				mg: helmRelease(),
+				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return nil }),
+				mg:    helmRelease(),
 			},
 			want: want{
 				err: errors.Wrap(errBoom, errProviderNotRetrieved),
@@ -190,7 +202,8 @@ func Test_connector_Connect(t *testing.T) {
 						return errBoom
 					},
 				},
-				mg: helmRelease(),
+				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return nil }),
+				mg:    helmRelease(),
 			},
 			want: want{
 				err: errors.Wrap(errors.Wrap(errBoom, fmt.Sprintf(errFailedToGetSecret, providerSecretNamespace)), errProviderSecretNotRetrieved),
@@ -214,7 +227,8 @@ func Test_connector_Connect(t *testing.T) {
 				newRestConfigFn: func(creds map[string][]byte) (config *rest.Config, err error) {
 					return nil, errBoom
 				},
-				mg: helmRelease(),
+				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return nil }),
+				mg:    helmRelease(),
 			},
 			want: want{
 				err: errors.Wrap(errBoom, errFailedToCreateRestConfig),
@@ -244,7 +258,8 @@ func Test_connector_Connect(t *testing.T) {
 				newKubeClientFn: func(config *rest.Config) (c client.Client, err error) {
 					return nil, errBoom
 				},
-				mg: helmRelease(),
+				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return nil }),
+				mg:    helmRelease(),
 			},
 			want: want{
 				err: errors.Wrap(errBoom, errNewKubernetesClient),
@@ -254,15 +269,15 @@ func Test_connector_Connect(t *testing.T) {
 			args: args{
 				client: &test.MockClient{
 					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
-						if key.Name == providerName {
-							*obj.(*helmv1alpha1.ProviderConfig) = providerConfig
-							return nil
+						switch t := obj.(type) {
+						case *helmv1alpha1.ProviderConfig:
+							*t = providerConfig
+						case *corev1.Secret:
+							*t = secret
+						default:
+							return errBoom
 						}
-						if key.Name == providerSecretName && key.Namespace == providerSecretNamespace {
-							*obj.(*corev1.Secret) = secret
-							return nil
-						}
-						return errBoom
+						return nil
 					},
 					MockStatusUpdate: func(ctx context.Context, obj runtime.Object, opts ...client.UpdateOption) error {
 						return nil
@@ -277,7 +292,8 @@ func Test_connector_Connect(t *testing.T) {
 				newHelmClientFn: func(log logging.Logger, config *rest.Config, namespace string) (h helmClient.Client, err error) {
 					return &MockHelmClient{}, nil
 				},
-				mg: helmRelease(),
+				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return nil }),
+				mg:    helmRelease(),
 			},
 			want: want{
 				err: nil,
@@ -292,10 +308,11 @@ func Test_connector_Connect(t *testing.T) {
 				newRestConfigFn: tc.args.newRestConfigFn,
 				newKubeClientFn: tc.args.newKubeClientFn,
 				newHelmClientFn: tc.args.newHelmClientFn,
+				usage:           tc.usage,
 			}
 			_, gotErr := c.Connect(context.Background(), tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
-				t.Fatalf("#TODO(...): -want error, +got error: %s", diff)
+				t.Fatalf("Connect(...): -want error, +got error: %s", diff)
 			}
 		})
 	}
@@ -368,6 +385,26 @@ func Test_helmExternal_Observe(t *testing.T) {
 			},
 			want: want{
 				err: errors.New(errLastReleaseIsNil),
+			},
+		},
+		"ReleaseIsBeingDeleted": {
+			args: args{
+				localKube: nil,
+				kube:      nil,
+				helm: &MockHelmClient{
+					MockGetLastRelease: func(r string) (hr *release.Release, err error) {
+						return &release.Release{}, nil
+					},
+				},
+				mg: helmRelease(
+					func(release *v1alpha1.Release) {
+						now := metav1.Now()
+						release.SetDeletionTimestamp(&now)
+					},
+				),
+			},
+			want: want{
+				out: managed.ExternalObservation{ResourceExists: true},
 			},
 		},
 		"FailedToCheckIsUpToDate": {

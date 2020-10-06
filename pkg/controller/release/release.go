@@ -14,17 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package release
 
 import (
 	"context"
 
-	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
-	"github.com/crossplane/crossplane-runtime/pkg/event"
-	"github.com/crossplane/crossplane-runtime/pkg/logging"
-	"github.com/crossplane/crossplane-runtime/pkg/meta"
-	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
-	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
@@ -34,6 +28,13 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ktype "sigs.k8s.io/kustomize/api/types"
+
+	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
+	"github.com/crossplane/crossplane-runtime/pkg/event"
+	"github.com/crossplane/crossplane-runtime/pkg/logging"
+	"github.com/crossplane/crossplane-runtime/pkg/meta"
+	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
+	"github.com/crossplane/crossplane-runtime/pkg/resource"
 
 	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
 	helmv1alpha1 "github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
@@ -56,13 +57,14 @@ const (
 	errFailedToGetRepoCreds       = "failed to get user name and password from secret reference"
 	errFailedToComposeValues      = "failed to compose values"
 	errFailedToCreateRestConfig   = "cannot create new rest config using provider secret"
+	errFailedToTrackUsage         = "cannot track provider config usage"
 	errFailedToLoadPatches        = "failed to load patches"
 	errFailedToUpdatePatchSha     = "failed to update patch sha"
 	errFailedToSetVersion         = "failed to update chart spec with the latest version"
 )
 
-// SetupRelease adds a controller that reconciles Release managed resources.
-func SetupRelease(mgr ctrl.Manager, l logging.Logger) error {
+// Setup adds a controller that reconciles Release managed resources.
+func Setup(mgr ctrl.Manager, l logging.Logger) error {
 	name := managed.ControllerName(v1alpha1.ReleaseGroupKind)
 	logger := l.WithValues("controller", name)
 
@@ -71,11 +73,11 @@ func SetupRelease(mgr ctrl.Manager, l logging.Logger) error {
 		managed.WithExternalConnecter(&connector{
 			logger:          logger,
 			client:          mgr.GetClient(),
+			usage:           resource.NewProviderConfigUsageTracker(mgr.GetClient(), &helmv1alpha1.ProviderConfigUsage{}),
 			newRestConfigFn: clients.NewRestConfig,
 			newKubeClientFn: clients.NewKubeClient,
 			newHelmClientFn: helmClient.NewClient,
 		}),
-		managed.WithInitializers(managed.NewNameAsExternalName(mgr.GetClient())),
 		managed.WithLogger(logger),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))))
 
@@ -88,6 +90,7 @@ func SetupRelease(mgr ctrl.Manager, l logging.Logger) error {
 type connector struct {
 	logger          logging.Logger
 	client          client.Client
+	usage           resource.Tracker
 	newRestConfigFn func(creds map[string][]byte) (*rest.Config, error)
 	newKubeClientFn func(config *rest.Config) (client.Client, error)
 	newHelmClientFn func(log logging.Logger, config *rest.Config, namespace string) (helmClient.Client, error)
@@ -108,6 +111,10 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 		return nil, errors.New(errProviderConfigNotSet)
 	}
 
+	if err := c.usage.Track(ctx, cr); err != nil {
+		return nil, errors.Wrap(err, errFailedToTrackUsage)
+	}
+
 	n := types.NamespacedName{Name: cr.GetProviderConfigReference().Name}
 	if err := c.client.Get(ctx, n, p); err != nil {
 		return nil, errors.Wrap(err, errProviderNotRetrieved)
@@ -125,20 +132,15 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 		return nil, errors.Wrap(err, errFailedToCreateRestConfig)
 	}
 
-	// TODO(hasan): Remove below HACK, once https://github.com/crossplane/crossplane/issues/1687 resolved
-	// HACK
-	p.Status.SetConditions(runtimev1alpha1.Available())
-	if err := c.client.Status().Update(ctx, p); err != nil {
-		return nil, errors.Wrap(err, "Failed to update ProviderConfig status")
-	}
-	// END OF HACK
-
 	k, err := c.newKubeClientFn(rc)
 	if err != nil {
 		return nil, errors.Wrap(err, errNewKubernetesClient)
 	}
 
 	h, err := c.newHelmClientFn(c.logger, rc, cr.Spec.ForProvider.Namespace)
+	if err != nil {
+		return nil, errors.Wrap(err, errNewKubernetesClient)
+	}
 
 	return &helmExternal{
 		logger:    l,
@@ -146,7 +148,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 		kube:      k,
 		helm:      h,
 		patch:     newPatcher(),
-	}, errors.Wrap(err, errNewKubernetesClient)
+	}, nil
 }
 
 type helmExternal struct {
@@ -181,6 +183,16 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 	}
 
 	cr.Status.AtProvider = generateObservation(rel)
+
+	// Determining whether the release is up to date may involve reading values
+	// from secrets, configmaps, etc. This will fail if said dependencies have
+	// been deleted. We don't need to determine whether we're up to date in
+	// order to delete the release, so if we know we're about to be deleted we
+	// return early to avoid blocking unnecessarily on missing dependencies.
+	if meta.WasDeleted(cr) {
+		return managed.ExternalObservation{ResourceExists: true}, nil
+	}
+
 	s, err := isUpToDate(ctx, e.localKube, &cr.Spec.ForProvider, rel, cr.Status)
 	if err != nil {
 		return managed.ExternalObservation{}, errors.Wrap(err, errFailedToCheckIfUpToDate)
