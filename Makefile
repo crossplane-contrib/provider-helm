@@ -34,15 +34,10 @@ GO111MODULE = on
 -include build/makelib/k8s_tools.mk
 
 # ====================================================================================
-# Setup Package
-
-PACKAGE=package
-export PACKAGE
-PACKAGE_REGISTRY=$(PACKAGE)/.registry
-PACKAGE_REGISTRY_SOURCE=config/package/manifests
+# Setup Images
 
 DOCKER_REGISTRY = crossplane
-IMAGES = provider-helm
+IMAGES = provider-helm provider-helm-controller
 -include build/makelib/image.mk
 
 # ====================================================================================
@@ -64,13 +59,20 @@ fallthrough: submodules
 	@echo Initial setup complete. Running make again . . .
 	@make
 
-
 # Generate a coverage report for cobertura applying exclusions on
 # - generated file
 cobertura:
 	@cat $(GO_TEST_OUTPUT)/coverage.txt | \
 		grep -v zz_generated.deepcopy | \
 		$(GOCOVER_COBERTURA) > $(GO_TEST_OUTPUT)/cobertura-coverage.xml
+
+crds.clean:
+	@$(INFO) cleaning generated CRDs
+	@find package/crds -name *.yaml -exec sed -i.sed -e '1,2d' {} \; || $(FAIL)
+	@find package/crds -name *.yaml.sed -delete || $(FAIL)
+	@$(OK) cleaned generated CRDs
+
+generate: crds.clean
 
 # Ensure a PR is ready for review.
 reviewable: generate lint
@@ -95,42 +97,7 @@ run: $(KUBECTL) generate
 	@$(KUBECTL) apply -f config/crd/ -R
 	go run cmd/provider/main.go -d
 
-# ====================================================================================
-# Package related targets
-
-# Initialize the package folder
-$(PACKAGE_REGISTRY):
-	@mkdir -p $(PACKAGE_REGISTRY)/resources
-	@touch $(PACKAGE_REGISTRY)/app.yaml $(PACKAGE_REGISTRY)/install.yaml
-
-build.artifacts: build-package
-
-CRD_DIR=config/crd
-build-package: $(PACKAGE_REGISTRY)
-# Copy CRDs over
-#
-# The reason this looks complicated is because it is
-# preserving the original crd filenames and changing
-# *.yaml to *.crd.yaml.
-#
-# An alternate and simpler-looking approach would
-# be to cat all of the files into a single crd.yaml,
-# but then we couldn't use per CRD metadata files.
-	@$(INFO) building package in $(PACKAGE)
-	@find $(CRD_DIR) -type f -name '*.yaml' | \
-		while read filename ; do mkdir -p $(PACKAGE_REGISTRY)/resources/$$(basename $${filename%_*});\
-		concise=$${filename#*_}; \
-		cat $$filename > \
-		$(PACKAGE_REGISTRY)/resources/$$( basename $${filename%_*} )/$$( basename $${concise/.yaml/.crd.yaml} ) \
-		; done
-	@cp -r $(PACKAGE_REGISTRY_SOURCE)/* $(PACKAGE_REGISTRY)
-
-clean: clean-package
-
-clean-package:
-	@rm -rf $(PACKAGE)
-
 manifests:
 	@$(INFO) Deprecated. Run make generate instead.
 
-.PHONY: cobertura reviewable submodules fallthrough run clean-package build-package manifests
+.PHONY: cobertura reviewable submodules fallthrough run manifests crds.clean
