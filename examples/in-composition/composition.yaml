@@ -147,16 +147,18 @@ spec:
         apiVersion: helm.crossplane.io/v1alpha1
         kind: ProviderConfig
         spec:
-          credentialsSecretRef:
-            namespace: crossplane-system
-            key: kubeconfig
+          credentials:
+            source: Secret
+            secretRef:
+              namespace: crossplane-system
+              key: kubeconfig
       patches:
         - fromFieldPath: metadata.name
           toFieldPath: metadata.name
         # This ProviderConfig uses the above GKECluster's connection secret as
         # its credentials secret.
         - fromFieldPath: "metadata.uid"
-          toFieldPath: spec.credentialsSecretRef.name
+          toFieldPath: spec.credentials.secretRef.name
           transforms:
             - type: string
               string:

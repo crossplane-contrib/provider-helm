@@ -122,12 +122,15 @@ func Test_connector_Connect(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: providerName},
 		Spec: helmv1alpha1.ProviderConfigSpec{
 			ProviderConfigSpec: runtimev1alpha1.ProviderConfigSpec{
-				CredentialsSecretRef: &runtimev1alpha1.SecretKeySelector{
-					SecretReference: runtimev1alpha1.SecretReference{
-						Name:      providerSecretName,
-						Namespace: providerSecretNamespace,
+				Credentials: runtimev1alpha1.ProviderCredentials{
+					Source: runtimev1alpha1.CredentialsSourceSecret,
+					SecretRef: &runtimev1alpha1.SecretKeySelector{
+						SecretReference: runtimev1alpha1.SecretReference{
+							Name:      providerSecretName,
+							Namespace: providerSecretNamespace,
+						},
+						Key: "",
 					},
-					Key: "",
 				},
 			},
 		},
@@ -186,6 +189,46 @@ func Test_connector_Connect(t *testing.T) {
 			},
 			want: want{
 				err: errors.Wrap(errBoom, errProviderNotRetrieved),
+			},
+		},
+		"UnsupportedCredentialSource": {
+			args: args{
+				client: &test.MockClient{
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+						if key.Name == providerName {
+							pc := providerConfig.DeepCopy()
+							pc.Spec.Credentials.Source = runtimev1alpha1.CredentialsSource("wat")
+							*obj.(*helmv1alpha1.ProviderConfig) = *pc
+							return nil
+						}
+						return nil
+					},
+				},
+				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return nil }),
+				mg:    helmRelease(),
+			},
+			want: want{
+				err: errors.Errorf(errFmtUnsupportedCredSource, "wat"),
+			},
+		},
+		"NoSecretRef": {
+			args: args{
+				client: &test.MockClient{
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+						if key.Name == providerName {
+							pc := providerConfig.DeepCopy()
+							pc.Spec.Credentials.SecretRef = nil
+							*obj.(*helmv1alpha1.ProviderConfig) = *pc
+							return nil
+						}
+						return nil
+					},
+				},
+				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return nil }),
+				mg:    helmRelease(),
+			},
+			want: want{
+				err: errors.New(errCredSecretNotSet),
 			},
 		},
 		"FailedToGetProviderSecret": {
