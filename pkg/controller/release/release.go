@@ -46,6 +46,7 @@ const (
 	errNotRelease                 = "managed resource is not a Release custom resource"
 	errProviderConfigNotSet       = "provider config is not set"
 	errProviderNotRetrieved       = "provider could not be retrieved"
+	errCredSecretNotSet           = "provider credentials secret is not set"
 	errNewKubernetesClient        = "cannot create new Kubernetes client"
 	errProviderSecretNotRetrieved = "secret referred in provider could not be retrieved"
 	errFailedToGetLastRelease     = "failed to get last helm release"
@@ -61,6 +62,8 @@ const (
 	errFailedToLoadPatches        = "failed to load patches"
 	errFailedToUpdatePatchSha     = "failed to update patch sha"
 	errFailedToSetVersion         = "failed to update chart spec with the latest version"
+
+	errFmtUnsupportedCredSource = "unsupported credentials source %q"
 )
 
 // Setup adds a controller that reconciles Release managed resources.
@@ -119,14 +122,26 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	if err := c.client.Get(ctx, n, p); err != nil {
 		return nil, errors.Wrap(err, errProviderNotRetrieved)
 	}
-	key := types.NamespacedName{Namespace: p.Spec.CredentialsSecretRef.Namespace, Name: p.Spec.CredentialsSecretRef.Name}
+
+	if s := p.Spec.Credentials.Source; s != runtimev1alpha1.CredentialsSourceSecret {
+		return nil, errors.Errorf(errFmtUnsupportedCredSource, s)
+	}
+
+	ref := p.Spec.Credentials.SecretRef
+	if ref == nil {
+		return nil, errors.New(errCredSecretNotSet)
+	}
+
+	key := types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}
 	creds, err := getSecretData(ctx, c.client, key)
 	if err != nil {
 		return nil, errors.Wrap(err, errProviderSecretNotRetrieved)
 	}
 
-	// We rely on multiple keys in ProviderConfig secret, so, ignoring "p.Spec.CredentialsSecretRef.Key"
+	// We rely on multiple keys in ProviderConfig secret, so, ignoring "ref.Key"
 	// TODO(hasan): Consider relying only "kubeconfig" key
+	// TODO(negz): Or consider using a bespoke ProviderConfig type that does not
+	// require a secret key.
 	rc, err := c.newRestConfigFn(creds)
 	if err != nil {
 		return nil, errors.Wrap(err, errFailedToCreateRestConfig)
