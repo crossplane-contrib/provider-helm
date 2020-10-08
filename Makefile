@@ -84,6 +84,15 @@ check-diff: reviewable
 	@test -z "$$(git status --porcelain)" || $(FAIL)
 	@$(OK) branch is clean
 
+# integration tests
+e2e.run: test-integration
+
+# Run integration tests.
+test-integration: $(KIND) $(KUBECTL) $(HELM3)
+	@$(INFO) running integration tests using kind $(KIND_VERSION)
+	@$(ROOT_DIR)/cluster/integration/integration_tests.sh || $(FAIL)
+	@$(OK) integration tests passed
+
 # Update the submodules, such as the common build scripts.
 submodules:
 	@git submodule sync
@@ -100,4 +109,4 @@ run: $(KUBECTL) generate
 manifests:
 	@$(INFO) Deprecated. Run make generate instead.
 
-.PHONY: cobertura reviewable submodules fallthrough run manifests crds.clean
+.PHONY: cobertura reviewable submodules fallthrough test-integration run manifests crds.clean
