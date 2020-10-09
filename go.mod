@@ -3,7 +3,7 @@ module github.com/crossplane-contrib/provider-helm
 go 1.13
 
 require (
-	github.com/crossplane/crossplane-runtime v0.9.1-0.20201008065523-51c117eff562
+	github.com/crossplane/crossplane-runtime v0.10.0
 	github.com/crossplane/crossplane-tools v0.0.0-20201007233256-88b291e145bb
 	github.com/go-logr/zapr v0.1.1 // indirect
 	github.com/golang/groupcache v0.0.0-20190702054246-869f871628b6 // indirect
