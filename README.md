@@ -13,23 +13,23 @@ of Helm Releases on Kubernetes clusters typically provisioned by Crossplane:
 
 ## Install
 
-If you would like to install `provider-helm` without modifications create
-the following `ClusterPackageInstall` in a Kubernetes cluster where Crossplane is
+If you would like to install `provider-helm` without modifications, you may do
+so using the Crossplane CLI in a Kubernetes cluster where Crossplane is
 installed:
 
+```console
+kubectl crossplane install provider crossplane/provider-helm:master
+```
+
+You may also manually install `provider-helm` by creating a `Provider` directly:
+
 ```yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: helm
----
-apiVersion: packages.crossplane.io/v1alpha1
-kind: ClusterPackageInstall
+apiVersion: pkg.crossplane.io/v1alpha1
+kind: Provider
 metadata:
   name: provider-helm
-  namespace: helm
 spec:
-  package: "crossplane-contrib/provider-helm:latest"
+  package: "crossplane/provider-helm:master"
 ```
 
 ## Design 
