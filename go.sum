@@ -137,8 +137,8 @@ github.com/coreos/pkg v0.0.0-20180928190104-399ea9e2e55f/go.mod h1:E3G3o1h8I7cfc
 github.com/cpuguy83/go-md2man v1.0.10/go.mod h1:SmD6nW6nTyfqj6ABTjUi3V3JVMnlJmwcJI5acqYI6dE=
 github.com/cpuguy83/go-md2man/v2 v2.0.0/go.mod h1:maD7wRr/U5Z6m/iR4s+kqSMx2CaBsrgA7czyZG/E6dU=
 github.com/creack/pty v1.1.7/go.mod h1:lj5s0c3V2DBrqTV7llrYr5NG6My20zk30Fl46Y7DoTY=
-github.com/crossplane/crossplane-runtime v0.9.1-0.20201008065523-51c117eff562 h1:o28gUhy3uHtow+5mLU4FEvJrZfFKXU244bzFzYWGnzc=
-github.com/crossplane/crossplane-runtime v0.9.1-0.20201008065523-51c117eff562/go.mod h1:cJl5ZZONisre4v6wTmbrC8Jh3AI+erq/lNaxZzv9tnU=
+github.com/crossplane/crossplane-runtime v0.10.0 h1:H8YvMcrm1uzZYpwU/BpxjRQfceVulxgYJMx4rmX38Hg=
+github.com/crossplane/crossplane-runtime v0.10.0/go.mod h1:cJl5ZZONisre4v6wTmbrC8Jh3AI+erq/lNaxZzv9tnU=
 github.com/crossplane/crossplane-tools v0.0.0-20201007233256-88b291e145bb h1:j09j/Gk1qH64HUtf/fcTjMAxLxUdOuQXySWu46WTVTU=
 github.com/crossplane/crossplane-tools v0.0.0-20201007233256-88b291e145bb/go.mod h1:C735A9X0x0lR8iGVOOxb49Mt70Ua4EM2b7PGaRPBLd4=
 github.com/cyphar/filepath-securejoin v0.2.2 h1:jCwT2GTP+PY5nBz3c/YL5PAIbusElVrPujOBSCj8xRg=
