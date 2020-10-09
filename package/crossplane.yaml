@@ -1,0 +1,7 @@
+apiVersion: meta.pkg.crossplane.io/v1alpha1
+kind: Provider
+metadata:
+  name: provider-helm
+spec:
+  controller:
+    image: crossplane/provider-helm-controller:VERSION
