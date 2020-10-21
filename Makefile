@@ -30,7 +30,7 @@ GO111MODULE = on
 
 # ====================================================================================
 # Setup Kubernetes tools
-
+USE_HELM3 = true
 -include build/makelib/k8s_tools.mk
 
 # ====================================================================================
@@ -103,7 +103,7 @@ submodules:
 # try running the binary directly with different arguments.
 run: $(KUBECTL) generate
 	@$(INFO) Running Crossplane locally out-of-cluster . . .
-	@$(KUBECTL) apply -f config/crd/ -R
+	@$(KUBECTL) apply -f package/crds/ -R
 	go run cmd/provider/main.go -d
 
 manifests:
