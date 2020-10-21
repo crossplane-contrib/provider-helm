@@ -215,6 +215,9 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 	cr.Status.Synced = s
 	if cr.Status.AtProvider.State == release.StatusDeployed && s {
 		cr.Status.Failed = 0
+		cr.Status.SetConditions(runtimev1alpha1.Available())
+	} else {
+		cr.Status.SetConditions(runtimev1alpha1.Unavailable())
 	}
 
 	return managed.ExternalObservation{
