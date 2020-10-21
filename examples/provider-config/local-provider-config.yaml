@@ -4,10 +4,8 @@ metadata:
   name: local-provider-config
 spec:
   credentials:
-  source: Secret
+    source: Secret
     secretRef:
-      # Get secret name from service account
-      name: <helm-provider-token-secret-name>
+      name: local-cluster
       namespace: crossplane-system
-      # We rely on multiple keys in ProviderConfig secret, so, ignoring "spec.credentialsSecretRef.key"
-      key: ignore
+      key: kubeconfig
