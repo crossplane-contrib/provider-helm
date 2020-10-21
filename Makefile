@@ -30,6 +30,7 @@ GO111MODULE = on
 
 # ====================================================================================
 # Setup Kubernetes tools
+KIND_VERSION = v0.7.0
 USE_HELM3 = true
 -include build/makelib/k8s_tools.mk
 

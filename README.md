@@ -79,6 +79,10 @@ sudo kubectl proxy --port=8081
 
 1. Now you can create `Release` resources with provider reference, see [sample release.yaml](examples/sample/release.yaml).
 
+    ```
+    kubectl create -f examples/sample/release.yaml
+    ```
+
 ### Cleanup
 
 ```
