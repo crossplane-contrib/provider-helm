@@ -324,7 +324,10 @@ func (e *helmExternal) Delete(_ context.Context, mg resource.Managed) error {
 }
 
 func shouldRollBack(cr *v1alpha1.Release) bool {
-	return cr.Status.Synced && cr.Status.AtProvider.State == release.StatusFailed && rollBackEnabled(cr)
+	return rollBackEnabled(cr) &&
+		((cr.Status.Synced && cr.Status.AtProvider.State == release.StatusFailed) ||
+			(cr.Status.AtProvider.State == release.StatusPendingInstall) ||
+			(cr.Status.AtProvider.State == release.StatusPendingUpgrade))
 }
 
 func rollBackEnabled(cr *v1alpha1.Release) bool {

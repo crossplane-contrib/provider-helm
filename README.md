@@ -53,23 +53,35 @@ make run
 Since controller is running outside of the Kind cluster, you need to make api server accessible (on a separate terminal):
 
 ```
-sudo kubectl proxy --port=80
+sudo kubectl proxy --port=8081
 ```
 
 ### Testing in Local Cluster
 
-1. Deploy [RBAC for local cluster](examples/provider-config/local-service-account.yaml)
+1. Prepare KUBECONFIG for local cluster:
+    1. If helm provider running in cluster (e.g. provider installed with crossplane):
+    
+        ```
+        KUBECONFIG=$(kind get kubeconfig --name local-dev | sed -e 's|server:\s*.*$|server: https://kubernetes.default.svc|g')
+        ```
+    1. If provider helm running outside of the cluster (e.g. running locally with `make run`)
+    
+        ```
+        KUBECONFIG=$(kind get kubeconfig --name local-dev | sed -e 's|server:\s*.*$|server: http://localhost:8081|g')
+        ```
+
+1. Create KUBECONFIG secret for local cluster and deploy [local-provider.yaml](examples/provider-config/local-provider-config.yaml).
 
     ```
-    kubectl apply -f examples/provider-config/local-service-account.yaml
+    kubectl -n crossplane-system create secret generic local-cluster --from-literal=kubeconfig="${KUBECONFIG}" 
+    kubectl apply -f examples/provider-config/local-provider-config.yaml 
     ```
-1. Deploy [local-provider.yaml](examples/provider-config/local-provider-config.yaml) by replacing `spec.credentialsSecretRef.name` with the token secret name.
 
-    ```
-    EXP="s/<helm-provider-token-secret-name>/$(kubectl get sa helm-provider -n crossplane-system -o jsonpath="{.secrets[0].name}")/g"
-    cat examples/provider-config/local-provider-config.yaml | sed -e "${EXP}" | kubectl apply -f -
-    ```
 1. Now you can create `Release` resources with provider reference, see [sample release.yaml](examples/sample/release.yaml).
+
+    ```
+    kubectl create -f examples/sample/release.yaml
+    ```
 
 ### Cleanup
 
