@@ -74,17 +74,17 @@ func NewKubeClient(config *rest.Config) (client.Client, error) {
 }
 
 func restConfigFromAPIConfig(c *api.Config) (*rest.Config, error) {
-	ctx := c.CurrentContext
-	if ctx == "" {
+	if c.CurrentContext == "" {
 		return nil, errors.New("currentContext not set in kubeconfig")
 	}
-	cluster := c.Clusters[ctx]
+	ctx := c.Contexts[c.CurrentContext]
+	cluster := c.Clusters[ctx.Cluster]
 	if cluster == nil {
-		return nil, errors.New(fmt.Sprintf("cluster for currentContext (%s) not found", ctx))
+		return nil, errors.New(fmt.Sprintf("cluster for currentContext (%s) not found", c.CurrentContext))
 	}
-	user := c.AuthInfos[ctx]
+	user := c.AuthInfos[ctx.AuthInfo]
 	if user == nil {
-		return nil, errors.New(fmt.Sprintf("auth info for currentContext (%s) not found", ctx))
+		return nil, errors.New(fmt.Sprintf("auth info for currentContext (%s) not found", c.CurrentContext))
 	}
 	return &rest.Config{
 		Host:            cluster.Server,
