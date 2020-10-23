@@ -18,6 +18,7 @@ package release
 
 import (
 	"context"
+	"time"
 
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
@@ -43,7 +44,12 @@ import (
 	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
 )
 
-const maxConcurrency = 10
+const (
+	maxConcurrency = 10
+
+	resyncPeriod     = 10 * time.Minute
+	reconcileTimeout = 2 * time.Minute
+)
 
 const (
 	errNotRelease                 = "managed resource is not a Release custom resource"
@@ -85,6 +91,8 @@ func Setup(mgr ctrl.Manager, l logging.Logger) error {
 			newHelmClientFn: helmClient.NewClient,
 		}),
 		managed.WithLogger(logger),
+		managed.WithTimeout(reconcileTimeout),
+		managed.WithLongWait(resyncPeriod),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))))
 
 	return ctrl.NewControllerManagedBy(mgr).
