@@ -7,8 +7,26 @@ metadata:
   name: releases.helm.crossplane.io
 spec:
   additionalPrinterColumns:
+  - JSONPath: .spec.forProvider.chart.name
+    name: CHART
+    type: string
+  - JSONPath: .spec.forProvider.chart.version
+    name: VERSION
+    type: string
+  - JSONPath: .status.conditions[?(@.type=='Synced')].status
+    name: SYNCED
+    type: string
+  - JSONPath: .status.conditions[?(@.type=='Ready')].status
+    name: READY
+    type: string
   - JSONPath: .status.atProvider.state
     name: STATE
+    type: string
+  - JSONPath: .status.atProvider.revision
+    name: REVISION
+    type: string
+  - JSONPath: .status.atProvider.releaseDescription
+    name: DESCRIPTION
     type: string
   - JSONPath: .metadata.creationTimestamp
     name: AGE
