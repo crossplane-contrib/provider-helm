@@ -27,7 +27,7 @@ jobs:
       - name: Configure Git User
         run:  |
           git config --global credential.helper cache
-          git config remote.origin.url https://${UPBOUND_BOT_USR}:${UPBOUND_BOT_PSW}@\$(git config --get remote.origin.url | sed -e 's/https:\\/\\///')
+          git config remote.origin.url https://${UPBOUND_BOT_USR}:${UPBOUND_BOT_PSW}@$(git config --get remote.origin.url | sed -e 's*https:\\*\\//*')
           git config user.name "upbound-bot"
           git config user.email "info@crossplane.io"
 
