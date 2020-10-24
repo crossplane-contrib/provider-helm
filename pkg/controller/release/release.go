@@ -18,6 +18,7 @@ package release
 
 import (
 	"context"
+	"time"
 
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
@@ -27,6 +28,7 @@ import (
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	ktype "sigs.k8s.io/kustomize/api/types"
 
 	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
@@ -40,6 +42,13 @@ import (
 	helmv1alpha1 "github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
 	"github.com/crossplane-contrib/provider-helm/pkg/clients"
 	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
+)
+
+const (
+	maxConcurrency = 10
+
+	resyncPeriod     = 10 * time.Minute
+	reconcileTimeout = 2 * time.Minute
 )
 
 const (
@@ -82,11 +91,14 @@ func Setup(mgr ctrl.Manager, l logging.Logger) error {
 			newHelmClientFn: helmClient.NewClient,
 		}),
 		managed.WithLogger(logger),
+		managed.WithTimeout(reconcileTimeout),
+		managed.WithLongWait(resyncPeriod),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))))
 
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).
 		For(&v1alpha1.Release{}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: maxConcurrency}).
 		Complete(r)
 }
 
