@@ -6,10 +6,9 @@ on:
       version:
         description: 'Release version (e.g. v0.1.0)'
         required: true
-
-env:
-  UPBOUND_BOT_USR: ${{ secrets.UPBOUND_BOT_USR }}
-  UPBOUND_BOT_PSW: ${{ secrets.UPBOUND_BOT_PSW }}
+      message:
+        description: 'Tag message'
+        required: true
 
 jobs:
   create-tag:
@@ -18,21 +17,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-        with:
-          submodules: true
-
-      - name: Fetch History
-        run: git fetch --prune --unshallow
-
-      - name: Configure Git User
-        run:  |
-          git config --global credential.helper cache
-          git config remote.origin.url https://${UPBOUND_BOT_USR}:${UPBOUND_BOT_PSW}@$(git config --get remote.origin.url | sed -e 's/https:\/\///')
-          git config user.name "upbound-bot"
-          git config user.email "info@crossplane.io"
 
       - name: Create Tag
-        run: make -j2 tag
-        env:
-          VERSION: ${{ github.event.inputs.version }}
-        
+        uses: negz/create-tag@v1
+        with:
+          version: ${{ github.event.inputs.version }}
+          message: ${{ github.event.inputs.message }}
+          token: ${{ secrets.GITHUB_TOKEN }}
