@@ -48,7 +48,7 @@ const (
 	maxConcurrency = 10
 
 	resyncPeriod     = 10 * time.Minute
-	reconcileTimeout = 2 * time.Minute
+	reconcileTimeout = 10 * time.Minute
 )
 
 const (
