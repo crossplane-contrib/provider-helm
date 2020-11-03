@@ -18,6 +18,7 @@ package release
 
 import (
 	"context"
+	"time"
 
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
@@ -40,6 +41,10 @@ import (
 	helmv1alpha1 "github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
 	"github.com/crossplane-contrib/provider-helm/pkg/clients"
 	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
+)
+
+const (
+	reconcileTimeout = 10 * time.Minute
 )
 
 const (
@@ -82,6 +87,7 @@ func Setup(mgr ctrl.Manager, l logging.Logger) error {
 			newHelmClientFn: helmClient.NewClient,
 		}),
 		managed.WithLogger(logger),
+		managed.WithTimeout(reconcileTimeout),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))))
 
 	return ctrl.NewControllerManagedBy(mgr).
