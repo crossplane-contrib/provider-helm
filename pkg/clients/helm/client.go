@@ -70,7 +70,7 @@ type client struct {
 }
 
 // NewClient returns a new Helm Client with provided config
-func NewClient(log logging.Logger, config *rest.Config, namespace string) (Client, error) {
+func NewClient(log logging.Logger, config *rest.Config, namespace string, wait bool) (Client, error) {
 	rg := newRESTClientGetter(config, namespace)
 
 	actionConfig := new(action.Configuration)
@@ -98,11 +98,15 @@ func NewClient(log logging.Logger, config *rest.Config, namespace string) (Clien
 	ic := action.NewInstall(actionConfig)
 	ic.Namespace = namespace
 	ic.CreateNamespace = true
+	ic.Wait = wait
 
 	uc := action.NewUpgrade(actionConfig)
+	uc.Wait = wait
+
 	uic := action.NewUninstall(actionConfig)
 
 	rb := action.NewRollback(actionConfig)
+	rb.Wait = wait
 
 	return &client{
 		log:             log,
