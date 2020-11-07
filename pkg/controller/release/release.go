@@ -135,28 +135,37 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 		return nil, errors.Wrap(err, errProviderNotRetrieved)
 	}
 
-	if s := p.Spec.Credentials.Source; s != runtimev1alpha1.CredentialsSourceSecret {
+	var rc *rest.Config
+	var err error
+
+	s := p.Spec.Credentials.Source
+	if s == runtimev1alpha1.CredentialsSourceSecret {
+		ref := p.Spec.Credentials.SecretRef
+		if ref == nil {
+			return nil, errors.New(errCredSecretNotSet)
+		}
+
+		key := types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}
+		creds, err := getSecretData(ctx, c.client, key)
+		if err != nil {
+			return nil, errors.Wrap(err, errProviderSecretNotRetrieved)
+		}
+
+		// We rely on multiple keys in ProviderConfig secret, so, ignoring "ref.Key"
+		// TODO(hasan): Consider relying only "kubeconfig" key
+		// TODO(negz): Or consider using a bespoke ProviderConfig type that does not
+		// require a secret key.
+		rc, err = c.newRestConfigFn(creds)
+		if err != nil {
+			return nil, errors.Wrap(err, errFailedToCreateRestConfig)
+		}
+	} else if s == runtimev1alpha1.CredentialsSourceInjectedIdentity {
+		rc, err = rest.InClusterConfig()
+		if err != nil {
+			return nil, errors.Wrap(err, errFailedToCreateRestConfig)
+		}
+	} else {
 		return nil, errors.Errorf(errFmtUnsupportedCredSource, s)
-	}
-
-	ref := p.Spec.Credentials.SecretRef
-	if ref == nil {
-		return nil, errors.New(errCredSecretNotSet)
-	}
-
-	key := types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}
-	creds, err := getSecretData(ctx, c.client, key)
-	if err != nil {
-		return nil, errors.Wrap(err, errProviderSecretNotRetrieved)
-	}
-
-	// We rely on multiple keys in ProviderConfig secret, so, ignoring "ref.Key"
-	// TODO(hasan): Consider relying only "kubeconfig" key
-	// TODO(negz): Or consider using a bespoke ProviderConfig type that does not
-	// require a secret key.
-	rc, err := c.newRestConfigFn(creds)
-	if err != nil {
-		return nil, errors.Wrap(err, errFailedToCreateRestConfig)
 	}
 
 	k, err := c.newKubeClientFn(rc)
