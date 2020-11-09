@@ -2,6 +2,28 @@ apiVersion: meta.pkg.crossplane.io/v1alpha1
 kind: Provider
 metadata:
   name: provider-helm
+  annotations:
+    descriptionShort: |
+      The Helm Crossplane provider enables resource management of Helm Releases
+      on Kubernetes Clusters.
+
+    description: |
+      The Helm Crossplane provider enables resource management of Helm Releases
+      on Kubernetes Clusters, typically provisioned by Crossplane.
+
+    readme: |
+      `provider-helm` is a Crossplane Provider that enables deployment and
+      management of [Helm](https://helm.sh) Releases on Kubernetes clusters
+      typically provisioned by Crossplane.
+
+      Available resources and their fields can be found in the [CRD
+      Docs](https://doc.crds.dev/github.com/crossplane-contrib/provider-helm).
+
+      If you encounter an issue please reach out on
+      [slack.crossplane.io](https://slack.crossplane.io) and create an issue in
+      the
+      [crossplane-contrib/provider-helm](https://github.com/crossplane-contrib/provider-helm)
+      repo.
 spec:
   controller:
     image: crossplane/provider-helm-controller:VERSION
