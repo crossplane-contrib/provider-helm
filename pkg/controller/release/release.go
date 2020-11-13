@@ -108,7 +108,7 @@ type connector struct {
 	usage           resource.Tracker
 	newRestConfigFn func(creds map[string][]byte) (*rest.Config, error)
 	newKubeClientFn func(config *rest.Config) (client.Client, error)
-	newHelmClientFn func(log logging.Logger, config *rest.Config, namespace string) (helmClient.Client, error)
+	newHelmClientFn func(log logging.Logger, config *rest.Config, namespace string, wait bool) (helmClient.Client, error)
 }
 
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
@@ -164,7 +164,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 		return nil, errors.Wrap(err, errNewKubernetesClient)
 	}
 
-	h, err := c.newHelmClientFn(c.logger, rc, cr.Spec.ForProvider.Namespace)
+	h, err := c.newHelmClientFn(c.logger, rc, cr.Spec.ForProvider.Namespace, cr.Spec.ForProvider.Wait)
 	if err != nil {
 		return nil, errors.Wrap(err, errNewKubernetesClient)
 	}

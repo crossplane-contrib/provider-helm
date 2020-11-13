@@ -145,7 +145,7 @@ func Test_connector_Connect(t *testing.T) {
 		client          client.Client
 		newRestConfigFn func(creds map[string][]byte) (*rest.Config, error)
 		newKubeClientFn func(config *rest.Config) (client.Client, error)
-		newHelmClientFn func(log logging.Logger, config *rest.Config, namespace string) (helmClient.Client, error)
+		newHelmClientFn func(log logging.Logger, config *rest.Config, namespace string, wait bool) (helmClient.Client, error)
 		usage           resource.Tracker
 		mg              resource.Managed
 	}
@@ -332,7 +332,7 @@ func Test_connector_Connect(t *testing.T) {
 				newKubeClientFn: func(config *rest.Config) (c client.Client, err error) {
 					return &test.MockClient{}, nil
 				},
-				newHelmClientFn: func(log logging.Logger, config *rest.Config, namespace string) (h helmClient.Client, err error) {
+				newHelmClientFn: func(log logging.Logger, config *rest.Config, namespace string, wait bool) (h helmClient.Client, err error) {
 					return &MockHelmClient{}, nil
 				},
 				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return nil }),

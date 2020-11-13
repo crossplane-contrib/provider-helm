@@ -69,6 +69,7 @@ type ValuesSpec struct {
 type ReleaseParameters struct {
 	Chart       ChartSpec         `json:"chart"`
 	Namespace   string            `json:"namespace"`
+	Wait        bool              `json:"wait,omitempty"`
 	PatchesFrom []ValueFromSource `json:"patchesFrom,omitempty"`
 	ValuesSpec  `json:",inline"`
 }

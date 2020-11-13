@@ -217,6 +217,8 @@ spec:
                           type: object
                       type: object
                     type: array
+                  wait:
+                    type: boolean
                 required:
                 - chart
                 - namespace
