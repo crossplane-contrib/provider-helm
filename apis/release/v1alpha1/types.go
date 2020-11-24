@@ -60,6 +60,7 @@ type SetVal struct {
 
 // ValuesSpec defines the Helm value overrides spec for a Release
 type ValuesSpec struct {
+	// +kubebuilder:pruning:PreserveUnknownFields
 	Values     runtime.RawExtension `json:"values,omitempty"`
 	ValuesFrom []ValueFromSource    `json:"valuesFrom,omitempty"`
 	Set        []SetVal             `json:"set,omitempty"`

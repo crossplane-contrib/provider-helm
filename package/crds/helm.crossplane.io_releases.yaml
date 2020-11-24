@@ -181,6 +181,7 @@ spec:
                     type: array
                   values:
                     type: object
+                    x-kubernetes-preserve-unknown-fields: true
                   valuesFrom:
                     items:
                       description: ValueFromSource represents source of a value
