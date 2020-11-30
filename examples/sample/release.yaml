@@ -13,7 +13,7 @@ spec:
 #       name: museum-creds
 #       namespace: default
     namespace: wordpress
-    wait: true
+#    wait: true
     values:
       service:
         type: ClusterIP
@@ -32,5 +32,4 @@ spec:
 #         namespace: wordpress
 #         optional: false
   providerConfigRef:
-    name: local-provider-config
-  reclaimPolicy: Delete
+    name: helm-provider

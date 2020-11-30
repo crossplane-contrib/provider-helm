@@ -140,7 +140,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	var err error
 
 	s := p.Spec.Credentials.Source
-	switch s {
+	switch s { //nolint:exhaustive
 	case runtimev1alpha1.CredentialsSourceInjectedIdentity:
 		rc, err = rest.InClusterConfig()
 		if err != nil {
@@ -159,7 +159,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 		}
 		kc, f := d[ref.Key]
 		if !f {
-			return nil, errors.Wrapf(err, errProviderSecretValueForKeyNotFound, ref.Key)
+			return nil, errors.Errorf(errProviderSecretValueForKeyNotFound, ref.Key)
 		}
 		rc, err = c.newRestConfigFn(kc)
 		if err != nil {
