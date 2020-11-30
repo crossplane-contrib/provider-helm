@@ -26,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
+	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
 )
 
 const (
@@ -63,7 +63,7 @@ func getConfigMapData(ctx context.Context, kube client.Client, nn types.Namespac
 	return cm.Data, nil
 }
 
-func getDataValueFromSource(ctx context.Context, kube client.Client, source v1alpha1.ValueFromSource, defaultKey string) (string, error) { // nolint:gocyclo
+func getDataValueFromSource(ctx context.Context, kube client.Client, source v1beta1.ValueFromSource, defaultKey string) (string, error) { // nolint:gocyclo
 	if source.SecretKeyRef != nil {
 		r := source.SecretKeyRef
 		d, err := getSecretData(ctx, kube, types.NamespacedName{Name: r.Name, Namespace: r.Namespace})

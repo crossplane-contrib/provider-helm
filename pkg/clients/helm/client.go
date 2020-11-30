@@ -33,7 +33,7 @@ import (
 	"k8s.io/client-go/rest"
 	ktype "sigs.k8s.io/kustomize/api/types"
 
-	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
+	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
 )
 
 const (
@@ -56,7 +56,7 @@ type Client interface {
 	Upgrade(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error)
 	Rollback(release string) error
 	Uninstall(release string) error
-	PullAndLoadChart(spec *v1alpha1.ChartSpec, creds *RepoCreds) (*chart.Chart, error)
+	PullAndLoadChart(spec *v1beta1.ChartSpec, creds *RepoCreds) (*chart.Chart, error)
 }
 
 type client struct {
@@ -135,7 +135,7 @@ func getChartFileName(dir string) (string, error) {
 }
 
 // Pulls latest chart version. Returns absolute chartFilePath or error.
-func (hc *client) pullLatestChartVersion(spec *v1alpha1.ChartSpec, creds *RepoCreds) (string, error) {
+func (hc *client) pullLatestChartVersion(spec *v1beta1.ChartSpec, creds *RepoCreds) (string, error) {
 	tmpDir, err := ioutil.TempDir(chartCache, "")
 	if err != nil {
 		return "", err
@@ -162,7 +162,7 @@ func (hc *client) pullLatestChartVersion(spec *v1alpha1.ChartSpec, creds *RepoCr
 	return chartFilePath, nil
 }
 
-func (hc *client) pullChart(spec *v1alpha1.ChartSpec, creds *RepoCreds, chartDir string) error {
+func (hc *client) pullChart(spec *v1beta1.ChartSpec, creds *RepoCreds, chartDir string) error {
 	pc := hc.pullClient
 
 	pc.RepoURL = spec.Repository
@@ -180,7 +180,7 @@ func (hc *client) pullChart(spec *v1alpha1.ChartSpec, creds *RepoCreds, chartDir
 	return nil
 }
 
-func (hc *client) PullAndLoadChart(spec *v1alpha1.ChartSpec, creds *RepoCreds) (*chart.Chart, error) {
+func (hc *client) PullAndLoadChart(spec *v1beta1.ChartSpec, creds *RepoCreds) (*chart.Chart, error) {
 	var chartFilePath string
 	var err error
 	if spec.Version == "" {

@@ -12,7 +12,7 @@ import (
 	ktypes "sigs.k8s.io/kustomize/api/types"
 	"sigs.k8s.io/yaml"
 
-	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
+	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
 )
 
 const (
@@ -22,13 +22,13 @@ const (
 
 // Patcher interface for managing Kustomize patches and detecting updates
 type Patcher interface {
-	hasUpdates(ctx context.Context, kube client.Client, in []v1alpha1.ValueFromSource, s v1alpha1.ReleaseStatus) (bool, error)
+	hasUpdates(ctx context.Context, kube client.Client, in []v1beta1.ValueFromSource, s v1beta1.ReleaseStatus) (bool, error)
 	patchGetter
 	patchHasher
 }
 
 type patchGetter interface {
-	getFromSpec(ctx context.Context, kube client.Client, vals []v1alpha1.ValueFromSource) ([]ktypes.Patch, error)
+	getFromSpec(ctx context.Context, kube client.Client, vals []v1beta1.ValueFromSource) ([]ktypes.Patch, error)
 }
 
 type patchHasher interface {
@@ -47,7 +47,7 @@ type patch struct {
 	patchGetter
 }
 
-func (p patch) hasUpdates(ctx context.Context, kube client.Client, in []v1alpha1.ValueFromSource, s v1alpha1.ReleaseStatus) (bool, error) {
+func (p patch) hasUpdates(ctx context.Context, kube client.Client, in []v1beta1.ValueFromSource, s v1beta1.ReleaseStatus) (bool, error) {
 	patches, err := p.getFromSpec(ctx, kube, in)
 	if err != nil {
 		return false, err
@@ -78,7 +78,7 @@ func (patchSha) shaOf(patches []ktypes.Patch) (string, error) {
 
 type patchGet struct{}
 
-func (patchGet) getFromSpec(ctx context.Context, kube client.Client, vals []v1alpha1.ValueFromSource) ([]ktypes.Patch, error) {
+func (patchGet) getFromSpec(ctx context.Context, kube client.Client, vals []v1beta1.ValueFromSource) ([]ktypes.Patch, error) {
 	var base []ktypes.Patch // nolint:prealloc
 
 	for _, vf := range vals {

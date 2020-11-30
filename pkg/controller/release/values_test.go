@@ -5,23 +5,20 @@ import (
 	"fmt"
 	"testing"
 
-	corev1 "k8s.io/api/core/v1"
-
-	"k8s.io/apimachinery/pkg/runtime"
-
+	"github.com/crossplane/crossplane-runtime/pkg/test"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/crossplane/crossplane-runtime/pkg/test"
-
-	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
+	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
 )
 
 func Test_composeValuesFromSpec(t *testing.T) {
 	type args struct {
 		kube client.Client
-		spec v1alpha1.ValuesSpec
+		spec v1beta1.ValuesSpec
 	}
 
 	type want struct {
@@ -37,7 +34,7 @@ func Test_composeValuesFromSpec(t *testing.T) {
 				kube: &test.MockClient{
 					MockGet: nil,
 				},
-				spec: v1alpha1.ValuesSpec{
+				spec: v1beta1.ValuesSpec{
 					Values: runtime.RawExtension{
 						Raw: []byte(testReleaseConfigStr),
 					},
@@ -55,7 +52,7 @@ func Test_composeValuesFromSpec(t *testing.T) {
 				kube: &test.MockClient{
 					MockGet: nil,
 				},
-				spec: v1alpha1.ValuesSpec{
+				spec: v1beta1.ValuesSpec{
 					Values: runtime.RawExtension{
 						Raw: []byte("invalid-yaml"),
 					},
@@ -85,11 +82,11 @@ func Test_composeValuesFromSpec(t *testing.T) {
 						return errBoom
 					},
 				},
-				spec: v1alpha1.ValuesSpec{
-					ValuesFrom: []v1alpha1.ValueFromSource{
+				spec: v1beta1.ValuesSpec{
+					ValuesFrom: []v1beta1.ValueFromSource{
 						{
-							ConfigMapKeyRef: &v1alpha1.DataKeySelector{
-								NamespacedName: v1alpha1.NamespacedName{
+							ConfigMapKeyRef: &v1beta1.DataKeySelector{
+								NamespacedName: v1beta1.NamespacedName{
 									Name:      testCMName,
 									Namespace: testNamespace,
 								},
@@ -116,11 +113,11 @@ func Test_composeValuesFromSpec(t *testing.T) {
 						return nil
 					},
 				},
-				spec: v1alpha1.ValuesSpec{
-					ValuesFrom: []v1alpha1.ValueFromSource{
+				spec: v1beta1.ValuesSpec{
+					ValuesFrom: []v1beta1.ValueFromSource{
 						{
-							ConfigMapKeyRef: &v1alpha1.DataKeySelector{
-								NamespacedName: v1alpha1.NamespacedName{
+							ConfigMapKeyRef: &v1beta1.DataKeySelector{
+								NamespacedName: v1beta1.NamespacedName{
 									Name:      testCMName,
 									Namespace: testNamespace,
 								},
@@ -154,11 +151,11 @@ func Test_composeValuesFromSpec(t *testing.T) {
 						return errBoom
 					},
 				},
-				spec: v1alpha1.ValuesSpec{
-					ValuesFrom: []v1alpha1.ValueFromSource{
+				spec: v1beta1.ValuesSpec{
+					ValuesFrom: []v1beta1.ValueFromSource{
 						{
-							ConfigMapKeyRef: &v1alpha1.DataKeySelector{
-								NamespacedName: v1alpha1.NamespacedName{
+							ConfigMapKeyRef: &v1beta1.DataKeySelector{
+								NamespacedName: v1beta1.NamespacedName{
 									Name:      testCMName,
 									Namespace: testNamespace,
 								},
@@ -181,7 +178,7 @@ func Test_composeValuesFromSpec(t *testing.T) {
 				kube: &test.MockClient{
 					MockGet: nil,
 				},
-				spec: v1alpha1.ValuesSpec{
+				spec: v1beta1.ValuesSpec{
 					Values: runtime.RawExtension{
 						Raw: []byte(`
 keyA: valA
@@ -190,7 +187,7 @@ keyB:
 `),
 					},
 					ValuesFrom: nil,
-					Set: []v1alpha1.SetVal{
+					Set: []v1beta1.SetVal{
 						{
 							Name:  "keyA",
 							Value: "valX",
@@ -213,8 +210,8 @@ keyB:
 				kube: &test.MockClient{
 					MockGet: nil,
 				},
-				spec: v1alpha1.ValuesSpec{
-					Set: []v1alpha1.SetVal{
+				spec: v1beta1.ValuesSpec{
+					Set: []v1beta1.SetVal{
 						{
 							Name: "keyA",
 						},
@@ -242,7 +239,7 @@ keyB:
 						return errBoom
 					},
 				},
-				spec: v1alpha1.ValuesSpec{
+				spec: v1beta1.ValuesSpec{
 					Values: runtime.RawExtension{
 						Raw: []byte(`
 keyA: valA
@@ -251,12 +248,12 @@ keyB:
 `),
 					},
 					ValuesFrom: nil,
-					Set: []v1alpha1.SetVal{
+					Set: []v1beta1.SetVal{
 						{
 							Name: "keyA",
-							ValueFrom: &v1alpha1.ValueFromSource{
-								SecretKeyRef: &v1alpha1.DataKeySelector{
-									NamespacedName: v1alpha1.NamespacedName{
+							ValueFrom: &v1beta1.ValueFromSource{
+								SecretKeyRef: &v1beta1.DataKeySelector{
+									NamespacedName: v1beta1.NamespacedName{
 										Name:      testSecretName,
 										Namespace: testNamespace,
 									},
@@ -288,7 +285,7 @@ keyB:
 						return nil
 					},
 				},
-				spec: v1alpha1.ValuesSpec{
+				spec: v1beta1.ValuesSpec{
 					Values: runtime.RawExtension{
 						Raw: []byte(`
 keyA: valA
@@ -297,12 +294,12 @@ keyB:
 `),
 					},
 					ValuesFrom: nil,
-					Set: []v1alpha1.SetVal{
+					Set: []v1beta1.SetVal{
 						{
 							Name: "keyA",
-							ValueFrom: &v1alpha1.ValueFromSource{
-								SecretKeyRef: &v1alpha1.DataKeySelector{
-									NamespacedName: v1alpha1.NamespacedName{
+							ValueFrom: &v1beta1.ValueFromSource{
+								SecretKeyRef: &v1beta1.DataKeySelector{
+									NamespacedName: v1beta1.NamespacedName{
 										Name:      testSecretName,
 										Namespace: testNamespace,
 									},

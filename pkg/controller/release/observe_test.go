@@ -6,15 +6,14 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 
+	"github.com/crossplane/crossplane-runtime/pkg/test"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/crossplane/crossplane-runtime/pkg/test"
-
-	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
+	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
 )
 
 const (
@@ -40,7 +39,7 @@ func Test_generateObservation(t *testing.T) {
 		in *release.Release
 	}
 	type want struct {
-		out v1alpha1.ReleaseObservation
+		out v1beta1.ReleaseObservation
 	}
 	cases := map[string]struct {
 		args
@@ -54,7 +53,7 @@ func Test_generateObservation(t *testing.T) {
 				},
 			},
 			want: want{
-				out: v1alpha1.ReleaseObservation{
+				out: v1beta1.ReleaseObservation{
 					State:              "",
 					ReleaseDescription: "",
 				},
@@ -71,7 +70,7 @@ func Test_generateObservation(t *testing.T) {
 				},
 			},
 			want: want{
-				out: v1alpha1.ReleaseObservation{
+				out: v1beta1.ReleaseObservation{
 					State:              release.StatusDeployed,
 					ReleaseDescription: testDescription,
 				},
@@ -91,7 +90,7 @@ func Test_generateObservation(t *testing.T) {
 func Test_isUpToDate(t *testing.T) {
 	type args struct {
 		kube     client.Client
-		in       *v1alpha1.ReleaseParameters
+		in       *v1beta1.ReleaseParameters
 		observed *release.Release
 	}
 	type want struct {
@@ -161,12 +160,12 @@ func Test_isUpToDate(t *testing.T) {
 				kube: &test.MockClient{
 					MockGet: nil,
 				},
-				in: &v1alpha1.ReleaseParameters{
-					Chart: v1alpha1.ChartSpec{
+				in: &v1beta1.ReleaseParameters{
+					Chart: v1beta1.ChartSpec{
 						Name:    testChart,
 						Version: testVersion,
 					},
-					ValuesSpec: v1alpha1.ValuesSpec{
+					ValuesSpec: v1beta1.ValuesSpec{
 						Values: runtime.RawExtension{
 							Raw:    []byte("invalid-yaml"),
 							Object: nil,
@@ -199,12 +198,12 @@ func Test_isUpToDate(t *testing.T) {
 				kube: &test.MockClient{
 					MockGet: nil,
 				},
-				in: &v1alpha1.ReleaseParameters{
-					Chart: v1alpha1.ChartSpec{
+				in: &v1beta1.ReleaseParameters{
+					Chart: v1beta1.ChartSpec{
 						Name:    "another-chart",
 						Version: testVersion,
 					},
-					ValuesSpec: v1alpha1.ValuesSpec{
+					ValuesSpec: v1beta1.ValuesSpec{
 						Values: runtime.RawExtension{
 							Raw: []byte(testReleaseConfigStr),
 						},
@@ -232,12 +231,12 @@ func Test_isUpToDate(t *testing.T) {
 				kube: &test.MockClient{
 					MockGet: nil,
 				},
-				in: &v1alpha1.ReleaseParameters{
-					Chart: v1alpha1.ChartSpec{
+				in: &v1beta1.ReleaseParameters{
+					Chart: v1beta1.ChartSpec{
 						Name:    testChart,
 						Version: "another-version",
 					},
-					ValuesSpec: v1alpha1.ValuesSpec{
+					ValuesSpec: v1beta1.ValuesSpec{
 						Values: runtime.RawExtension{
 							Raw: []byte(testReleaseConfigStr),
 						},
@@ -265,12 +264,12 @@ func Test_isUpToDate(t *testing.T) {
 				kube: &test.MockClient{
 					MockGet: nil,
 				},
-				in: &v1alpha1.ReleaseParameters{
-					Chart: v1alpha1.ChartSpec{
+				in: &v1beta1.ReleaseParameters{
+					Chart: v1beta1.ChartSpec{
 						Name:    testChart,
 						Version: testVersion,
 					},
-					ValuesSpec: v1alpha1.ValuesSpec{
+					ValuesSpec: v1beta1.ValuesSpec{
 						Values: runtime.RawExtension{
 							Raw: []byte("keyA: valX"),
 						},
@@ -298,12 +297,12 @@ func Test_isUpToDate(t *testing.T) {
 				kube: &test.MockClient{
 					MockGet: nil,
 				},
-				in: &v1alpha1.ReleaseParameters{
-					Chart: v1alpha1.ChartSpec{
+				in: &v1beta1.ReleaseParameters{
+					Chart: v1beta1.ChartSpec{
 						Name:    testChart,
 						Version: testVersion,
 					},
-					ValuesSpec: v1alpha1.ValuesSpec{
+					ValuesSpec: v1beta1.ValuesSpec{
 						Values: runtime.RawExtension{
 							Raw: []byte(testReleaseConfigStr),
 						},
@@ -331,12 +330,12 @@ func Test_isUpToDate(t *testing.T) {
 				kube: &test.MockClient{
 					MockGet: nil,
 				},
-				in: &v1alpha1.ReleaseParameters{
-					Chart: v1alpha1.ChartSpec{
+				in: &v1beta1.ReleaseParameters{
+					Chart: v1beta1.ChartSpec{
 						Name:    testChart,
 						Version: testVersion,
 					},
-					ValuesSpec: v1alpha1.ValuesSpec{
+					ValuesSpec: v1beta1.ValuesSpec{
 						Values: runtime.RawExtension{
 							Raw: []byte(testReleaseConfigStr),
 						},
@@ -363,7 +362,7 @@ func Test_isUpToDate(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got, gotErr := isUpToDate(context.Background(), tc.args.kube, tc.args.in, tc.args.observed, v1alpha1.ReleaseStatus{})
+			got, gotErr := isUpToDate(context.Background(), tc.args.kube, tc.args.in, tc.args.observed, v1beta1.ReleaseStatus{})
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
 				t.Fatalf("isUpToDate(...): -want error, +got error: %s", diff)
 			}

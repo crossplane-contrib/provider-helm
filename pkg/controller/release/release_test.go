@@ -5,6 +5,11 @@ import (
 	"fmt"
 	"testing"
 
+	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
+	"github.com/crossplane/crossplane-runtime/pkg/logging"
+	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
+	"github.com/crossplane/crossplane-runtime/pkg/resource"
+	"github.com/crossplane/crossplane-runtime/pkg/test"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
@@ -17,14 +22,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/api/types"
 
-	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
-	"github.com/crossplane/crossplane-runtime/pkg/logging"
-	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
-	"github.com/crossplane/crossplane-runtime/pkg/resource"
-	"github.com/crossplane/crossplane-runtime/pkg/test"
-
-	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
-	helmv1alpha1 "github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
+	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
+	helmv1beta1 "github.com/crossplane-contrib/provider-helm/apis/v1beta1"
 	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
 )
 
@@ -39,28 +38,28 @@ const (
 	testReleaseName = "test-release"
 )
 
-type helmReleaseModifier func(release *v1alpha1.Release)
+type helmReleaseModifier func(release *v1beta1.Release)
 
-func helmRelease(rm ...helmReleaseModifier) *v1alpha1.Release {
-	r := &v1alpha1.Release{
+func helmRelease(rm ...helmReleaseModifier) *v1beta1.Release {
+	r := &v1beta1.Release{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      testReleaseName,
 			Namespace: testNamespace,
 		},
-		Spec: v1alpha1.ReleaseSpec{
+		Spec: v1beta1.ReleaseSpec{
 			ResourceSpec: runtimev1alpha1.ResourceSpec{
 				ProviderConfigReference: &runtimev1alpha1.Reference{
 					Name: providerName,
 				},
 			},
-			ForProvider: v1alpha1.ReleaseParameters{
-				Chart: v1alpha1.ChartSpec{
+			ForProvider: v1beta1.ReleaseParameters{
+				Chart: v1beta1.ChartSpec{
 					Name:    testChart,
 					Version: testVersion,
 				},
 			},
 		},
-		Status: v1alpha1.ReleaseStatus{},
+		Status: v1beta1.ReleaseStatus{},
 	}
 
 	for _, m := range rm {
@@ -75,7 +74,7 @@ type MockInstallFn func(release string, chart *chart.Chart, vals map[string]inte
 type MockUpgradeFn func(release string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (*release.Release, error)
 type MockRollBackFn func(release string) error
 type MockUninstallFn func(release string) error
-type MockPullAndLoadChartFn func(spec *v1alpha1.ChartSpec, creds *helmClient.RepoCreds) (*chart.Chart, error)
+type MockPullAndLoadChartFn func(spec *v1beta1.ChartSpec, creds *helmClient.RepoCreds) (*chart.Chart, error)
 
 type MockHelmClient struct {
 	MockGetLastRelease   MockGetLastReleaseFn
@@ -106,7 +105,7 @@ func (c *MockHelmClient) Uninstall(release string) error {
 	return c.MockUninstall(release)
 }
 
-func (c *MockHelmClient) PullAndLoadChart(spec *v1alpha1.ChartSpec, creds *helmClient.RepoCreds) (*chart.Chart, error) {
+func (c *MockHelmClient) PullAndLoadChart(spec *v1beta1.ChartSpec, creds *helmClient.RepoCreds) (*chart.Chart, error) {
 	if c.MockPullAndLoadChart != nil {
 		return c.MockPullAndLoadChart(spec, creds)
 	}
@@ -118,9 +117,9 @@ type notHelmRelease struct {
 }
 
 func Test_connector_Connect(t *testing.T) {
-	providerConfig := helmv1alpha1.ProviderConfig{
+	providerConfig := helmv1beta1.ProviderConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: providerName},
-		Spec: helmv1alpha1.ProviderConfigSpec{
+		Spec: helmv1beta1.ProviderConfigSpec{
 			ProviderConfigSpec: runtimev1alpha1.ProviderConfigSpec{
 				Credentials: runtimev1alpha1.ProviderCredentials{
 					Source: runtimev1alpha1.CredentialsSourceSecret,
@@ -178,7 +177,7 @@ func Test_connector_Connect(t *testing.T) {
 				client: &test.MockClient{
 					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
 						if key.Name == providerName {
-							*obj.(*helmv1alpha1.ProviderConfig) = providerConfig
+							*obj.(*helmv1beta1.ProviderConfig) = providerConfig
 							return errBoom
 						}
 						return nil
@@ -198,7 +197,7 @@ func Test_connector_Connect(t *testing.T) {
 						if key.Name == providerName {
 							pc := providerConfig.DeepCopy()
 							pc.Spec.Credentials.Source = runtimev1alpha1.CredentialsSource("wat")
-							*obj.(*helmv1alpha1.ProviderConfig) = *pc
+							*obj.(*helmv1beta1.ProviderConfig) = *pc
 							return nil
 						}
 						return nil
@@ -218,7 +217,7 @@ func Test_connector_Connect(t *testing.T) {
 						if key.Name == providerName {
 							pc := providerConfig.DeepCopy()
 							pc.Spec.Credentials.SecretRef = nil
-							*obj.(*helmv1alpha1.ProviderConfig) = *pc
+							*obj.(*helmv1beta1.ProviderConfig) = *pc
 							return nil
 						}
 						return nil
@@ -236,7 +235,7 @@ func Test_connector_Connect(t *testing.T) {
 				client: &test.MockClient{
 					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
 						if key.Name == providerName {
-							*obj.(*helmv1alpha1.ProviderConfig) = providerConfig
+							*obj.(*helmv1beta1.ProviderConfig) = providerConfig
 							return nil
 						}
 						if key.Name == providerSecretName && key.Namespace == providerSecretNamespace {
@@ -257,7 +256,7 @@ func Test_connector_Connect(t *testing.T) {
 				client: &test.MockClient{
 					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
 						if key.Name == providerName {
-							*obj.(*helmv1alpha1.ProviderConfig) = providerConfig
+							*obj.(*helmv1beta1.ProviderConfig) = providerConfig
 							return nil
 						}
 						if key.Name == providerSecretName && key.Namespace == providerSecretNamespace {
@@ -282,7 +281,7 @@ func Test_connector_Connect(t *testing.T) {
 				client: &test.MockClient{
 					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
 						if key.Name == providerName {
-							*obj.(*helmv1alpha1.ProviderConfig) = providerConfig
+							*obj.(*helmv1beta1.ProviderConfig) = providerConfig
 							return nil
 						}
 						if key.Name == providerSecretName && key.Namespace == providerSecretNamespace {
@@ -313,7 +312,7 @@ func Test_connector_Connect(t *testing.T) {
 				client: &test.MockClient{
 					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
 						switch t := obj.(type) {
-						case *helmv1alpha1.ProviderConfig:
+						case *helmv1beta1.ProviderConfig:
 							*t = providerConfig
 						case *corev1.Secret:
 							*t = secret
@@ -440,7 +439,7 @@ func Test_helmExternal_Observe(t *testing.T) {
 					},
 				},
 				mg: helmRelease(
-					func(release *v1alpha1.Release) {
+					func(release *v1beta1.Release) {
 						now := metav1.Now()
 						release.SetDeletionTimestamp(&now)
 					},
@@ -486,7 +485,7 @@ func Test_helmExternal_Observe(t *testing.T) {
 						}, nil
 					},
 				},
-				mg: helmRelease(func(r *v1alpha1.Release) {
+				mg: helmRelease(func(r *v1beta1.Release) {
 					rl := int32(3)
 					r.Spec.RollbackRetriesLimit = &rl
 					r.Status.Failed = 0
@@ -612,7 +611,7 @@ func Test_helmExternal_Create(t *testing.T) {
 					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
 						return &release.Release{}, nil
 					},
-					MockPullAndLoadChart: func(spec *v1alpha1.ChartSpec, creds *helmClient.RepoCreds) (*chart.Chart, error) {
+					MockPullAndLoadChart: func(spec *v1beta1.ChartSpec, creds *helmClient.RepoCreds) (*chart.Chart, error) {
 						return &chart.Chart{
 							Metadata: &chart.Metadata{
 								Version: testVersion,
@@ -620,11 +619,11 @@ func Test_helmExternal_Create(t *testing.T) {
 						}, nil
 					},
 				},
-				mg: helmRelease(func(r *v1alpha1.Release) {
+				mg: helmRelease(func(r *v1beta1.Release) {
 					r.Spec.ForProvider.Chart.Version = ""
 				}),
 				updateFn: func(ctx context.Context, obj runtime.Object, opts ...client.UpdateOption) error {
-					cr := obj.(*v1alpha1.Release)
+					cr := obj.(*v1beta1.Release)
 					if diff := cmp.Diff(cr.Spec.ForProvider.Chart.Version, testVersion); diff != "" {
 						t.Fatalf("updateFn(...): -want version, +got version: %s", diff)
 					}
@@ -687,7 +686,7 @@ func Test_helmExternal_Update(t *testing.T) {
 						return errBoom
 					},
 				},
-				mg: helmRelease(func(r *v1alpha1.Release) {
+				mg: helmRelease(func(r *v1beta1.Release) {
 					l := int32(3)
 					r.Spec.RollbackRetriesLimit = &l
 					r.Status.Synced = true
@@ -706,7 +705,7 @@ func Test_helmExternal_Update(t *testing.T) {
 						return errBoom
 					},
 				},
-				mg: helmRelease(func(r *v1alpha1.Release) {
+				mg: helmRelease(func(r *v1beta1.Release) {
 					l := int32(3)
 					r.Spec.RollbackRetriesLimit = &l
 					r.Status.Synced = true
@@ -725,7 +724,7 @@ func Test_helmExternal_Update(t *testing.T) {
 						return nil
 					},
 				},
-				mg: helmRelease(func(r *v1alpha1.Release) {
+				mg: helmRelease(func(r *v1beta1.Release) {
 					l := int32(3)
 					r.Spec.RollbackRetriesLimit = &l
 					r.Status.Synced = true
@@ -740,7 +739,7 @@ func Test_helmExternal_Update(t *testing.T) {
 		"MaxRetry": {
 			args: args{
 				helm: &MockHelmClient{},
-				mg: helmRelease(func(r *v1alpha1.Release) {
+				mg: helmRelease(func(r *v1beta1.Release) {
 					l := int32(3)
 					r.Spec.RollbackRetriesLimit = &l
 					r.Status.Failed = 3

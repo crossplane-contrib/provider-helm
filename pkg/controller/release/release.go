@@ -38,8 +38,8 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 
-	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
-	helmv1alpha1 "github.com/crossplane-contrib/provider-helm/apis/v1alpha1"
+	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
+	helmv1beta1 "github.com/crossplane-contrib/provider-helm/apis/v1beta1"
 	"github.com/crossplane-contrib/provider-helm/pkg/clients"
 	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
 )
@@ -78,15 +78,15 @@ const (
 
 // Setup adds a controller that reconciles Release managed resources.
 func Setup(mgr ctrl.Manager, l logging.Logger) error {
-	name := managed.ControllerName(v1alpha1.ReleaseGroupKind)
+	name := managed.ControllerName(v1beta1.ReleaseGroupKind)
 	logger := l.WithValues("controller", name)
 
 	r := managed.NewReconciler(mgr,
-		resource.ManagedKind(v1alpha1.ReleaseGroupVersionKind),
+		resource.ManagedKind(v1beta1.ReleaseGroupVersionKind),
 		managed.WithExternalConnecter(&connector{
 			logger:          logger,
 			client:          mgr.GetClient(),
-			usage:           resource.NewProviderConfigUsageTracker(mgr.GetClient(), &helmv1alpha1.ProviderConfigUsage{}),
+			usage:           resource.NewProviderConfigUsageTracker(mgr.GetClient(), &helmv1beta1.ProviderConfigUsage{}),
 			newRestConfigFn: clients.NewRestConfig,
 			newKubeClientFn: clients.NewKubeClient,
 			newHelmClientFn: helmClient.NewClient,
@@ -98,7 +98,7 @@ func Setup(mgr ctrl.Manager, l logging.Logger) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).
-		For(&v1alpha1.Release{}).
+		For(&v1beta1.Release{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: maxConcurrency}).
 		Complete(r)
 }
@@ -113,7 +113,7 @@ type connector struct {
 }
 
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
-	cr, ok := mg.(*v1alpha1.Release)
+	cr, ok := mg.(*v1beta1.Release)
 	if !ok {
 		return nil, errors.New(errNotRelease)
 	}
@@ -121,7 +121,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 
 	l.Debug("Connecting")
 
-	p := &helmv1alpha1.ProviderConfig{}
+	p := &helmv1beta1.ProviderConfig{}
 
 	if cr.GetProviderConfigReference() == nil {
 		return nil, errors.New(errProviderConfigNotSet)
@@ -197,7 +197,7 @@ type helmExternal struct {
 }
 
 func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
-	cr, ok := mg.(*v1alpha1.Release)
+	cr, ok := mg.(*v1beta1.Release)
 	if !ok {
 		return managed.ExternalObservation{}, errors.New(errNotRelease)
 	}
@@ -250,7 +250,7 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 
 type deployAction func(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error)
 
-func (e *helmExternal) deploy(ctx context.Context, cr *v1alpha1.Release, action deployAction) error {
+func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action deployAction) error {
 	cv, err := composeValuesFromSpec(ctx, e.localKube, cr.Spec.ForProvider.ValuesSpec)
 	if err != nil {
 		return errors.Wrap(err, errFailedToComposeValues)
@@ -299,7 +299,7 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1alpha1.Release, action 
 }
 
 func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
-	cr, ok := mg.(*v1alpha1.Release)
+	cr, ok := mg.(*v1beta1.Release)
 	if !ok {
 		return managed.ExternalCreation{}, errors.New(errNotRelease)
 	}
@@ -309,7 +309,7 @@ func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed
 }
 
 func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
-	cr, ok := mg.(*v1alpha1.Release)
+	cr, ok := mg.(*v1beta1.Release)
 	if !ok {
 		return managed.ExternalUpdate{}, errors.New(errNotRelease)
 	}
@@ -338,7 +338,7 @@ func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed
 }
 
 func (e *helmExternal) Delete(_ context.Context, mg resource.Managed) error {
-	cr, ok := mg.(*v1alpha1.Release)
+	cr, ok := mg.(*v1beta1.Release)
 	if !ok {
 		return errors.New(errNotRelease)
 	}
@@ -348,16 +348,16 @@ func (e *helmExternal) Delete(_ context.Context, mg resource.Managed) error {
 	return errors.Wrap(e.helm.Uninstall(meta.GetExternalName(cr)), errFailedToUninstall)
 }
 
-func shouldRollBack(cr *v1alpha1.Release) bool {
+func shouldRollBack(cr *v1beta1.Release) bool {
 	return rollBackEnabled(cr) &&
 		((cr.Status.Synced && cr.Status.AtProvider.State == release.StatusFailed) ||
 			(cr.Status.AtProvider.State == release.StatusPendingInstall) ||
 			(cr.Status.AtProvider.State == release.StatusPendingUpgrade))
 }
 
-func rollBackEnabled(cr *v1alpha1.Release) bool {
+func rollBackEnabled(cr *v1beta1.Release) bool {
 	return cr.Spec.RollbackRetriesLimit != nil
 }
-func rollBackLimitReached(cr *v1alpha1.Release) bool {
+func rollBackLimitReached(cr *v1beta1.Release) bool {
 	return cr.Status.Failed >= *cr.Spec.RollbackRetriesLimit
 }

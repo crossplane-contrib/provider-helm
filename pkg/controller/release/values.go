@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
+	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
 )
 
 const (
@@ -40,7 +40,7 @@ const (
 	errMissingValueForSet             = "missing value for --set"
 )
 
-func composeValuesFromSpec(ctx context.Context, kube client.Client, spec v1alpha1.ValuesSpec) (map[string]interface{}, error) {
+func composeValuesFromSpec(ctx context.Context, kube client.Client, spec v1beta1.ValuesSpec) (map[string]interface{}, error) {
 	base := map[string]interface{}{}
 
 	for _, vf := range spec.ValuesFrom {
