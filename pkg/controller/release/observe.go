@@ -24,7 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
+	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
 )
 
 const (
@@ -34,8 +34,8 @@ const (
 )
 
 // generateObservation generates release observation for the input release object
-func generateObservation(in *release.Release) v1alpha1.ReleaseObservation {
-	o := v1alpha1.ReleaseObservation{}
+func generateObservation(in *release.Release) v1beta1.ReleaseObservation {
+	o := v1beta1.ReleaseObservation{}
 
 	relInfo := in.Info
 	if relInfo != nil {
@@ -47,7 +47,7 @@ func generateObservation(in *release.Release) v1alpha1.ReleaseObservation {
 }
 
 // isUpToDate checks whether desired spec up to date with the observed state for a given release
-func isUpToDate(ctx context.Context, kube client.Client, in *v1alpha1.ReleaseParameters, observed *release.Release, s v1alpha1.ReleaseStatus) (bool, error) {
+func isUpToDate(ctx context.Context, kube client.Client, in *v1beta1.ReleaseParameters, observed *release.Release, s v1beta1.ReleaseStatus) (bool, error) {
 	if observed.Info == nil {
 		return false, errors.New(errReleaseInfoNilInObservedRelease)
 	}

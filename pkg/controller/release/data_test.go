@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/crossplane/crossplane-runtime/pkg/test"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
@@ -14,9 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/crossplane/crossplane-runtime/pkg/test"
-
-	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
+	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
 )
 
 const (
@@ -225,7 +224,7 @@ func Test_getConfigMapData(t *testing.T) {
 func Test_getDataValueFromSource(t *testing.T) {
 	type args struct {
 		kube       client.Client
-		source     v1alpha1.ValueFromSource
+		source     v1beta1.ValueFromSource
 		defaultKey string
 	}
 	type want struct {
@@ -243,7 +242,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 						return errBoom
 					},
 				},
-				source: v1alpha1.ValueFromSource{},
+				source: v1beta1.ValueFromSource{},
 			},
 			want: want{
 				out: "",
@@ -260,9 +259,9 @@ func Test_getDataValueFromSource(t *testing.T) {
 						return nil
 					},
 				},
-				source: v1alpha1.ValueFromSource{
-					SecretKeyRef: &v1alpha1.DataKeySelector{
-						NamespacedName: v1alpha1.NamespacedName{
+				source: v1beta1.ValueFromSource{
+					SecretKeyRef: &v1beta1.DataKeySelector{
+						NamespacedName: v1beta1.NamespacedName{
 							Namespace: testNamespace,
 							Name:      testSecretName,
 						},
@@ -286,9 +285,9 @@ func Test_getDataValueFromSource(t *testing.T) {
 						return nil
 					},
 				},
-				source: v1alpha1.ValueFromSource{
-					ConfigMapKeyRef: &v1alpha1.DataKeySelector{
-						NamespacedName: v1alpha1.NamespacedName{
+				source: v1beta1.ValueFromSource{
+					ConfigMapKeyRef: &v1beta1.DataKeySelector{
+						NamespacedName: v1beta1.NamespacedName{
 							Namespace: testNamespace,
 							Name:      testCMName,
 						},
@@ -312,9 +311,9 @@ func Test_getDataValueFromSource(t *testing.T) {
 						return errBoom
 					},
 				},
-				source: v1alpha1.ValueFromSource{
-					SecretKeyRef: &v1alpha1.DataKeySelector{
-						NamespacedName: v1alpha1.NamespacedName{
+				source: v1beta1.ValueFromSource{
+					SecretKeyRef: &v1beta1.DataKeySelector{
+						NamespacedName: v1beta1.NamespacedName{
 							Namespace: testNamespace,
 							Name:      testSecretName,
 						},
@@ -338,9 +337,9 @@ func Test_getDataValueFromSource(t *testing.T) {
 						return errBoom
 					},
 				},
-				source: v1alpha1.ValueFromSource{
-					SecretKeyRef: &v1alpha1.DataKeySelector{
-						NamespacedName: v1alpha1.NamespacedName{
+				source: v1beta1.ValueFromSource{
+					SecretKeyRef: &v1beta1.DataKeySelector{
+						NamespacedName: v1beta1.NamespacedName{
 							Namespace: testNamespace,
 							Name:      testSecretName,
 						},
@@ -364,9 +363,9 @@ func Test_getDataValueFromSource(t *testing.T) {
 						return errBoom
 					},
 				},
-				source: v1alpha1.ValueFromSource{
-					ConfigMapKeyRef: &v1alpha1.DataKeySelector{
-						NamespacedName: v1alpha1.NamespacedName{
+				source: v1beta1.ValueFromSource{
+					ConfigMapKeyRef: &v1beta1.DataKeySelector{
+						NamespacedName: v1beta1.NamespacedName{
 							Namespace: testNamespace,
 							Name:      testCMName,
 						},
@@ -390,9 +389,9 @@ func Test_getDataValueFromSource(t *testing.T) {
 						return errBoom
 					},
 				},
-				source: v1alpha1.ValueFromSource{
-					ConfigMapKeyRef: &v1alpha1.DataKeySelector{
-						NamespacedName: v1alpha1.NamespacedName{
+				source: v1beta1.ValueFromSource{
+					ConfigMapKeyRef: &v1beta1.DataKeySelector{
+						NamespacedName: v1beta1.NamespacedName{
 							Namespace: testNamespace,
 							Name:      testCMName,
 						},
@@ -420,9 +419,9 @@ func Test_getDataValueFromSource(t *testing.T) {
 						return errBoom
 					},
 				},
-				source: v1alpha1.ValueFromSource{
-					SecretKeyRef: &v1alpha1.DataKeySelector{
-						NamespacedName: v1alpha1.NamespacedName{
+				source: v1beta1.ValueFromSource{
+					SecretKeyRef: &v1beta1.DataKeySelector{
+						NamespacedName: v1beta1.NamespacedName{
 							Namespace: testNamespace,
 							Name:      testSecretName,
 						},
@@ -450,9 +449,9 @@ func Test_getDataValueFromSource(t *testing.T) {
 						return errBoom
 					},
 				},
-				source: v1alpha1.ValueFromSource{
-					SecretKeyRef: &v1alpha1.DataKeySelector{
-						NamespacedName: v1alpha1.NamespacedName{
+				source: v1beta1.ValueFromSource{
+					SecretKeyRef: &v1beta1.DataKeySelector{
+						NamespacedName: v1beta1.NamespacedName{
 							Namespace: testNamespace,
 							Name:      testSecretName,
 						},
@@ -480,9 +479,9 @@ func Test_getDataValueFromSource(t *testing.T) {
 						return errBoom
 					},
 				},
-				source: v1alpha1.ValueFromSource{
-					ConfigMapKeyRef: &v1alpha1.DataKeySelector{
-						NamespacedName: v1alpha1.NamespacedName{
+				source: v1beta1.ValueFromSource{
+					ConfigMapKeyRef: &v1beta1.DataKeySelector{
+						NamespacedName: v1beta1.NamespacedName{
 							Namespace: testNamespace,
 							Name:      testCMName,
 						},
@@ -510,9 +509,9 @@ func Test_getDataValueFromSource(t *testing.T) {
 						return errBoom
 					},
 				},
-				source: v1alpha1.ValueFromSource{
-					ConfigMapKeyRef: &v1alpha1.DataKeySelector{
-						NamespacedName: v1alpha1.NamespacedName{
+				source: v1beta1.ValueFromSource{
+					ConfigMapKeyRef: &v1beta1.DataKeySelector{
+						NamespacedName: v1beta1.NamespacedName{
 							Namespace: testNamespace,
 							Name:      testCMName,
 						},
@@ -540,9 +539,9 @@ func Test_getDataValueFromSource(t *testing.T) {
 						return errBoom
 					},
 				},
-				source: v1alpha1.ValueFromSource{
-					SecretKeyRef: &v1alpha1.DataKeySelector{
-						NamespacedName: v1alpha1.NamespacedName{
+				source: v1beta1.ValueFromSource{
+					SecretKeyRef: &v1beta1.DataKeySelector{
+						NamespacedName: v1beta1.NamespacedName{
 							Namespace: testNamespace,
 							Name:      testSecretName,
 						},
@@ -570,9 +569,9 @@ func Test_getDataValueFromSource(t *testing.T) {
 						return errBoom
 					},
 				},
-				source: v1alpha1.ValueFromSource{
-					SecretKeyRef: &v1alpha1.DataKeySelector{
-						NamespacedName: v1alpha1.NamespacedName{
+				source: v1beta1.ValueFromSource{
+					SecretKeyRef: &v1beta1.DataKeySelector{
+						NamespacedName: v1beta1.NamespacedName{
 							Namespace: testNamespace,
 							Name:      testSecretName,
 						},
@@ -600,9 +599,9 @@ func Test_getDataValueFromSource(t *testing.T) {
 						return errBoom
 					},
 				},
-				source: v1alpha1.ValueFromSource{
-					ConfigMapKeyRef: &v1alpha1.DataKeySelector{
-						NamespacedName: v1alpha1.NamespacedName{
+				source: v1beta1.ValueFromSource{
+					ConfigMapKeyRef: &v1beta1.DataKeySelector{
+						NamespacedName: v1beta1.NamespacedName{
 							Namespace: testNamespace,
 							Name:      testCMName,
 						},
@@ -630,9 +629,9 @@ func Test_getDataValueFromSource(t *testing.T) {
 						return errBoom
 					},
 				},
-				source: v1alpha1.ValueFromSource{
-					ConfigMapKeyRef: &v1alpha1.DataKeySelector{
-						NamespacedName: v1alpha1.NamespacedName{
+				source: v1beta1.ValueFromSource{
+					ConfigMapKeyRef: &v1beta1.DataKeySelector{
+						NamespacedName: v1beta1.NamespacedName{
 							Namespace: testNamespace,
 							Name:      testCMName,
 						},

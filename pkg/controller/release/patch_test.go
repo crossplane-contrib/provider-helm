@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/crossplane/crossplane-runtime/pkg/test"
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -14,9 +15,7 @@ import (
 	"sigs.k8s.io/kustomize/api/resid"
 	"sigs.k8s.io/kustomize/api/types"
 
-	"github.com/crossplane/crossplane-runtime/pkg/test"
-
-	"github.com/crossplane-contrib/provider-helm/apis/release/v1alpha1"
+	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
 )
 
 const (
@@ -119,7 +118,7 @@ type mockPatchGet struct {
 	err     error
 }
 
-func (m mockPatchGet) getFromSpec(ctx context.Context, kube client.Client, vals []v1alpha1.ValueFromSource) ([]types.Patch, error) {
+func (m mockPatchGet) getFromSpec(ctx context.Context, kube client.Client, vals []v1beta1.ValueFromSource) ([]types.Patch, error) {
 	return m.patches, m.err
 }
 
@@ -218,7 +217,7 @@ func Test_PatchHasUpdates(t *testing.T) {
 					err:     tc.args.getPatchesFromSpecErr,
 				},
 			}
-			s := v1alpha1.ReleaseStatus{
+			s := v1beta1.ReleaseStatus{
 				PatchesSha: tc.existingSha,
 			}
 			got, gotErr := p.hasUpdates(context.Background(), nil, nil, s)
@@ -236,7 +235,7 @@ func Test_PatchHasUpdates(t *testing.T) {
 func Test_getPatchesFromSpec(t *testing.T) {
 	type args struct {
 		kube client.Client
-		spec []v1alpha1.ValueFromSource
+		spec []v1beta1.ValueFromSource
 	}
 
 	type want struct {
@@ -263,10 +262,10 @@ func Test_getPatchesFromSpec(t *testing.T) {
 						return errBoom
 					},
 				},
-				spec: []v1alpha1.ValueFromSource{
+				spec: []v1beta1.ValueFromSource{
 					{
-						ConfigMapKeyRef: &v1alpha1.DataKeySelector{
-							NamespacedName: v1alpha1.NamespacedName{
+						ConfigMapKeyRef: &v1beta1.DataKeySelector{
+							NamespacedName: v1beta1.NamespacedName{
 								Name:      testCMName,
 								Namespace: testNamespace,
 							},
@@ -303,10 +302,10 @@ func Test_getPatchesFromSpec(t *testing.T) {
 						return nil
 					},
 				},
-				spec: []v1alpha1.ValueFromSource{
+				spec: []v1beta1.ValueFromSource{
 					{
-						ConfigMapKeyRef: &v1alpha1.DataKeySelector{
-							NamespacedName: v1alpha1.NamespacedName{
+						ConfigMapKeyRef: &v1beta1.DataKeySelector{
+							NamespacedName: v1beta1.NamespacedName{
 								Name:      "1",
 								Namespace: testNamespace,
 							},
@@ -315,8 +314,8 @@ func Test_getPatchesFromSpec(t *testing.T) {
 						},
 					},
 					{
-						ConfigMapKeyRef: &v1alpha1.DataKeySelector{
-							NamespacedName: v1alpha1.NamespacedName{
+						ConfigMapKeyRef: &v1beta1.DataKeySelector{
+							NamespacedName: v1beta1.NamespacedName{
 								Name:      "2",
 								Namespace: testNamespace,
 							},
@@ -325,8 +324,8 @@ func Test_getPatchesFromSpec(t *testing.T) {
 						},
 					},
 					{
-						ConfigMapKeyRef: &v1alpha1.DataKeySelector{
-							NamespacedName: v1alpha1.NamespacedName{
+						ConfigMapKeyRef: &v1beta1.DataKeySelector{
+							NamespacedName: v1beta1.NamespacedName{
 								Name:      "3",
 								Namespace: testNamespace,
 							},
@@ -373,10 +372,10 @@ func Test_getPatchesFromSpec(t *testing.T) {
 						return kerrors.NewNotFound(schema.GroupResource{Group: "ConfigMap", Resource: key.Name}, key.Name)
 					},
 				},
-				spec: []v1alpha1.ValueFromSource{
+				spec: []v1beta1.ValueFromSource{
 					{
-						ConfigMapKeyRef: &v1alpha1.DataKeySelector{
-							NamespacedName: v1alpha1.NamespacedName{
+						ConfigMapKeyRef: &v1beta1.DataKeySelector{
+							NamespacedName: v1beta1.NamespacedName{
 								Name:      "1",
 								Namespace: testNamespace,
 							},

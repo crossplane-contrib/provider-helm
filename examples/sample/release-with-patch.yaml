@@ -20,7 +20,7 @@ data:
         target:
           kind: Deployment
 ---
-apiVersion: helm.crossplane.io/v1alpha1
+apiVersion: helm.crossplane.io/v1beta1
 kind: Release
 metadata:
   name: wordpress-example-patched
@@ -44,5 +44,5 @@ spec:
           namespace: wordpress
           optional: false
   providerRef:
-    name: local-provider
+    name: helm-provider
 
