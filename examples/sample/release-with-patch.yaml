@@ -45,4 +45,4 @@ spec:
           optional: false
   providerRef:
     name: local-provider
-  reclaimPolicy: Delete
+

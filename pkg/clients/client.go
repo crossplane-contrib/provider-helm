@@ -18,9 +18,7 @@ package clients
 
 import (
 	"fmt"
-	"net/url"
 
-	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
 	"github.com/pkg/errors"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -29,37 +27,12 @@ import (
 )
 
 // NewRestConfig returns a rest config given a secret with connection information.
-func NewRestConfig(creds map[string][]byte) (*rest.Config, error) {
-	// If "kubeconfig" key found, use it
-	kc, f := creds[runtimev1alpha1.ResourceCredentialsSecretKubeconfigKey]
-	if f {
-		ac, err := clientcmd.Load(kc)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to load kubeconfig")
-		}
-		return restConfigFromAPIConfig(ac)
-	}
-
-	u, err := url.Parse(string(creds[runtimev1alpha1.ResourceCredentialsSecretEndpointKey]))
+func NewRestConfig(kubeconfig []byte) (*rest.Config, error) {
+	ac, err := clientcmd.Load(kubeconfig)
 	if err != nil {
-		return nil, errors.Wrapf(err, "cannot parse Kubernetes endpoint as URL")
+		return nil, errors.Wrap(err, "failed to load kubeconfig")
 	}
-
-	return &rest.Config{
-		Host:     u.String(),
-		Username: string(creds[runtimev1alpha1.ResourceCredentialsSecretUserKey]),
-		Password: string(creds[runtimev1alpha1.ResourceCredentialsSecretPasswordKey]),
-		TLSClientConfig: rest.TLSClientConfig{
-			// This field's godoc claims clients will use 'the hostname used to
-			// contact the server' when it is left unset. In practice clients
-			// appear to use the URL, including scheme and port.
-			ServerName: u.Hostname(),
-			CAData:     creds[runtimev1alpha1.ResourceCredentialsSecretCAKey],
-			CertData:   creds[runtimev1alpha1.ResourceCredentialsSecretClientCertKey],
-			KeyData:    creds[runtimev1alpha1.ResourceCredentialsSecretClientKeyKey],
-		},
-		BearerToken: string(creds[runtimev1alpha1.ResourceCredentialsSecretTokenKey]),
-	}, nil
+	return restConfigFromAPIConfig(ac)
 }
 
 // NewKubeClient returns a kubernetes client given a secret with connection

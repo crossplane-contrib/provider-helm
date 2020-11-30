@@ -52,25 +52,26 @@ const (
 )
 
 const (
-	errNotRelease                 = "managed resource is not a Release custom resource"
-	errProviderConfigNotSet       = "provider config is not set"
-	errProviderNotRetrieved       = "provider could not be retrieved"
-	errCredSecretNotSet           = "provider credentials secret is not set"
-	errNewKubernetesClient        = "cannot create new Kubernetes client"
-	errProviderSecretNotRetrieved = "secret referred in provider could not be retrieved"
-	errFailedToGetLastRelease     = "failed to get last helm release"
-	errLastReleaseIsNil           = "last helm release is nil"
-	errFailedToCheckIfUpToDate    = "failed to check if release is up to date"
-	errFailedToInstall            = "failed to install release"
-	errFailedToUpgrade            = "failed to upgrade release"
-	errFailedToUninstall          = "failed to uninstall release"
-	errFailedToGetRepoCreds       = "failed to get user name and password from secret reference"
-	errFailedToComposeValues      = "failed to compose values"
-	errFailedToCreateRestConfig   = "cannot create new rest config using provider secret"
-	errFailedToTrackUsage         = "cannot track provider config usage"
-	errFailedToLoadPatches        = "failed to load patches"
-	errFailedToUpdatePatchSha     = "failed to update patch sha"
-	errFailedToSetVersion         = "failed to update chart spec with the latest version"
+	errNotRelease                        = "managed resource is not a Release custom resource"
+	errProviderConfigNotSet              = "provider config is not set"
+	errProviderNotRetrieved              = "provider could not be retrieved"
+	errCredSecretNotSet                  = "provider credentials secret is not set"
+	errNewKubernetesClient               = "cannot create new Kubernetes client"
+	errProviderSecretNotRetrieved        = "secret referred in provider could not be retrieved"
+	errProviderSecretValueForKeyNotFound = "value for key \"%s\" not found in provider credentials secret"
+	errFailedToGetLastRelease            = "failed to get last helm release"
+	errLastReleaseIsNil                  = "last helm release is nil"
+	errFailedToCheckIfUpToDate           = "failed to check if release is up to date"
+	errFailedToInstall                   = "failed to install release"
+	errFailedToUpgrade                   = "failed to upgrade release"
+	errFailedToUninstall                 = "failed to uninstall release"
+	errFailedToGetRepoCreds              = "failed to get user name and password from secret reference"
+	errFailedToComposeValues             = "failed to compose values"
+	errFailedToCreateRestConfig          = "cannot create new rest config using provider secret"
+	errFailedToTrackUsage                = "cannot track provider config usage"
+	errFailedToLoadPatches               = "failed to load patches"
+	errFailedToUpdatePatchSha            = "failed to update patch sha"
+	errFailedToSetVersion                = "failed to update chart spec with the latest version"
 
 	errFmtUnsupportedCredSource = "unsupported credentials source %q"
 )
@@ -106,7 +107,7 @@ type connector struct {
 	logger          logging.Logger
 	client          client.Client
 	usage           resource.Tracker
-	newRestConfigFn func(creds map[string][]byte) (*rest.Config, error)
+	newRestConfigFn func(kubeconfig []byte) (*rest.Config, error)
 	newKubeClientFn func(config *rest.Config) (client.Client, error)
 	newHelmClientFn func(log logging.Logger, config *rest.Config, namespace string, wait bool) (helmClient.Client, error)
 }
@@ -135,28 +136,37 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 		return nil, errors.Wrap(err, errProviderNotRetrieved)
 	}
 
-	if s := p.Spec.Credentials.Source; s != runtimev1alpha1.CredentialsSourceSecret {
+	var rc *rest.Config
+	var err error
+
+	s := p.Spec.Credentials.Source
+	switch s { //nolint:exhaustive
+	case runtimev1alpha1.CredentialsSourceInjectedIdentity:
+		rc, err = rest.InClusterConfig()
+		if err != nil {
+			return nil, errors.Wrap(err, errFailedToCreateRestConfig)
+		}
+	case runtimev1alpha1.CredentialsSourceSecret:
+		ref := p.Spec.Credentials.SecretRef
+		if ref == nil {
+			return nil, errors.New(errCredSecretNotSet)
+		}
+
+		key := types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}
+		d, err := getSecretData(ctx, c.client, key)
+		if err != nil {
+			return nil, errors.Wrap(err, errProviderSecretNotRetrieved)
+		}
+		kc, f := d[ref.Key]
+		if !f {
+			return nil, errors.Errorf(errProviderSecretValueForKeyNotFound, ref.Key)
+		}
+		rc, err = c.newRestConfigFn(kc)
+		if err != nil {
+			return nil, errors.Wrap(err, errFailedToCreateRestConfig)
+		}
+	default:
 		return nil, errors.Errorf(errFmtUnsupportedCredSource, s)
-	}
-
-	ref := p.Spec.Credentials.SecretRef
-	if ref == nil {
-		return nil, errors.New(errCredSecretNotSet)
-	}
-
-	key := types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}
-	creds, err := getSecretData(ctx, c.client, key)
-	if err != nil {
-		return nil, errors.Wrap(err, errProviderSecretNotRetrieved)
-	}
-
-	// We rely on multiple keys in ProviderConfig secret, so, ignoring "ref.Key"
-	// TODO(hasan): Consider relying only "kubeconfig" key
-	// TODO(negz): Or consider using a bespoke ProviderConfig type that does not
-	// require a secret key.
-	rc, err := c.newRestConfigFn(creds)
-	if err != nil {
-		return nil, errors.Wrap(err, errFailedToCreateRestConfig)
 	}
 
 	k, err := c.newKubeClientFn(rc)

@@ -58,24 +58,21 @@ sudo kubectl proxy --port=8081
 
 ### Testing in Local Cluster
 
-1. Prepare KUBECONFIG for local cluster:
+1. Prepare provider config for local cluster:
     1. If helm provider running in cluster (e.g. provider installed with crossplane):
     
         ```
-        KUBECONFIG=$(kind get kubeconfig --name local-dev | sed -e 's|server:\s*.*$|server: https://kubernetes.default.svc|g')
+        SA=$(kubectl -n crossplane-system get sa -o name | grep provider-helm | sed -e 's|serviceaccount\/|crossplane-system:|g')
+        kubectl create clusterrolebinding provider-helm-admin-binding --clusterrole cluster-admin --serviceaccount="${SA}"
+        kubectl apply -f examples/provider-config/provider-config-incluster.yaml
         ```
     1. If provider helm running outside of the cluster (e.g. running locally with `make run`)
     
         ```
         KUBECONFIG=$(kind get kubeconfig --name local-dev | sed -e 's|server:\s*.*$|server: http://localhost:8081|g')
+        kubectl -n crossplane-system create secret generic cluster-config --from-literal=kubeconfig="${KUBECONFIG}" 
+        kubectl apply -f examples/provider-config/provider-config-with-secret.yaml
         ```
-
-1. Create KUBECONFIG secret for local cluster and deploy [local-provider.yaml](examples/provider-config/local-provider-config.yaml).
-
-    ```
-    kubectl -n crossplane-system create secret generic local-cluster --from-literal=kubeconfig="${KUBECONFIG}" 
-    kubectl apply -f examples/provider-config/local-provider-config.yaml 
-    ```
 
 1. Now you can create `Release` resources with provider reference, see [sample release.yaml](examples/sample/release.yaml).
 

@@ -33,7 +33,7 @@ const (
 	providerSecretName      = "helm-test-secret"
 	providerSecretNamespace = "helm-test-secret-namespace"
 
-	providerSecretKey  = "credentials.json"
+	providerSecretKey  = "kubeconfig"
 	providerSecretData = "somethingsecret"
 
 	testReleaseName = "test-release"
@@ -129,7 +129,7 @@ func Test_connector_Connect(t *testing.T) {
 							Name:      providerSecretName,
 							Namespace: providerSecretNamespace,
 						},
-						Key: "",
+						Key: providerSecretKey,
 					},
 				},
 			},
@@ -143,7 +143,7 @@ func Test_connector_Connect(t *testing.T) {
 
 	type args struct {
 		client          client.Client
-		newRestConfigFn func(creds map[string][]byte) (*rest.Config, error)
+		newRestConfigFn func(kubeconfig []byte) (*rest.Config, error)
 		newKubeClientFn func(config *rest.Config) (client.Client, error)
 		newHelmClientFn func(log logging.Logger, config *rest.Config, namespace string, wait bool) (helmClient.Client, error)
 		usage           resource.Tracker
@@ -267,7 +267,7 @@ func Test_connector_Connect(t *testing.T) {
 						return errBoom
 					},
 				},
-				newRestConfigFn: func(creds map[string][]byte) (config *rest.Config, err error) {
+				newRestConfigFn: func(kubeconfig []byte) (config *rest.Config, err error) {
 					return nil, errBoom
 				},
 				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return nil }),
@@ -295,7 +295,7 @@ func Test_connector_Connect(t *testing.T) {
 						return nil
 					},
 				},
-				newRestConfigFn: func(creds map[string][]byte) (config *rest.Config, err error) {
+				newRestConfigFn: func(kubeconfig []byte) (config *rest.Config, err error) {
 					return &rest.Config{}, nil
 				},
 				newKubeClientFn: func(config *rest.Config) (c client.Client, err error) {
@@ -326,7 +326,7 @@ func Test_connector_Connect(t *testing.T) {
 						return nil
 					},
 				},
-				newRestConfigFn: func(creds map[string][]byte) (config *rest.Config, err error) {
+				newRestConfigFn: func(kubeconfig []byte) (config *rest.Config, err error) {
 					return &rest.Config{}, nil
 				},
 				newKubeClientFn: func(config *rest.Config) (c client.Client, err error) {
