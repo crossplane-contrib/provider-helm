@@ -31,5 +31,28 @@ spec:
 #         name: svals
 #         namespace: wordpress
 #         optional: false
+#  connectionDetails:
+#    - apiVersion: v1
+#      kind: Service
+#      name: wordpress-example
+#      namespace: wordpress
+#      fieldPath: spec.clusterIP
+#      #fieldPath: status.loadBalancer.ingress[0].ip
+#      toConnectionSecretKey: ip
+#    - apiVersion: v1
+#      kind: Service
+#      name: wordpress-example
+#      namespace: wordpress
+#      fieldPath: spec.ports[0].port
+#      toConnectionSecretKey: port
+#    - apiVersion: v1
+#      kind: Secret
+#      name: wordpress-example
+#      namespace: wordpress
+#      fieldPath: data.wordpress-password
+#      toConnectionSecretKey: password
+#  writeConnectionSecretToRef:
+#    name: wordpress-credentials
+#    namespace: crossplane-system
   providerConfigRef:
     name: helm-provider
