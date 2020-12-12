@@ -18,6 +18,15 @@ package release
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
+	"strings"
+
+	"github.com/crossplane/crossplane-runtime/pkg/fieldpath"
+	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/release"
@@ -31,6 +40,7 @@ const (
 	errReleaseInfoNilInObservedRelease = "release info is nil in observed helm release"
 	errChartNilInObservedRelease       = "chart field is nil in observed helm release"
 	errChartMetaNilInObservedRelease   = "chart metadata field is nil in observed helm release"
+	errObjectNotPartOfRelease          = "object is not part of release: %v"
 )
 
 // generateObservation generates release observation for the input release object
@@ -111,4 +121,54 @@ func isUpToDate(ctx context.Context, kube client.Client, in *v1beta1.ReleasePara
 
 func isPending(s release.Status) bool {
 	return s == release.StatusPendingInstall || s == release.StatusPendingUpgrade || s == release.StatusPendingRollback
+}
+
+func connectionDetails(ctx context.Context, kube client.Client, connDetails []v1beta1.ConnectionDetail, relName, relNamespace string) (managed.ConnectionDetails, error) {
+	mcd := managed.ConnectionDetails{}
+
+	for _, cd := range connDetails {
+		ro := unstructuredFromObjectRef(cd.ObjectReference)
+		if err := kube.Get(ctx, types.NamespacedName{Name: ro.GetName(), Namespace: ro.GetNamespace()}, &ro); err != nil {
+			return mcd, errors.Wrap(err, "cannot get object")
+		}
+
+		// TODO(hasan): consider making this check configurable, i.e. possible to skip via a field in spec
+		if !partOfRelease(ro, relName, relNamespace) {
+			return mcd, errors.Errorf(errObjectNotPartOfRelease, cd.ObjectReference)
+		}
+
+		paved := fieldpath.Pave(ro.Object)
+		v, err := paved.GetValue(cd.FieldPath)
+		if err != nil {
+			return mcd, errors.Wrapf(err, "failed to get value at fieldPath: %s", cd.FieldPath)
+		}
+		s := fmt.Sprintf("%v", v)
+		fv := []byte(s)
+		// prevent secret data being encoded twice
+		if cd.Kind == "Secret" && cd.APIVersion == "v1" && strings.HasPrefix(cd.FieldPath, "data") {
+			fv, err = base64.StdEncoding.DecodeString(s)
+			if err != nil {
+				return mcd, errors.Wrap(err, "failed to decode secret data")
+			}
+		}
+
+		mcd[cd.ToConnectionSecretKey] = fv
+	}
+
+	return mcd, nil
+}
+
+func unstructuredFromObjectRef(r corev1.ObjectReference) unstructured.Unstructured {
+	u := unstructured.Unstructured{}
+	u.SetAPIVersion(r.APIVersion)
+	u.SetKind(r.Kind)
+	u.SetName(r.Name)
+	u.SetNamespace(r.Namespace)
+
+	return u
+}
+
+func partOfRelease(u unstructured.Unstructured, relName, relNamespace string) bool {
+	a := u.GetAnnotations()
+	return a[helmReleaseNameAnnotation] == relName && a[helmReleaseNamespaceAnnotation] == relNamespace
 }

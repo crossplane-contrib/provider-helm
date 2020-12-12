@@ -4,13 +4,15 @@ import (
 	"context"
 	"testing"
 
-	"k8s.io/apimachinery/pkg/runtime"
-
+	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
@@ -368,6 +370,120 @@ func Test_isUpToDate(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.want.out, got); diff != "" {
 				t.Errorf("isUpToDate(...): -want result, +got result: %s", diff)
+			}
+		})
+	}
+}
+
+func Test_connectionDetails(t *testing.T) {
+	type args struct {
+		kube         client.Client
+		connDetails  []v1beta1.ConnectionDetail
+		relName      string
+		relNamespace string
+	}
+	type want struct {
+		out managed.ConnectionDetails
+		err error
+	}
+	cases := map[string]struct {
+		args
+		want
+	}{
+		"Fail_NotPartOfRelease": {
+			args: args{
+				kube: &test.MockClient{
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+						if o, ok := obj.(*unstructured.Unstructured); o.GetKind() == "Secret" && ok && key.Name == testSecretName && key.Namespace == testNamespace {
+							*obj.(*unstructured.Unstructured) = unstructured.Unstructured{
+								Object: map[string]interface{}{
+									"data": map[string]interface{}{
+										"db-password": "MTIzNDU=",
+									},
+								},
+							}
+						}
+						return nil
+					},
+				},
+				connDetails: []v1beta1.ConnectionDetail{
+					{
+						ObjectReference: corev1.ObjectReference{
+							Kind:       "Secret",
+							Namespace:  testNamespace,
+							Name:       testSecretName,
+							APIVersion: "v1",
+							FieldPath:  "data.db-password",
+						},
+						ToConnectionSecretKey: "password",
+					},
+				},
+				relName:      testReleaseName,
+				relNamespace: testNamespace,
+			},
+			want: want{
+				out: managed.ConnectionDetails{},
+				err: errors.Errorf(errObjectNotPartOfRelease, corev1.ObjectReference{
+					Kind:       "Secret",
+					Namespace:  testNamespace,
+					Name:       testSecretName,
+					APIVersion: "v1",
+					FieldPath:  "data.db-password",
+				}),
+			},
+		},
+		"Success_PartOfRelease": {
+			args: args{
+				kube: &test.MockClient{
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+						if o, ok := obj.(*unstructured.Unstructured); o.GetKind() == "Secret" && ok && key.Name == testSecretName && key.Namespace == testNamespace {
+							*obj.(*unstructured.Unstructured) = unstructured.Unstructured{
+								Object: map[string]interface{}{
+									"metadata": map[string]interface{}{
+										"annotations": map[string]interface{}{
+											helmReleaseNameAnnotation:      testReleaseName,
+											helmReleaseNamespaceAnnotation: testNamespace,
+										},
+									},
+									"data": map[string]interface{}{
+										"db-password": "MTIzNDU=",
+									},
+								},
+							}
+						}
+						return nil
+					},
+				},
+				connDetails: []v1beta1.ConnectionDetail{
+					{
+						ObjectReference: corev1.ObjectReference{
+							Kind:       "Secret",
+							Namespace:  testNamespace,
+							Name:       testSecretName,
+							APIVersion: "v1",
+							FieldPath:  "data.db-password",
+						},
+						ToConnectionSecretKey: "password",
+					},
+				},
+				relName:      testReleaseName,
+				relNamespace: testNamespace,
+			},
+			want: want{
+				out: managed.ConnectionDetails{
+					"password": []byte("12345"),
+				},
+			},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got, gotErr := connectionDetails(context.Background(), tc.args.kube, tc.args.connDetails, tc.args.relName, tc.args.relNamespace)
+			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
+				t.Fatalf("connectionDetails(...): -want error, +got error: %s", diff)
+			}
+			if diff := cmp.Diff(tc.want.out, got); diff != "" {
+				t.Errorf("connectionDetails(...): -want result, +got result: %s", diff)
 			}
 		})
 	}

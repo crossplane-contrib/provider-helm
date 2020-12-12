@@ -18,6 +18,7 @@ package v1beta1
 
 import (
 	"helm.sh/helm/v3/pkg/release"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 
@@ -85,7 +86,8 @@ type ReleaseObservation struct {
 // A ReleaseSpec defines the desired state of a Release.
 type ReleaseSpec struct {
 	runtimev1alpha1.ResourceSpec `json:",inline"`
-	ForProvider                  ReleaseParameters `json:"forProvider"`
+	ConnectionDetails            []ConnectionDetail `json:"connectionDetails,omitempty"`
+	ForProvider                  ReleaseParameters  `json:"forProvider"`
 	// RollbackRetriesLimit is max number of attempts to retry Helm deployment by rolling back the release.
 	RollbackRetriesLimit *int32 `json:"rollbackLimit,omitempty"`
 }
@@ -97,6 +99,12 @@ type ReleaseStatus struct {
 	PatchesSha                     string             `json:"patchesSha,omitempty"`
 	Failed                         int32              `json:"failed,omitempty"`
 	Synced                         bool               `json:"synced,omitempty"`
+}
+
+// ConnectionDetail todo
+type ConnectionDetail struct {
+	v1.ObjectReference    `json:",inline"`
+	ToConnectionSecretKey string `json:"toConnectionSecretKey,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -20,6 +20,12 @@ import (
 	"context"
 	"time"
 
+	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
+	"github.com/crossplane/crossplane-runtime/pkg/event"
+	"github.com/crossplane/crossplane-runtime/pkg/logging"
+	"github.com/crossplane/crossplane-runtime/pkg/meta"
+	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
+	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
@@ -30,13 +36,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	ktype "sigs.k8s.io/kustomize/api/types"
-
-	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
-	"github.com/crossplane/crossplane-runtime/pkg/event"
-	"github.com/crossplane/crossplane-runtime/pkg/logging"
-	"github.com/crossplane/crossplane-runtime/pkg/meta"
-	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
-	"github.com/crossplane/crossplane-runtime/pkg/resource"
 
 	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
 	helmv1beta1 "github.com/crossplane-contrib/provider-helm/apis/v1beta1"
@@ -49,6 +48,9 @@ const (
 
 	resyncPeriod     = 10 * time.Minute
 	reconcileTimeout = 10 * time.Minute
+
+	helmReleaseNameAnnotation      = "meta.helm.sh/release-name"
+	helmReleaseNamespaceAnnotation = "meta.helm.sh/release-namespace"
 )
 
 const (
@@ -235,16 +237,23 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 		return managed.ExternalObservation{}, errors.Wrap(err, errFailedToCheckIfUpToDate)
 	}
 	cr.Status.Synced = s
+	cd := managed.ConnectionDetails{}
 	if cr.Status.AtProvider.State == release.StatusDeployed && s {
 		cr.Status.Failed = 0
 		cr.Status.SetConditions(runtimev1alpha1.Available())
+
+		cd, err = connectionDetails(ctx, e.kube, cr.Spec.ConnectionDetails, rel.Name, rel.Namespace)
+		if err != nil {
+			return managed.ExternalObservation{}, errors.Wrap(err, "cannot get connection details")
+		}
 	} else {
 		cr.Status.SetConditions(runtimev1alpha1.Unavailable())
 	}
 
 	return managed.ExternalObservation{
-		ResourceExists:   true,
-		ResourceUpToDate: cr.Status.Synced && !(shouldRollBack(cr) && !rollBackLimitReached(cr)),
+		ResourceExists:    true,
+		ResourceUpToDate:  cr.Status.Synced && !(shouldRollBack(cr) && !rollBackLimitReached(cr)),
+		ConnectionDetails: cd,
 	}, nil
 }
 

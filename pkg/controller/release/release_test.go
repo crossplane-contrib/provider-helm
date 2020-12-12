@@ -492,7 +492,7 @@ func Test_helmExternal_Observe(t *testing.T) {
 				}),
 			},
 			want: want{
-				out: managed.ExternalObservation{ResourceExists: true, ResourceUpToDate: false},
+				out: managed.ExternalObservation{ResourceExists: true, ResourceUpToDate: false, ConnectionDetails: managed.ConnectionDetails{}},
 				err: nil,
 			},
 		},
@@ -518,7 +518,7 @@ func Test_helmExternal_Observe(t *testing.T) {
 				mg: helmRelease(),
 			},
 			want: want{
-				out: managed.ExternalObservation{ResourceExists: true, ResourceUpToDate: true},
+				out: managed.ExternalObservation{ResourceExists: true, ResourceUpToDate: true, ConnectionDetails: managed.ConnectionDetails{}},
 				err: nil,
 			},
 		},
