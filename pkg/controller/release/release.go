@@ -20,12 +20,6 @@ import (
 	"context"
 	"time"
 
-	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
-	"github.com/crossplane/crossplane-runtime/pkg/event"
-	"github.com/crossplane/crossplane-runtime/pkg/logging"
-	"github.com/crossplane/crossplane-runtime/pkg/meta"
-	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
-	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
@@ -36,6 +30,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	ktype "sigs.k8s.io/kustomize/api/types"
+
+	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	"github.com/crossplane/crossplane-runtime/pkg/event"
+	"github.com/crossplane/crossplane-runtime/pkg/logging"
+	"github.com/crossplane/crossplane-runtime/pkg/meta"
+	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
+	"github.com/crossplane/crossplane-runtime/pkg/resource"
 
 	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
 	helmv1beta1 "github.com/crossplane-contrib/provider-helm/apis/v1beta1"
@@ -143,12 +144,12 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 
 	s := p.Spec.Credentials.Source
 	switch s { //nolint:exhaustive
-	case runtimev1alpha1.CredentialsSourceInjectedIdentity:
+	case xpv1.CredentialsSourceInjectedIdentity:
 		rc, err = rest.InClusterConfig()
 		if err != nil {
 			return nil, errors.Wrap(err, errFailedToCreateRestConfig)
 		}
-	case runtimev1alpha1.CredentialsSourceSecret:
+	case xpv1.CredentialsSourceSecret:
 		ref := p.Spec.Credentials.SecretRef
 		if ref == nil {
 			return nil, errors.New(errCredSecretNotSet)
@@ -240,14 +241,14 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 	cd := managed.ConnectionDetails{}
 	if cr.Status.AtProvider.State == release.StatusDeployed && s {
 		cr.Status.Failed = 0
-		cr.Status.SetConditions(runtimev1alpha1.Available())
+		cr.Status.SetConditions(xpv1.Available())
 
 		cd, err = connectionDetails(ctx, e.kube, cr.Spec.ConnectionDetails, rel.Name, rel.Namespace)
 		if err != nil {
 			return managed.ExternalObservation{}, errors.Wrap(err, "cannot get connection details")
 		}
 	} else {
-		cr.Status.SetConditions(runtimev1alpha1.Unavailable())
+		cr.Status.SetConditions(xpv1.Unavailable())
 	}
 
 	return managed.ExternalObservation{
@@ -302,7 +303,7 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action d
 	}
 	cr.Status.PatchesSha = sha
 	cr.Status.AtProvider = generateObservation(rel)
-	cr.Status.SetConditions(runtimev1alpha1.Available())
+	cr.Status.SetConditions(xpv1.Available())
 
 	return nil
 }

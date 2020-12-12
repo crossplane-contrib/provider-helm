@@ -17,20 +17,20 @@ limitations under the License.
 
 package v1beta1
 
-import runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
+import xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 
 // GetCondition of this Release.
-func (mg *Release) GetCondition(ct runtimev1alpha1.ConditionType) runtimev1alpha1.Condition {
+func (mg *Release) GetCondition(ct xpv1.ConditionType) xpv1.Condition {
 	return mg.Status.GetCondition(ct)
 }
 
 // GetDeletionPolicy of this Release.
-func (mg *Release) GetDeletionPolicy() runtimev1alpha1.DeletionPolicy {
+func (mg *Release) GetDeletionPolicy() xpv1.DeletionPolicy {
 	return mg.Spec.DeletionPolicy
 }
 
 // GetProviderConfigReference of this Release.
-func (mg *Release) GetProviderConfigReference() *runtimev1alpha1.Reference {
+func (mg *Release) GetProviderConfigReference() *xpv1.Reference {
 	return mg.Spec.ProviderConfigReference
 }
 
@@ -38,27 +38,27 @@ func (mg *Release) GetProviderConfigReference() *runtimev1alpha1.Reference {
 GetProviderReference of this Release.
 Deprecated: Use GetProviderConfigReference.
 */
-func (mg *Release) GetProviderReference() *runtimev1alpha1.Reference {
+func (mg *Release) GetProviderReference() *xpv1.Reference {
 	return mg.Spec.ProviderReference
 }
 
 // GetWriteConnectionSecretToReference of this Release.
-func (mg *Release) GetWriteConnectionSecretToReference() *runtimev1alpha1.SecretReference {
+func (mg *Release) GetWriteConnectionSecretToReference() *xpv1.SecretReference {
 	return mg.Spec.WriteConnectionSecretToReference
 }
 
 // SetConditions of this Release.
-func (mg *Release) SetConditions(c ...runtimev1alpha1.Condition) {
+func (mg *Release) SetConditions(c ...xpv1.Condition) {
 	mg.Status.SetConditions(c...)
 }
 
 // SetDeletionPolicy of this Release.
-func (mg *Release) SetDeletionPolicy(r runtimev1alpha1.DeletionPolicy) {
+func (mg *Release) SetDeletionPolicy(r xpv1.DeletionPolicy) {
 	mg.Spec.DeletionPolicy = r
 }
 
 // SetProviderConfigReference of this Release.
-func (mg *Release) SetProviderConfigReference(r *runtimev1alpha1.Reference) {
+func (mg *Release) SetProviderConfigReference(r *xpv1.Reference) {
 	mg.Spec.ProviderConfigReference = r
 }
 
@@ -66,11 +66,11 @@ func (mg *Release) SetProviderConfigReference(r *runtimev1alpha1.Reference) {
 SetProviderReference of this Release.
 Deprecated: Use SetProviderConfigReference.
 */
-func (mg *Release) SetProviderReference(r *runtimev1alpha1.Reference) {
+func (mg *Release) SetProviderReference(r *xpv1.Reference) {
 	mg.Spec.ProviderReference = r
 }
 
 // SetWriteConnectionSecretToReference of this Release.
-func (mg *Release) SetWriteConnectionSecretToReference(r *runtimev1alpha1.SecretReference) {
+func (mg *Release) SetWriteConnectionSecretToReference(r *xpv1.SecretReference) {
 	mg.Spec.WriteConnectionSecretToReference = r
 }

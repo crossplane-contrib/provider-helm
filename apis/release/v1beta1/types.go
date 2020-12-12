@@ -22,15 +22,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 
-	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
+	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 )
 
 // A ChartSpec defines the chart spec for a Release
 type ChartSpec struct {
-	Repository    string                          `json:"repository"`
-	Name          string                          `json:"name"`
-	Version       string                          `json:"version"`
-	PullSecretRef runtimev1alpha1.SecretReference `json:"pullSecretRef,omitempty"`
+	Repository    string               `json:"repository"`
+	Name          string               `json:"name"`
+	Version       string               `json:"version"`
+	PullSecretRef xpv1.SecretReference `json:"pullSecretRef,omitempty"`
 }
 
 // NamespacedName represents a namespaced object name
@@ -85,20 +85,20 @@ type ReleaseObservation struct {
 
 // A ReleaseSpec defines the desired state of a Release.
 type ReleaseSpec struct {
-	runtimev1alpha1.ResourceSpec `json:",inline"`
-	ConnectionDetails            []ConnectionDetail `json:"connectionDetails,omitempty"`
-	ForProvider                  ReleaseParameters  `json:"forProvider"`
+	xpv1.ResourceSpec `json:",inline"`
+	ConnectionDetails []ConnectionDetail `json:"connectionDetails,omitempty"`
+	ForProvider       ReleaseParameters  `json:"forProvider"`
 	// RollbackRetriesLimit is max number of attempts to retry Helm deployment by rolling back the release.
 	RollbackRetriesLimit *int32 `json:"rollbackLimit,omitempty"`
 }
 
 // A ReleaseStatus represents the observed state of a Release.
 type ReleaseStatus struct {
-	runtimev1alpha1.ResourceStatus `json:",inline"`
-	AtProvider                     ReleaseObservation `json:"atProvider,omitempty"`
-	PatchesSha                     string             `json:"patchesSha,omitempty"`
-	Failed                         int32              `json:"failed,omitempty"`
-	Synced                         bool               `json:"synced,omitempty"`
+	xpv1.ResourceStatus `json:",inline"`
+	AtProvider          ReleaseObservation `json:"atProvider,omitempty"`
+	PatchesSha          string             `json:"patchesSha,omitempty"`
+	Failed              int32              `json:"failed,omitempty"`
+	Synced              bool               `json:"synced,omitempty"`
 }
 
 // ConnectionDetail todo
