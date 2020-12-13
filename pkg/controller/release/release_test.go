@@ -5,11 +5,6 @@ import (
 	"fmt"
 	"testing"
 
-	runtimev1alpha1 "github.com/crossplane/crossplane-runtime/apis/core/v1alpha1"
-	"github.com/crossplane/crossplane-runtime/pkg/logging"
-	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
-	"github.com/crossplane/crossplane-runtime/pkg/resource"
-	"github.com/crossplane/crossplane-runtime/pkg/test"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
@@ -21,6 +16,12 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/api/types"
+
+	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	"github.com/crossplane/crossplane-runtime/pkg/logging"
+	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
+	"github.com/crossplane/crossplane-runtime/pkg/resource"
+	"github.com/crossplane/crossplane-runtime/pkg/test"
 
 	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
 	helmv1beta1 "github.com/crossplane-contrib/provider-helm/apis/v1beta1"
@@ -47,8 +48,8 @@ func helmRelease(rm ...helmReleaseModifier) *v1beta1.Release {
 			Namespace: testNamespace,
 		},
 		Spec: v1beta1.ReleaseSpec{
-			ResourceSpec: runtimev1alpha1.ResourceSpec{
-				ProviderConfigReference: &runtimev1alpha1.Reference{
+			ResourceSpec: xpv1.ResourceSpec{
+				ProviderConfigReference: &xpv1.Reference{
 					Name: providerName,
 				},
 			},
@@ -120,11 +121,11 @@ func Test_connector_Connect(t *testing.T) {
 	providerConfig := helmv1beta1.ProviderConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: providerName},
 		Spec: helmv1beta1.ProviderConfigSpec{
-			ProviderConfigSpec: runtimev1alpha1.ProviderConfigSpec{
-				Credentials: runtimev1alpha1.ProviderCredentials{
-					Source: runtimev1alpha1.CredentialsSourceSecret,
-					SecretRef: &runtimev1alpha1.SecretKeySelector{
-						SecretReference: runtimev1alpha1.SecretReference{
+			ProviderConfigSpec: xpv1.ProviderConfigSpec{
+				Credentials: xpv1.ProviderCredentials{
+					Source: xpv1.CredentialsSourceSecret,
+					SecretRef: &xpv1.SecretKeySelector{
+						SecretReference: xpv1.SecretReference{
 							Name:      providerSecretName,
 							Namespace: providerSecretNamespace,
 						},
@@ -196,7 +197,7 @@ func Test_connector_Connect(t *testing.T) {
 					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
 						if key.Name == providerName {
 							pc := providerConfig.DeepCopy()
-							pc.Spec.Credentials.Source = runtimev1alpha1.CredentialsSource("wat")
+							pc.Spec.Credentials.Source = xpv1.CredentialsSource("wat")
 							*obj.(*helmv1beta1.ProviderConfig) = *pc
 							return nil
 						}
