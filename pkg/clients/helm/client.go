@@ -19,7 +19,9 @@ package helm
 import (
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -47,6 +49,7 @@ const (
 	errFailedToPullChart               = "failed to pull chart"
 	errFailedToLoadChart               = "failed to load chart"
 	errUnexpectedDirContentTmpl        = "expected 1 .tgz chart file, got [%s]"
+	errFailedToParseURL                = "failed to parse URL"
 )
 
 // Client is the interface to interact with Helm
@@ -165,14 +168,19 @@ func (hc *client) pullLatestChartVersion(spec *v1beta1.ChartSpec, creds *RepoCre
 func (hc *client) pullChart(spec *v1beta1.ChartSpec, creds *RepoCreds, chartDir string) error {
 	pc := hc.pullClient
 
-	pc.RepoURL = spec.Repository
-	pc.Version = spec.Version
+	chartRef := spec.URL
+	if spec.URL == "" {
+		chartRef = spec.Name
+
+		pc.RepoURL = spec.Repository
+		pc.Version = spec.Version
+	}
 	pc.Username = creds.Username
 	pc.Password = creds.Password
 
 	pc.DestDir = chartDir
 
-	o, err := pc.Run(spec.Name)
+	o, err := pc.Run(chartRef)
 	hc.log.Debug(o)
 	if err != nil {
 		return errors.Wrap(err, errFailedToPullChart)
@@ -183,13 +191,22 @@ func (hc *client) pullChart(spec *v1beta1.ChartSpec, creds *RepoCreds, chartDir 
 func (hc *client) PullAndLoadChart(spec *v1beta1.ChartSpec, creds *RepoCreds) (*chart.Chart, error) {
 	var chartFilePath string
 	var err error
-	if spec.Version == "" {
+	if spec.URL == "" && spec.Version == "" {
 		chartFilePath, err = hc.pullLatestChartVersion(spec, creds)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		chartFilePath = filepath.Join(chartCache, fmt.Sprintf("%s-%s.tgz", spec.Name, spec.Version))
+		filename := fmt.Sprintf("%s-%s.tgz", spec.Name, spec.Version)
+		if spec.URL != "" {
+			u, err := url.Parse(spec.URL)
+			if err != nil {
+				return nil, errors.Wrap(err, errFailedToParseURL)
+			}
+			filename = path.Base(u.Path)
+		}
+		chartFilePath = filepath.Join(chartCache, filename)
+
 		if _, err := os.Stat(chartFilePath); os.IsNotExist(err) {
 			if err = hc.pullChart(spec, creds, chartCache); err != nil {
 				return nil, err
