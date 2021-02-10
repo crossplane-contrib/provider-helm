@@ -402,9 +402,10 @@ spec:
                     description: A ChartSpec defines the chart spec for a Release
                     properties:
                       name:
+                        description: Name of Helm chart, required if ChartSpec.URL not set
                         type: string
                       pullSecretRef:
-                        description: A SecretReference is a reference to a secret in an arbitrary namespace.
+                        description: PullSecretRef is reference to the secret containing credentials to helm repository
                         properties:
                           name:
                             description: Name of the secret.
@@ -417,13 +418,14 @@ spec:
                         - namespace
                         type: object
                       repository:
+                        description: 'Repository: Helm repository URL, required if ChartSpec.URL not set'
+                        type: string
+                      url:
+                        description: URL to chart package (typically .tgz), optional and overrides others fields in the spec
                         type: string
                       version:
+                        description: Version of Helm chart, late initialized with latest version if not set
                         type: string
-                    required:
-                    - name
-                    - repository
-                    - version
                     type: object
                   namespace:
                     type: string

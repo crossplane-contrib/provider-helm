@@ -27,9 +27,15 @@ import (
 
 // A ChartSpec defines the chart spec for a Release
 type ChartSpec struct {
-	Repository    string               `json:"repository"`
-	Name          string               `json:"name"`
-	Version       string               `json:"version"`
+	// Repository: Helm repository URL, required if ChartSpec.URL not set
+	Repository string `json:"repository,omitempty"`
+	// Name of Helm chart, required if ChartSpec.URL not set
+	Name string `json:"name,omitempty"`
+	// Version of Helm chart, late initialized with latest version if not set
+	Version string `json:"version,omitempty"`
+	// URL to chart package (typically .tgz), optional and overrides others fields in the spec
+	URL string `json:"url,omitempty"`
+	// PullSecretRef is reference to the secret containing credentials to helm repository
 	PullSecretRef xpv1.SecretReference `json:"pullSecretRef,omitempty"`
 }
 
