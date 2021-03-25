@@ -242,12 +242,12 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 	cd := managed.ConnectionDetails{}
 	if cr.Status.AtProvider.State == release.StatusDeployed && s {
 		cr.Status.Failed = 0
-		cr.Status.SetConditions(xpv1.Available())
 
 		cd, err = connectionDetails(ctx, e.kube, cr.Spec.ConnectionDetails, rel.Name, rel.Namespace)
 		if err != nil {
 			return managed.ExternalObservation{}, errors.Wrap(err, "cannot get connection details")
 		}
+		cr.Status.SetConditions(xpv1.Available())
 	} else {
 		cr.Status.SetConditions(xpv1.Unavailable())
 	}
@@ -310,7 +310,6 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action d
 	}
 	cr.Status.PatchesSha = sha
 	cr.Status.AtProvider = generateObservation(rel)
-	cr.Status.SetConditions(xpv1.Available())
 
 	return nil
 }
