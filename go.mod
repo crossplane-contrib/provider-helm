@@ -1,6 +1,6 @@
 module github.com/crossplane-contrib/provider-helm
 
-go 1.13
+go 1.16
 
 require (
 	github.com/crossplane/crossplane-runtime v0.12.0
@@ -22,3 +22,5 @@ require (
 	sigs.k8s.io/kustomize/api v0.5.1
 	sigs.k8s.io/yaml v1.2.0
 )
+
+replace github.com/Azure/go-autorest => github.com/Azure/go-autorest v13.3.2+incompatible

@@ -20,11 +20,11 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"gopkg.in/alecthomas/kingpin.v2"
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-
-	"github.com/crossplane/crossplane-runtime/pkg/logging"
 
 	"github.com/crossplane-contrib/provider-helm/apis"
 	"github.com/crossplane-contrib/provider-helm/pkg/controller"
