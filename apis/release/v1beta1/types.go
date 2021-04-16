@@ -75,11 +75,17 @@ type ValuesSpec struct {
 
 // ReleaseParameters are the configurable fields of a Release.
 type ReleaseParameters struct {
-	Chart       ChartSpec         `json:"chart"`
-	Namespace   string            `json:"namespace"`
-	Wait        bool              `json:"wait,omitempty"`
+	Chart ChartSpec `json:"chart"`
+	// Namespace to install the release into.
+	Namespace string `json:"namespace"`
+	// SkipCreateNamespace won't create the namespace for the release. This requires the namespace to already exist.
+	SkipCreateNamespace bool `json:"skipCreateNamespace,omitempty"`
+	// Wait for the release to become ready.
+	Wait bool `json:"wait,omitempty"`
+	// PatchesFrom describe patches to be applied to the rendered manifests.
 	PatchesFrom []ValueFromSource `json:"patchesFrom,omitempty"`
-	ValuesSpec  `json:",inline"`
+	// ValuesSpec defines the Helm value overrides spec for a Release.
+	ValuesSpec `json:",inline"`
 }
 
 // ReleaseObservation are the observable fields of a Release.

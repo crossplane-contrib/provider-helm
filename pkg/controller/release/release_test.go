@@ -643,6 +643,22 @@ func Test_helmExternal_Create(t *testing.T) {
 				err: nil,
 			},
 		},
+		"SuccessSkipCreateNamespace": {
+			args: args{
+				helm: &MockHelmClient{
+					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
+						return &release.Release{}, nil
+					},
+				},
+				kube: &test.MockClient{MockCreate: test.NewMockCreateFn(errBoom)},
+				mg: helmRelease(func(release *v1beta1.Release) {
+					release.Spec.ForProvider.SkipCreateNamespace = true
+				}),
+			},
+			want: want{
+				err: nil,
+			},
+		},
 		"LatestVersion": {
 			args: args{
 				helm: &MockHelmClient{

@@ -328,9 +328,11 @@ func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed
 
 	e.logger.Debug("Creating")
 
-	if err := e.createNamespace(ctx, cr.Spec.ForProvider.Namespace); err != nil {
-		if !kerrors.IsAlreadyExists(err) {
-			return managed.ExternalCreation{}, errors.Wrap(err, errFailedToCreateNamespace)
+	if !cr.Spec.ForProvider.SkipCreateNamespace {
+		if err := e.createNamespace(ctx, cr.Spec.ForProvider.Namespace); err != nil {
+			if !kerrors.IsAlreadyExists(err) {
+				return managed.ExternalCreation{}, errors.Wrap(err, errFailedToCreateNamespace)
+			}
 		}
 	}
 
