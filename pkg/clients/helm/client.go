@@ -100,7 +100,6 @@ func NewClient(log logging.Logger, config *rest.Config, namespace string, wait b
 
 	ic := action.NewInstall(actionConfig)
 	ic.Namespace = namespace
-	ic.CreateNamespace = true
 	ic.Wait = wait
 
 	uc := action.NewUpgrade(actionConfig)
