@@ -297,6 +297,27 @@ echo
 echo "--- pods ---"
 check_pods 3
 
+echo_step "setup provider"
+SA=$("${KUBECTL}" -n crossplane-system get sa -o name | grep provider-helm | sed -e 's|serviceaccount\/|crossplane-system:|g')
+"${KUBECTL}" create clusterrolebinding provider-helm-admin-binding --clusterrole cluster-admin --serviceaccount="${SA}"
+"${KUBECTL}" apply -f examples/provider-config/provider-config-incluster.yaml
+
+echo_step "install example chart"
+"${KUBECTL}" apply -f examples/sample/release.yaml
+"${KUBECTL}" wait --for=condition=Ready release --all --timeout=1m
+"${KUBECTL}" -n wordpress wait --for=condition=Ready pods --all --timeout=3m
+
+echo_sub_step "check namespace label"
+if $("${KUBECTL}" get namespaces --no-headers --selector="app.kubernetes.io/managed-by=provider-helm" | grep -iq 'No resources found'); then
+    echo "is not created"
+    exit -1
+else
+    echo_step_completed
+fi
+
+echo_sub_step "check release deployment"
+check_deployments "wordpress-example" "wordpress"
+
 echo_step "uninstalling ${PROJECT_NAME}"
 
 echo "${INSTALL_YAML}" | "${KUBECTL}" delete -f -
