@@ -428,8 +428,10 @@ spec:
                         type: string
                     type: object
                   namespace:
+                    description: Namespace to install the release into.
                     type: string
                   patchesFrom:
+                    description: PatchesFrom describe patches to be applied to the rendered manifests.
                     items:
                       description: ValueFromSource represents source of a value
                       properties:
@@ -511,6 +513,9 @@ spec:
                       - name
                       type: object
                     type: array
+                  skipCreateNamespace:
+                    description: SkipCreateNamespace won't create the namespace for the release. This requires the namespace to already exist.
+                    type: boolean
                   values:
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
@@ -551,6 +556,7 @@ spec:
                       type: object
                     type: array
                   wait:
+                    description: Wait for the release to become ready.
                     type: boolean
                 required:
                 - chart

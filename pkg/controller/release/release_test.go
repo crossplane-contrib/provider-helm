@@ -11,6 +11,7 @@ import (
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/storage/driver"
 	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
@@ -574,10 +575,24 @@ func Test_helmExternal_Create(t *testing.T) {
 						return nil, errBoom
 					},
 				},
+				kube: &test.MockClient{
+					MockCreate: test.NewMockCreateFn(nil),
+				},
 				mg: helmRelease(),
 			},
 			want: want{
 				err: errors.Wrap(errBoom, errFailedToInstall),
+			},
+		},
+		"CreateNamespaceFailed": {
+			args: args{
+				kube: &test.MockClient{
+					MockCreate: test.NewMockCreateFn(errBoom),
+				},
+				mg: helmRelease(),
+			},
+			want: want{
+				err: errors.Wrap(errBoom, errFailedToCreateNamespace),
 			},
 		},
 		"InstalledButLastReleaseIsNil": {
@@ -586,6 +601,9 @@ func Test_helmExternal_Create(t *testing.T) {
 					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
 						return nil, nil
 					},
+				},
+				kube: &test.MockClient{
+					MockCreate: test.NewMockCreateFn(nil),
 				},
 				mg: helmRelease(),
 			},
@@ -600,7 +618,42 @@ func Test_helmExternal_Create(t *testing.T) {
 						return &release.Release{}, nil
 					},
 				},
+				kube: &test.MockClient{
+					MockCreate: test.NewMockCreateFn(nil),
+				},
 				mg: helmRelease(),
+			},
+			want: want{
+				err: nil,
+			},
+		},
+		"SuccessNamespaceExists": {
+			args: args{
+				helm: &MockHelmClient{
+					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
+						return &release.Release{}, nil
+					},
+				},
+				kube: &test.MockClient{
+					MockCreate: test.NewMockCreateFn(kerrors.NewAlreadyExists(corev1.Resource("some"), "some")),
+				},
+				mg: helmRelease(),
+			},
+			want: want{
+				err: nil,
+			},
+		},
+		"SuccessSkipCreateNamespace": {
+			args: args{
+				helm: &MockHelmClient{
+					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
+						return &release.Release{}, nil
+					},
+				},
+				kube: &test.MockClient{MockCreate: test.NewMockCreateFn(errBoom)},
+				mg: helmRelease(func(release *v1beta1.Release) {
+					release.Spec.ForProvider.SkipCreateNamespace = true
+				}),
 			},
 			want: want{
 				err: nil,
@@ -619,6 +672,9 @@ func Test_helmExternal_Create(t *testing.T) {
 							},
 						}, nil
 					},
+				},
+				kube: &test.MockClient{
+					MockCreate: test.NewMockCreateFn(nil),
 				},
 				mg: helmRelease(func(r *v1beta1.Release) {
 					r.Spec.ForProvider.Chart.Version = ""
