@@ -3,4 +3,4 @@ kind: WordpressCluster
 metadata:
   name: mycluster
 spec:
-  clusterVersion: 1.15.12-gke.16
+  clusterVersion: "1.18"
