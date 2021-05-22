@@ -1,4 +1,4 @@
-apiVersion: apiextensions.crossplane.io/v1alpha1
+apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
   name: wordpressclusters.example.crossplane.io
