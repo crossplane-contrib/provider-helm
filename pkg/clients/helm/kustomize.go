@@ -7,10 +7,9 @@ import (
 	"path/filepath"
 
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
-	"sigs.k8s.io/kustomize/api/filesys"
-	"sigs.k8s.io/kustomize/api/konfig"
 	"sigs.k8s.io/kustomize/api/krusty"
 	"sigs.k8s.io/kustomize/api/types"
+	"sigs.k8s.io/kustomize/kyaml/filesys"
 )
 
 const (
@@ -63,11 +62,11 @@ func (kr KustomizationRender) Run(renderedManifests *bytes.Buffer) (modifiedMani
 		DoLegacyResourceSort: false,
 		LoadRestrictions:     types.LoadRestrictionsRootOnly,
 		DoPrune:              false,
-		PluginConfig:         konfig.DisabledPluginConfig(),
+		PluginConfig:         types.DisabledPluginConfig(),
 	}
 
-	kust := krusty.MakeKustomizer(fsys, opts)
-	m, err := kust.Run(d)
+	kust := krusty.MakeKustomizer(opts)
+	m, err := kust.Run(fsys, d)
 	if err != nil {
 		return nil, err
 	}

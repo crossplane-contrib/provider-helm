@@ -5,15 +5,16 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/kustomize/api/resid"
 	"sigs.k8s.io/kustomize/api/types"
+	"sigs.k8s.io/kustomize/kyaml/resid"
 
 	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
 )
@@ -38,8 +39,8 @@ func Test_ShaOf(t *testing.T) {
 	pd := types.Patch{
 		Patch: "- op: add\n  path: /spec/template/spec/nodeSelector\n  value:\n    node.size: really-big\n    aws.az: us-west-2a\n    patch.name: " + testCMName,
 		Target: &types.Selector{
-			Gvk: resid.Gvk{
-				Kind: "Deployment",
+			ResId: resid.ResId{
+				Gvk: resid.Gvk{Kind: "Deployment"},
 			},
 		},
 	}
@@ -126,8 +127,8 @@ func Test_PatchHasUpdates(t *testing.T) {
 	pd := types.Patch{
 		Patch: "- op: add\n  path: /spec/template/spec/nodeSelector\n  value:\n    node.size: really-big\n    aws.az: us-west-2a\n    patch.name: " + testCMName,
 		Target: &types.Selector{
-			Gvk: resid.Gvk{
-				Kind: "Deployment",
+			ResId: resid.ResId{
+				Gvk: resid.Gvk{Kind: "Deployment"},
 			},
 		},
 	}
@@ -249,7 +250,7 @@ func Test_getPatchesFromSpec(t *testing.T) {
 		"loadOneRequiredPatch": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testCMName && key.Namespace == testNamespace {
 							s := corev1.ConfigMap{
 								Data: map[string]string{
@@ -280,8 +281,8 @@ func Test_getPatchesFromSpec(t *testing.T) {
 					{
 						Patch: "- op: add\n  path: /spec/template/spec/nodeSelector\n  value:\n    node.size: really-big\n    aws.az: us-west-2a\n    patch.name: " + testCMName,
 						Target: &types.Selector{
-							Gvk: resid.Gvk{
-								Kind: "Deployment",
+							ResId: resid.ResId{
+								Gvk: resid.Gvk{Kind: "Deployment"},
 							},
 						},
 					},
@@ -292,7 +293,7 @@ func Test_getPatchesFromSpec(t *testing.T) {
 		"loadThreePatches": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						s := corev1.ConfigMap{
 							Data: map[string]string{
 								keyDefaultPatchFrom: fmt.Sprintf(testPatchConfig, key.Name),
@@ -340,24 +341,24 @@ func Test_getPatchesFromSpec(t *testing.T) {
 					{
 						Patch: "- op: add\n  path: /spec/template/spec/nodeSelector\n  value:\n    node.size: really-big\n    aws.az: us-west-2a\n    patch.name: 1",
 						Target: &types.Selector{
-							Gvk: resid.Gvk{
-								Kind: "Deployment",
+							ResId: resid.ResId{
+								Gvk: resid.Gvk{Kind: "Deployment"},
 							},
 						},
 					},
 					{
 						Patch: "- op: add\n  path: /spec/template/spec/nodeSelector\n  value:\n    node.size: really-big\n    aws.az: us-west-2a\n    patch.name: 2",
 						Target: &types.Selector{
-							Gvk: resid.Gvk{
-								Kind: "Deployment",
+							ResId: resid.ResId{
+								Gvk: resid.Gvk{Kind: "Deployment"},
 							},
 						},
 					},
 					{
 						Patch: "- op: add\n  path: /spec/template/spec/nodeSelector\n  value:\n    node.size: really-big\n    aws.az: us-west-2a\n    patch.name: 3",
 						Target: &types.Selector{
-							Gvk: resid.Gvk{
-								Kind: "Deployment",
+							ResId: resid.ResId{
+								Gvk: resid.Gvk{Kind: "Deployment"},
 							},
 						},
 					},
@@ -368,7 +369,7 @@ func Test_getPatchesFromSpec(t *testing.T) {
 		"noPatchLoadedOptional": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						return kerrors.NewNotFound(schema.GroupResource{Group: "ConfigMap", Resource: key.Name}, key.Name)
 					},
 				},
@@ -399,7 +400,7 @@ func Test_getPatchesFromSpec(t *testing.T) {
 				t.Fatalf("getFromSpec(...): -want error, +got error: %s", diff)
 			}
 
-			if diff := cmp.Diff(tc.want.out, got); diff != "" {
+			if diff := cmp.Diff(tc.want.out, got, cmpopts.IgnoreUnexported(resid.Gvk{})); diff != "" {
 				t.Errorf("getFromSpec(...): -want result, +got result: %s", diff)
 			}
 		})

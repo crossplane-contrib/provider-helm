@@ -9,8 +9,8 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
-	"sigs.k8s.io/kustomize/api/resid"
 	"sigs.k8s.io/kustomize/api/types"
+	"sigs.k8s.io/kustomize/kyaml/resid"
 )
 
 const testDeployment = `
@@ -53,8 +53,14 @@ func TestKustomize(t *testing.T) {
 			base: testDeployment,
 			patches: []types.Patch{
 				{
-					Target: &types.Selector{Gvk: resid.Gvk{Kind: "Deployment"}},
-					Patch:  "- op: add\n  path: /spec/template/spec/nodeSelector\n  value:\n    node.size: really-big\n    aws.az: us-west-2a",
+					Target: &types.Selector{
+						ResId: resid.ResId{
+							Gvk: resid.Gvk{Kind: "Deployment"},
+						},
+						AnnotationSelector: "",
+						LabelSelector:      "",
+					},
+					Patch: "- op: add\n  path: /spec/template/spec/nodeSelector\n  value:\n    node.size: really-big\n    aws.az: us-west-2a",
 				},
 			},
 			want: want{
@@ -66,8 +72,10 @@ func TestKustomize(t *testing.T) {
 			base: testDeployment,
 			patches: []types.Patch{
 				{
-					Target: &types.Selector{Gvk: resid.Gvk{Kind: "Deployment"}},
-					Patch:  "- bad patch",
+					Target: &types.Selector{ResId: resid.ResId{
+						Gvk: resid.Gvk{Kind: "Deployment"},
+					}},
+					Patch: "- bad patch",
 				},
 			},
 			want: want{
