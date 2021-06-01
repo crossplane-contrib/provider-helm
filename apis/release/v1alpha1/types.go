@@ -111,7 +111,7 @@ type ReleaseStatus struct {
 // +kubebuilder:printcolumn:name="REVISION",type="string",JSONPath=".status.atProvider.revision"
 // +kubebuilder:printcolumn:name="DESCRIPTION",type="string",JSONPath=".status.atProvider.releaseDescription"
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
-// +kubebuilder:resource:scope=Cluster,categories={crossplane,provider,helm}
+// +kubebuilder:resource:scope=Cluster,categories={crossplane,managed,helm}
 type Release struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
