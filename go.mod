@@ -20,8 +20,8 @@ require (
 )
 
 replace (
-	// todo(turkenh): remove once crossplane-runtime updated
-	github.com/crossplane/crossplane-runtime => github.com/turkenh/crossplane-runtime v0.0.0-20210711130541-b667f9ec0a4f
+	// todo(turkenh): remove once https://github.com/crossplane/crossplane-runtime/pull/267 merged
+	github.com/crossplane/crossplane-runtime => github.com/saschagrunert/crossplane-runtime v0.9.1-0.20210629134503-b16ce80cc14d
 	// See https://github.com/helm/helm/blob/release-3.6.2/go.mod#L50
 	github.com/docker/distribution => github.com/docker/distribution v0.0.0-20191216044856-a8371794149d
 )
