@@ -25,6 +25,7 @@ import (
 // A ProviderConfigSpec defines the desired state of a Provider.
 type ProviderConfigSpec struct {
 	xpv1.ProviderConfigSpec `json:",inline"`
+	GoogleAppCreds          xpv1.ProviderCredentials `json:"google-app-creds,omitempty"`
 }
 
 // A ProviderConfigStatus defines the status of a Provider.

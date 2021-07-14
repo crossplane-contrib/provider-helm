@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -40,6 +41,8 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
+
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
 	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
 	helmv1beta1 "github.com/crossplane-contrib/provider-helm/apis/v1beta1"
@@ -130,7 +133,6 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	l := c.logger.WithValues("request", cr.Name)
 
 	l.Debug("Connecting")
-
 	p := &helmv1beta1.ProviderConfig{}
 
 	if cr.GetProviderConfigReference() == nil {
@@ -174,6 +176,34 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 		rc, err = c.newRestConfigFn(kc)
 		if err != nil {
 			return nil, errors.Wrap(err, errFailedToCreateRestConfig)
+		}
+
+		gref := p.Spec.GoogleAppCreds.SecretRef
+		if gref != nil {
+			l.Debug("GCP Credentials Key Found")
+			gref := p.Spec.GoogleAppCreds.SecretRef
+			gkey := types.NamespacedName{Namespace: gref.Namespace, Name: gref.Name}
+			g, err := getSecretData(ctx, c.client, gkey)
+			if err != nil {
+				return nil, errors.Errorf(errProviderSecretValueForKeyNotFound, gkey)
+			}
+			gcreds, f := g[gref.Key]
+			if !f {
+				return nil, errors.Errorf(errProviderSecretValueForKeyNotFound, ref.Key)
+			}
+			l.Debug("Creating AuthProvider from GCP Credentials")
+
+			ap := &clientcmdapi.AuthProviderConfig{
+				Name:   providerGCPAuthPlugin,
+				Config: map[string]string{},
+			}
+
+			ap.Config["creds"] = string(gcreds)
+
+			rc.AuthProvider = ap
+
+			l.Debug("Provider-GCP Auth Provider Created")
+
 		}
 	default:
 		return nil, errors.Errorf(errFmtUnsupportedCredSource, s)

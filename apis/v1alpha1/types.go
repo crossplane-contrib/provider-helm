@@ -30,6 +30,7 @@ type ProviderConfigSpec struct {
 // A ProviderConfigStatus defines the status of a Provider.
 type ProviderConfigStatus struct {
 	xpv1.ProviderConfigStatus `json:",inline"`
+	GoogleAppCreds            xpv1.ProviderCredentials `json:"google-app-creds,omitempty"`
 }
 
 // +kubebuilder:object:root=true
