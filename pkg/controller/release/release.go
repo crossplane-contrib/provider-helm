@@ -103,7 +103,7 @@ func Setup(mgr ctrl.Manager, l logging.Logger) error {
 		}),
 		managed.WithLogger(logger),
 		managed.WithTimeout(reconcileTimeout),
-		managed.WithLongWait(resyncPeriod),
+		managed.WithPollInterval(resyncPeriod),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))))
 
 	return ctrl.NewControllerManagedBy(mgr).

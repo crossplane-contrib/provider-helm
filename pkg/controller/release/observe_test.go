@@ -393,7 +393,7 @@ func Test_connectionDetails(t *testing.T) {
 		"Fail_NotPartOfRelease": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if o, ok := obj.(*unstructured.Unstructured); o.GetKind() == "Secret" && ok && key.Name == testSecretName && key.Namespace == testNamespace {
 							*obj.(*unstructured.Unstructured) = unstructured.Unstructured{
 								Object: map[string]interface{}{
@@ -435,7 +435,7 @@ func Test_connectionDetails(t *testing.T) {
 		"Success_PartOfRelease": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if o, ok := obj.(*unstructured.Unstructured); o.GetKind() == "Secret" && ok && key.Name == testSecretName && key.Namespace == testNamespace {
 							*obj.(*unstructured.Unstructured) = unstructured.Unstructured{
 								Object: map[string]interface{}{

@@ -9,7 +9,6 @@ import (
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -59,7 +58,7 @@ func Test_userInfoFromSecret(t *testing.T) {
 		"PullSecretMissingNamespace": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testPullSecretName && key.Namespace == testPullSecretNamespace {
 							pullSecret := corev1.Secret{
 								Data: map[string][]byte{
@@ -84,7 +83,7 @@ func Test_userInfoFromSecret(t *testing.T) {
 		"PullSecretMissing": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testPullSecretName && key.Namespace == testPullSecretNamespace {
 							return kerrors.NewNotFound(schema.GroupResource{Group: corev1.GroupName}, testPullSecretName)
 						}
@@ -105,7 +104,7 @@ func Test_userInfoFromSecret(t *testing.T) {
 		"PullSecretMissingUsername": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testPullSecretName && key.Namespace == testPullSecretNamespace {
 							pullSecret := corev1.Secret{
 								Data: map[string][]byte{
@@ -131,7 +130,7 @@ func Test_userInfoFromSecret(t *testing.T) {
 		"PullSecretMissingPassword": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testPullSecretName && key.Namespace == testPullSecretNamespace {
 							pullSecret := corev1.Secret{
 								Data: map[string][]byte{
@@ -156,7 +155,7 @@ func Test_userInfoFromSecret(t *testing.T) {
 		"ProperPullSecret": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testPullSecretName && key.Namespace == testPullSecretNamespace {
 							pullSecret := corev1.Secret{
 								Data: map[string][]byte{

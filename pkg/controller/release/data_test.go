@@ -10,7 +10,6 @@ import (
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -45,7 +44,7 @@ func Test_getSecretData(t *testing.T) {
 		"FailedToGetSecret": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testSecretName && key.Namespace == testNamespace {
 							return kerrors.NewNotFound(schema.GroupResource{Group: corev1.GroupName}, testSecretName)
 						}
@@ -66,7 +65,7 @@ func Test_getSecretData(t *testing.T) {
 		"SecretDataIsNil": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testSecretName && key.Namespace == testNamespace {
 							s := corev1.Secret{
 								Data: nil,
@@ -90,7 +89,7 @@ func Test_getSecretData(t *testing.T) {
 		"Success": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testSecretName && key.Namespace == testNamespace {
 							s := corev1.Secret{
 								Data: testSecretData,
@@ -141,7 +140,7 @@ func Test_getConfigMapData(t *testing.T) {
 		"FailedToGetCM": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testCMName && key.Namespace == testNamespace {
 							return kerrors.NewNotFound(schema.GroupResource{Group: corev1.GroupName}, testCMName)
 						}
@@ -162,7 +161,7 @@ func Test_getConfigMapData(t *testing.T) {
 		"CMDataIsNil": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testCMName && key.Namespace == testNamespace {
 							c := corev1.ConfigMap{
 								Data: nil,
@@ -186,7 +185,7 @@ func Test_getConfigMapData(t *testing.T) {
 		"Success": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testCMName && key.Namespace == testNamespace {
 							s := corev1.ConfigMap{
 								Data: testCMData,
@@ -238,7 +237,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 		"SourceNotSetErr": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						return errBoom
 					},
 				},
@@ -252,7 +251,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 		"ErrWhileGettingSecret": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testSecretName && key.Namespace == testNamespace {
 							return errBoom
 						}
@@ -278,7 +277,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 		"ErrWhileGettingCM": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testCMName && key.Namespace == testNamespace {
 							return errBoom
 						}
@@ -304,7 +303,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 		"SecretNotFoundButOptional": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testSecretName && key.Namespace == testNamespace {
 							return kerrors.NewNotFound(schema.GroupResource{Group: corev1.GroupName}, testSecretName)
 						}
@@ -330,7 +329,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 		"SecretNotFoundNotOptional": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testSecretName && key.Namespace == testNamespace {
 							return kerrors.NewNotFound(schema.GroupResource{Group: corev1.GroupName}, testSecretName)
 						}
@@ -356,7 +355,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 		"CMNotFoundButOptional": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testCMName && key.Namespace == testNamespace {
 							return kerrors.NewNotFound(schema.GroupResource{Group: corev1.GroupName}, testCMName)
 						}
@@ -382,7 +381,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 		"CMNotFoundNotOptional": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testCMName && key.Namespace == testNamespace {
 							return kerrors.NewNotFound(schema.GroupResource{Group: corev1.GroupName}, testCMName)
 						}
@@ -408,7 +407,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 		"SecretKeyMissingButOptional": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testSecretName && key.Namespace == testNamespace {
 							s := corev1.Secret{
 								Data: testSecretData,
@@ -438,7 +437,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 		"SecretKeyMissingNotOptional": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testSecretName && key.Namespace == testNamespace {
 							s := corev1.Secret{
 								Data: testSecretData,
@@ -468,7 +467,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 		"CMKeyMissingButOptional": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testCMName && key.Namespace == testNamespace {
 							s := corev1.ConfigMap{
 								Data: testCMData,
@@ -498,7 +497,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 		"CMKeyMissingNotOptional": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testCMName && key.Namespace == testNamespace {
 							s := corev1.ConfigMap{
 								Data: testCMData,
@@ -528,7 +527,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 		"SuccessSecretWithKey": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testSecretName && key.Namespace == testNamespace {
 							s := corev1.Secret{
 								Data: testSecretData,
@@ -558,7 +557,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 		"SuccessSecretWithDefaultKey": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testSecretName && key.Namespace == testNamespace {
 							s := corev1.Secret{
 								Data: testSecretData,
@@ -588,7 +587,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 		"SuccessCMWithKey": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testCMName && key.Namespace == testNamespace {
 							s := corev1.ConfigMap{
 								Data: testCMData,
@@ -618,7 +617,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 		"SuccessCMWithDefaultKey": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testCMName && key.Namespace == testNamespace {
 							s := corev1.ConfigMap{
 								Data: testCMData,
