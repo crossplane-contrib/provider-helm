@@ -2,7 +2,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.3.0
+    controller-gen.kubebuilder.io/version: v0.6.1
   creationTimestamp: null
   name: releases.helm.crossplane.io
 spec:
@@ -49,10 +49,14 @@ spec:
         description: A Release is an example API type
         properties:
           apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
             type: string
           kind:
-            description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
             type: string
           metadata:
             type: object
@@ -60,7 +64,10 @@ spec:
             description: A ReleaseSpec defines the desired state of a Release.
             properties:
               deletionPolicy:
-                description: DeletionPolicy specifies what will happen to the underlying external when this managed resource is deleted - either "Delete" or "Orphan" the external resource. The "Delete" policy is the default when no policy is specified.
+                default: Delete
+                description: DeletionPolicy specifies what will happen to the underlying
+                  external when this managed resource is deleted - either "Delete"
+                  or "Orphan" the external resource.
                 enum:
                 - Orphan
                 - Delete
@@ -74,7 +81,8 @@ spec:
                       name:
                         type: string
                       pullSecretRef:
-                        description: A SecretReference is a reference to a secret in an arbitrary namespace.
+                        description: A SecretReference is a reference to a secret
+                          in an arbitrary namespace.
                         properties:
                           name:
                             description: Name of the secret.
@@ -102,7 +110,8 @@ spec:
                       description: ValueFromSource represents source of a value
                       properties:
                         configMapKeyRef:
-                          description: DataKeySelector defines required spec to access a key of a configmap or secret
+                          description: DataKeySelector defines required spec to access
+                            a key of a configmap or secret
                           properties:
                             key:
                               type: string
@@ -117,7 +126,8 @@ spec:
                           - namespace
                           type: object
                         secretKeyRef:
-                          description: DataKeySelector defines required spec to access a key of a configmap or secret
+                          description: DataKeySelector defines required spec to access
+                            a key of a configmap or secret
                           properties:
                             key:
                               type: string
@@ -145,7 +155,8 @@ spec:
                           description: ValueFromSource represents source of a value
                           properties:
                             configMapKeyRef:
-                              description: DataKeySelector defines required spec to access a key of a configmap or secret
+                              description: DataKeySelector defines required spec to
+                                access a key of a configmap or secret
                               properties:
                                 key:
                                   type: string
@@ -160,7 +171,8 @@ spec:
                               - namespace
                               type: object
                             secretKeyRef:
-                              description: DataKeySelector defines required spec to access a key of a configmap or secret
+                              description: DataKeySelector defines required spec to
+                                access a key of a configmap or secret
                               properties:
                                 key:
                                   type: string
@@ -187,7 +199,8 @@ spec:
                       description: ValueFromSource represents source of a value
                       properties:
                         configMapKeyRef:
-                          description: DataKeySelector defines required spec to access a key of a configmap or secret
+                          description: DataKeySelector defines required spec to access
+                            a key of a configmap or secret
                           properties:
                             key:
                               type: string
@@ -202,7 +215,8 @@ spec:
                           - namespace
                           type: object
                         secretKeyRef:
-                          description: DataKeySelector defines required spec to access a key of a configmap or secret
+                          description: DataKeySelector defines required spec to access
+                            a key of a configmap or secret
                           properties:
                             key:
                               type: string
@@ -225,7 +239,11 @@ spec:
                 - namespace
                 type: object
               providerConfigRef:
-                description: ProviderConfigReference specifies how the provider that will be used to create, observe, update, and delete this managed resource should be configured.
+                default:
+                  name: default
+                description: ProviderConfigReference specifies how the provider that
+                  will be used to create, observe, update, and delete this managed
+                  resource should be configured.
                 properties:
                   name:
                     description: Name of the referenced object.
@@ -234,7 +252,9 @@ spec:
                 - name
                 type: object
               providerRef:
-                description: 'ProviderReference specifies the provider that will be used to create, observe, update, and delete this managed resource. Deprecated: Please use ProviderConfigReference, i.e. `providerConfigRef`'
+                description: 'ProviderReference specifies the provider that will be
+                  used to create, observe, update, and delete this managed resource.
+                  Deprecated: Please use ProviderConfigReference, i.e. `providerConfigRef`'
                 properties:
                   name:
                     description: Name of the referenced object.
@@ -243,11 +263,16 @@ spec:
                 - name
                 type: object
               rollbackLimit:
-                description: RollbackRetriesLimit is max number of attempts to retry Helm deployment by rolling back the release.
+                description: RollbackRetriesLimit is max number of attempts to retry
+                  Helm deployment by rolling back the release.
                 format: int32
                 type: integer
               writeConnectionSecretToRef:
-                description: WriteConnectionSecretToReference specifies the namespace and name of a Secret to which any connection details for this managed resource should be written. Connection details frequently include the endpoint, username, and password required to connect to the managed resource.
+                description: WriteConnectionSecretToReference specifies the namespace
+                  and name of a Secret to which any connection details for this managed
+                  resource should be written. Connection details frequently include
+                  the endpoint, username, and password required to connect to the
+                  managed resource.
                 properties:
                   name:
                     description: Name of the secret.
@@ -282,20 +307,25 @@ spec:
                   description: A Condition that may apply to a resource.
                   properties:
                     lastTransitionTime:
-                      description: LastTransitionTime is the last time this condition transitioned from one status to another.
+                      description: LastTransitionTime is the last time this condition
+                        transitioned from one status to another.
                       format: date-time
                       type: string
                     message:
-                      description: A Message containing details about this condition's last transition from one status to another, if any.
+                      description: A Message containing details about this condition's
+                        last transition from one status to another, if any.
                       type: string
                     reason:
-                      description: A Reason for this condition's last transition from one status to another.
+                      description: A Reason for this condition's last transition from
+                        one status to another.
                       type: string
                     status:
-                      description: Status of this condition; is it currently True, False, or Unknown?
+                      description: Status of this condition; is it currently True,
+                        False, or Unknown?
                       type: string
                     type:
-                      description: Type of this condition. At most one of each condition type may apply to a resource at any point in time.
+                      description: Type of this condition. At most one of each condition
+                        type may apply to a resource at any point in time.
                       type: string
                   required:
                   - lastTransitionTime
@@ -350,10 +380,14 @@ spec:
         description: A Release is an example API type
         properties:
           apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
             type: string
           kind:
-            description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
             type: string
           metadata:
             type: object
@@ -368,7 +402,17 @@ spec:
                       description: API version of the referent.
                       type: string
                     fieldPath:
-                      description: 'If referring to a piece of an object instead of an entire object, this string should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2]. For example, if the object reference is to a container within a pod, this would take on a value like: "spec.containers{name}" (where "name" refers to the name of the container that triggered the event) or if no container name is specified "spec.containers[2]" (container with index 2 in this pod). This syntax is chosen only to have some well-defined way of referencing a part of an object. TODO: this design is not final and this field is subject to change in the future.'
+                      description: 'If referring to a piece of an object instead of
+                        an entire object, this string should contain a valid JSON/Go
+                        field access statement, such as desiredState.manifest.containers[2].
+                        For example, if the object reference is to a container within
+                        a pod, this would take on a value like: "spec.containers{name}"
+                        (where "name" refers to the name of the container that triggered
+                        the event) or if no container name is specified "spec.containers[2]"
+                        (container with index 2 in this pod). This syntax is chosen
+                        only to have some well-defined way of referencing a part of
+                        an object. TODO: this design is not final and this field is
+                        subject to change in the future.'
                       type: string
                     kind:
                       description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
@@ -380,7 +424,8 @@ spec:
                       description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
                       type: string
                     resourceVersion:
-                      description: 'Specific resourceVersion to which this reference is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                      description: 'Specific resourceVersion to which this reference
+                        is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
                       type: string
                     toConnectionSecretKey:
                       type: string
@@ -390,7 +435,10 @@ spec:
                   type: object
                 type: array
               deletionPolicy:
-                description: DeletionPolicy specifies what will happen to the underlying external when this managed resource is deleted - either "Delete" or "Orphan" the external resource. The "Delete" policy is the default when no policy is specified.
+                default: Delete
+                description: DeletionPolicy specifies what will happen to the underlying
+                  external when this managed resource is deleted - either "Delete"
+                  or "Orphan" the external resource.
                 enum:
                 - Orphan
                 - Delete
@@ -402,10 +450,12 @@ spec:
                     description: A ChartSpec defines the chart spec for a Release
                     properties:
                       name:
-                        description: Name of Helm chart, required if ChartSpec.URL not set
+                        description: Name of Helm chart, required if ChartSpec.URL
+                          not set
                         type: string
                       pullSecretRef:
-                        description: PullSecretRef is reference to the secret containing credentials to helm repository
+                        description: PullSecretRef is reference to the secret containing
+                          credentials to helm repository
                         properties:
                           name:
                             description: Name of the secret.
@@ -418,25 +468,30 @@ spec:
                         - namespace
                         type: object
                       repository:
-                        description: 'Repository: Helm repository URL, required if ChartSpec.URL not set'
+                        description: 'Repository: Helm repository URL, required if
+                          ChartSpec.URL not set'
                         type: string
                       url:
-                        description: URL to chart package (typically .tgz), optional and overrides others fields in the spec
+                        description: URL to chart package (typically .tgz), optional
+                          and overrides others fields in the spec
                         type: string
                       version:
-                        description: Version of Helm chart, late initialized with latest version if not set
+                        description: Version of Helm chart, late initialized with
+                          latest version if not set
                         type: string
                     type: object
                   namespace:
                     description: Namespace to install the release into.
                     type: string
                   patchesFrom:
-                    description: PatchesFrom describe patches to be applied to the rendered manifests.
+                    description: PatchesFrom describe patches to be applied to the
+                      rendered manifests.
                     items:
                       description: ValueFromSource represents source of a value
                       properties:
                         configMapKeyRef:
-                          description: DataKeySelector defines required spec to access a key of a configmap or secret
+                          description: DataKeySelector defines required spec to access
+                            a key of a configmap or secret
                           properties:
                             key:
                               type: string
@@ -451,7 +506,8 @@ spec:
                           - namespace
                           type: object
                         secretKeyRef:
-                          description: DataKeySelector defines required spec to access a key of a configmap or secret
+                          description: DataKeySelector defines required spec to access
+                            a key of a configmap or secret
                           properties:
                             key:
                               type: string
@@ -479,7 +535,8 @@ spec:
                           description: ValueFromSource represents source of a value
                           properties:
                             configMapKeyRef:
-                              description: DataKeySelector defines required spec to access a key of a configmap or secret
+                              description: DataKeySelector defines required spec to
+                                access a key of a configmap or secret
                               properties:
                                 key:
                                   type: string
@@ -494,7 +551,8 @@ spec:
                               - namespace
                               type: object
                             secretKeyRef:
-                              description: DataKeySelector defines required spec to access a key of a configmap or secret
+                              description: DataKeySelector defines required spec to
+                                access a key of a configmap or secret
                               properties:
                                 key:
                                   type: string
@@ -514,7 +572,8 @@ spec:
                       type: object
                     type: array
                   skipCreateNamespace:
-                    description: SkipCreateNamespace won't create the namespace for the release. This requires the namespace to already exist.
+                    description: SkipCreateNamespace won't create the namespace for
+                      the release. This requires the namespace to already exist.
                     type: boolean
                   values:
                     type: object
@@ -524,7 +583,8 @@ spec:
                       description: ValueFromSource represents source of a value
                       properties:
                         configMapKeyRef:
-                          description: DataKeySelector defines required spec to access a key of a configmap or secret
+                          description: DataKeySelector defines required spec to access
+                            a key of a configmap or secret
                           properties:
                             key:
                               type: string
@@ -539,7 +599,8 @@ spec:
                           - namespace
                           type: object
                         secretKeyRef:
-                          description: DataKeySelector defines required spec to access a key of a configmap or secret
+                          description: DataKeySelector defines required spec to access
+                            a key of a configmap or secret
                           properties:
                             key:
                               type: string
@@ -563,7 +624,11 @@ spec:
                 - namespace
                 type: object
               providerConfigRef:
-                description: ProviderConfigReference specifies how the provider that will be used to create, observe, update, and delete this managed resource should be configured.
+                default:
+                  name: default
+                description: ProviderConfigReference specifies how the provider that
+                  will be used to create, observe, update, and delete this managed
+                  resource should be configured.
                 properties:
                   name:
                     description: Name of the referenced object.
@@ -572,7 +637,9 @@ spec:
                 - name
                 type: object
               providerRef:
-                description: 'ProviderReference specifies the provider that will be used to create, observe, update, and delete this managed resource. Deprecated: Please use ProviderConfigReference, i.e. `providerConfigRef`'
+                description: 'ProviderReference specifies the provider that will be
+                  used to create, observe, update, and delete this managed resource.
+                  Deprecated: Please use ProviderConfigReference, i.e. `providerConfigRef`'
                 properties:
                   name:
                     description: Name of the referenced object.
@@ -581,11 +648,16 @@ spec:
                 - name
                 type: object
               rollbackLimit:
-                description: RollbackRetriesLimit is max number of attempts to retry Helm deployment by rolling back the release.
+                description: RollbackRetriesLimit is max number of attempts to retry
+                  Helm deployment by rolling back the release.
                 format: int32
                 type: integer
               writeConnectionSecretToRef:
-                description: WriteConnectionSecretToReference specifies the namespace and name of a Secret to which any connection details for this managed resource should be written. Connection details frequently include the endpoint, username, and password required to connect to the managed resource.
+                description: WriteConnectionSecretToReference specifies the namespace
+                  and name of a Secret to which any connection details for this managed
+                  resource should be written. Connection details frequently include
+                  the endpoint, username, and password required to connect to the
+                  managed resource.
                 properties:
                   name:
                     description: Name of the secret.
@@ -620,20 +692,25 @@ spec:
                   description: A Condition that may apply to a resource.
                   properties:
                     lastTransitionTime:
-                      description: LastTransitionTime is the last time this condition transitioned from one status to another.
+                      description: LastTransitionTime is the last time this condition
+                        transitioned from one status to another.
                       format: date-time
                       type: string
                     message:
-                      description: A Message containing details about this condition's last transition from one status to another, if any.
+                      description: A Message containing details about this condition's
+                        last transition from one status to another, if any.
                       type: string
                     reason:
-                      description: A Reason for this condition's last transition from one status to another.
+                      description: A Reason for this condition's last transition from
+                        one status to another.
                       type: string
                     status:
-                      description: Status of this condition; is it currently True, False, or Unknown?
+                      description: Status of this condition; is it currently True,
+                        False, or Unknown?
                       type: string
                     type:
-                      description: Type of this condition. At most one of each condition type may apply to a resource at any point in time.
+                      description: Type of this condition. At most one of each condition
+                        type may apply to a resource at any point in time.
                       type: string
                   required:
                   - lastTransitionTime

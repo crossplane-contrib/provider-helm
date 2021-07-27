@@ -69,7 +69,7 @@ func Test_composeValuesFromSpec(t *testing.T) {
 		"OnlyValuesFromCM": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testCMName && key.Namespace == testNamespace {
 							s := corev1.ConfigMap{
 								Data: map[string]string{
@@ -106,7 +106,7 @@ func Test_composeValuesFromSpec(t *testing.T) {
 		"FailedToGetValuesFromSource": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testCMName && key.Namespace == testNamespace {
 							return errBoom
 						}
@@ -138,7 +138,7 @@ func Test_composeValuesFromSpec(t *testing.T) {
 		"FailedToUnmarshalValuesFromSource": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testCMName && key.Namespace == testNamespace {
 							s := corev1.ConfigMap{
 								Data: map[string]string{
@@ -226,7 +226,7 @@ keyB:
 		"InlineOverriddenWithSetFromSecret": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testSecretName && key.Namespace == testNamespace {
 							s := corev1.Secret{
 								Data: map[string][]byte{
@@ -278,7 +278,7 @@ keyB:
 		"InlineOverriddenWithSetFromSecret_ErrGettingSecret": {
 			args: args{
 				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == testSecretName && key.Namespace == testNamespace {
 							return errBoom
 						}

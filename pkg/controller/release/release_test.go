@@ -13,7 +13,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/api/types"
@@ -122,9 +121,9 @@ func Test_connector_Connect(t *testing.T) {
 	providerConfig := helmv1beta1.ProviderConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: providerName},
 		Spec: helmv1beta1.ProviderConfigSpec{
-			ProviderConfigSpec: xpv1.ProviderConfigSpec{
-				Credentials: xpv1.ProviderCredentials{
-					Source: xpv1.CredentialsSourceSecret,
+			Credentials: helmv1beta1.ProviderCredentials{
+				Source: xpv1.CredentialsSourceSecret,
+				CommonCredentialSelectors: xpv1.CommonCredentialSelectors{
 					SecretRef: &xpv1.SecretKeySelector{
 						SecretReference: xpv1.SecretReference{
 							Name:      providerSecretName,
@@ -177,7 +176,7 @@ func Test_connector_Connect(t *testing.T) {
 		"FailedToGetProvider": {
 			args: args{
 				client: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == providerName {
 							*obj.(*helmv1beta1.ProviderConfig) = providerConfig
 							return errBoom
@@ -195,7 +194,7 @@ func Test_connector_Connect(t *testing.T) {
 		"UnsupportedCredentialSource": {
 			args: args{
 				client: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == providerName {
 							pc := providerConfig.DeepCopy()
 							pc.Spec.Credentials.Source = xpv1.CredentialsSource("wat")
@@ -215,7 +214,7 @@ func Test_connector_Connect(t *testing.T) {
 		"NoSecretRef": {
 			args: args{
 				client: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == providerName {
 							pc := providerConfig.DeepCopy()
 							pc.Spec.Credentials.SecretRef = nil
@@ -235,7 +234,7 @@ func Test_connector_Connect(t *testing.T) {
 		"FailedToGetProviderSecret": {
 			args: args{
 				client: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == providerName {
 							*obj.(*helmv1beta1.ProviderConfig) = providerConfig
 							return nil
@@ -256,7 +255,7 @@ func Test_connector_Connect(t *testing.T) {
 		"FailedToCreateRestConfig": {
 			args: args{
 				client: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == providerName {
 							*obj.(*helmv1beta1.ProviderConfig) = providerConfig
 							return nil
@@ -281,7 +280,7 @@ func Test_connector_Connect(t *testing.T) {
 		"FailedToCreateNewKubernetesClient": {
 			args: args{
 				client: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						if key.Name == providerName {
 							*obj.(*helmv1beta1.ProviderConfig) = providerConfig
 							return nil
@@ -292,7 +291,7 @@ func Test_connector_Connect(t *testing.T) {
 						}
 						return errBoom
 					},
-					MockStatusUpdate: func(ctx context.Context, obj runtime.Object, opts ...client.UpdateOption) error {
+					MockStatusUpdate: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
 						return nil
 					},
 				},
@@ -312,7 +311,7 @@ func Test_connector_Connect(t *testing.T) {
 		"Success": {
 			args: args{
 				client: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj runtime.Object) error {
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 						switch t := obj.(type) {
 						case *helmv1beta1.ProviderConfig:
 							*t = providerConfig
@@ -323,7 +322,7 @@ func Test_connector_Connect(t *testing.T) {
 						}
 						return nil
 					},
-					MockStatusUpdate: func(ctx context.Context, obj runtime.Object, opts ...client.UpdateOption) error {
+					MockStatusUpdate: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
 						return nil
 					},
 				},
@@ -551,7 +550,7 @@ func Test_helmExternal_Create(t *testing.T) {
 		kube      client.Client
 		helm      helmClient.Client
 		mg        resource.Managed
-		updateFn  func(ctx context.Context, obj runtime.Object, opts ...client.UpdateOption) error
+		updateFn  func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error
 	}
 	type want struct {
 		err error
@@ -679,7 +678,7 @@ func Test_helmExternal_Create(t *testing.T) {
 				mg: helmRelease(func(r *v1beta1.Release) {
 					r.Spec.ForProvider.Chart.Version = ""
 				}),
-				updateFn: func(ctx context.Context, obj runtime.Object, opts ...client.UpdateOption) error {
+				updateFn: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
 					cr := obj.(*v1beta1.Release)
 					if diff := cmp.Diff(cr.Spec.ForProvider.Chart.Version, testVersion); diff != "" {
 						t.Fatalf("updateFn(...): -want version, +got version: %s", diff)
