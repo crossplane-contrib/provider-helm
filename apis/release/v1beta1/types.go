@@ -82,6 +82,9 @@ type ReleaseParameters struct {
 	SkipCreateNamespace bool `json:"skipCreateNamespace,omitempty"`
 	// Wait for the release to become ready.
 	Wait bool `json:"wait,omitempty"`
+	// WaitTimeout is the duration Helm will wait for the release to become
+	// ready. Only applies if wait is also set. Defaults to 5m.
+	WaitTimeout *metav1.Duration `json:"waitTimeout,omitempty"`
 	// PatchesFrom describe patches to be applied to the rendered manifests.
 	PatchesFrom []ValueFromSource `json:"patchesFrom,omitempty"`
 	// ValuesSpec defines the Helm value overrides spec for a Release.

@@ -24,6 +24,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/pkg/errors"
@@ -73,7 +74,7 @@ type client struct {
 }
 
 // NewClient returns a new Helm Client with provided config
-func NewClient(log logging.Logger, config *rest.Config, namespace string, wait bool) (Client, error) {
+func NewClient(log logging.Logger, config *rest.Config, namespace string, wait bool, timeout time.Duration) (Client, error) {
 	rg := newRESTClientGetter(config, namespace)
 
 	actionConfig := new(action.Configuration)
@@ -101,14 +102,17 @@ func NewClient(log logging.Logger, config *rest.Config, namespace string, wait b
 	ic := action.NewInstall(actionConfig)
 	ic.Namespace = namespace
 	ic.Wait = wait
+	ic.Timeout = timeout
 
 	uc := action.NewUpgrade(actionConfig)
 	uc.Wait = wait
+	uc.Timeout = timeout
 
 	uic := action.NewUninstall(actionConfig)
 
 	rb := action.NewRollback(actionConfig)
 	rb.Wait = wait
+	rb.Timeout = timeout
 
 	return &client{
 		log:             log,
