@@ -47,7 +47,7 @@ CONTROLLER_IMAGE="${BUILD_REGISTRY}/${PROJECT_NAME}-controller-${SAFEHOSTARCH}"
 version_tag="$(cat ${projectdir}/_output/version)"
 # tag as latest version to load into kind cluster
 PACKAGE_CONTROLLER_IMAGE="${DOCKER_REGISTRY}/${PROJECT_NAME}-controller:${VERSION}"
-K8S_CLUSTER="${K8S_CLUSTER:-${BUILD_REGISTRY}-INTTESTS}"
+K8S_CLUSTER="${K8S_CLUSTER:-${BUILD_REGISTRY}-inttests}"
 
 CROSSPLANE_NAMESPACE="crossplane-system"
 PACKAGE_NAME="provider-helm"
@@ -197,7 +197,6 @@ else
 fi
 
 echo_sub_step "check release deployment"
-check_deployments "wordpress-example" "wordpress"
 
 echo_step "uninstalling ${PROJECT_NAME}"
 
