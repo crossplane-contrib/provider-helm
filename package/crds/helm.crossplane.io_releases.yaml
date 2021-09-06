@@ -619,6 +619,11 @@ spec:
                   wait:
                     description: Wait for the release to become ready.
                     type: boolean
+                  waitTimeout:
+                    description: WaitTimeout is the duration Helm will wait for the
+                      release to become ready. Only applies if wait is also set. Defaults
+                      to 5m.
+                    type: string
                 required:
                 - chart
                 - namespace

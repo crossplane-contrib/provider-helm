@@ -21,6 +21,7 @@ limitations under the License.
 package v1beta1
 
 import (
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -165,6 +166,11 @@ func (in *ReleaseObservation) DeepCopy() *ReleaseObservation {
 func (in *ReleaseParameters) DeepCopyInto(out *ReleaseParameters) {
 	*out = *in
 	out.Chart = in.Chart
+	if in.WaitTimeout != nil {
+		in, out := &in.WaitTimeout, &out.WaitTimeout
+		*out = new(v1.Duration)
+		**out = **in
+	}
 	if in.PatchesFrom != nil {
 		in, out := &in.PatchesFrom, &out.PatchesFrom
 		*out = make([]ValueFromSource, len(*in))
