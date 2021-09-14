@@ -26,8 +26,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// NewRestConfig returns a rest config given a secret with connection information.
-func NewRestConfig(kubeconfig []byte) (*rest.Config, error) {
+// NewRESTConfig returns a REST config given a secret with connection information.
+func NewRESTConfig(kubeconfig []byte) (*rest.Config, error) {
 	ac, err := clientcmd.Load(kubeconfig)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to load kubeconfig")
