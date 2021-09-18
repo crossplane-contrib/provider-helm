@@ -24,8 +24,15 @@ import (
 
 // A ProviderConfigSpec defines the desired state of a Provider.
 type ProviderConfigSpec struct {
-	// Credentials required to authenticate to this provider.
+	// Credentials used to connect to the Kubernetes API. Typically a
+	// kubeconfig file. Use InjectedIdentity for in-cluster config.
 	Credentials ProviderCredentials `json:"credentials"`
+
+	// Identity used to authenticate to the Kubernetes API. The identity
+	// credentials can be used to supplement kubeconfig 'credentials', for
+	// example by configuring a bearer token source such as OAuth.
+	// +optional
+	Identity *Identity `json:"identity,omitempty"`
 }
 
 // ProviderCredentials required to authenticate.
@@ -35,6 +42,23 @@ type ProviderCredentials struct {
 	Source xpv1.CredentialsSource `json:"source"`
 
 	xpv1.CommonCredentialSelectors `json:",inline"`
+}
+
+// IdentityType used to authenticate to the Kubernetes API.
+type IdentityType string
+
+// Supported identity types.
+const (
+	IdentityTypeGoogleApplicationCredentials = "GoogleApplicationCredentials"
+)
+
+// Identity used to authenticate.
+type Identity struct {
+	// Type of identity.
+	// +kubebuilder:validation:Enum=GoogleApplicationCredentials
+	Type IdentityType `json:"type"`
+
+	ProviderCredentials `json:",inline"`
 }
 
 // A ProviderConfigStatus defines the status of a Provider.
