@@ -24,7 +24,7 @@ kubectl crossplane install provider crossplane/provider-helm:master
 You may also manually install `provider-helm` by creating a `Provider` directly:
 
 ```yaml
-apiVersion: pkg.crossplane.io/v1alpha1
+apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
   name: provider-helm
