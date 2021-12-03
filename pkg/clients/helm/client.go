@@ -24,7 +24,6 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/pkg/errors"
@@ -73,13 +72,22 @@ type client struct {
 	uninstallClient *action.Uninstall
 }
 
+// ArgsApplier defines helm client arguments helper
+type ArgsApplier func(*Args)
+
 // NewClient returns a new Helm Client with provided config
-func NewClient(log logging.Logger, config *rest.Config, namespace string, wait bool, timeout time.Duration) (Client, error) {
-	rg := newRESTClientGetter(config, namespace)
+func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsApplier) (Client, error) {
+
+	args := &Args{}
+	for _, apply := range argAppliers {
+		apply(args)
+	}
+
+	rg := newRESTClientGetter(restConfig, args.Namespace)
 
 	actionConfig := new(action.Configuration)
 	// Always store helm state in the same cluster/namespace where chart is deployed
-	if err := actionConfig.Init(rg, namespace, helmDriverSecret, func(format string, v ...interface{}) {
+	if err := actionConfig.Init(rg, args.Namespace, helmDriverSecret, func(format string, v ...interface{}) {
 		log.Debug(fmt.Sprintf(format, v))
 	}); err != nil {
 		return nil, err
@@ -100,19 +108,21 @@ func NewClient(log logging.Logger, config *rest.Config, namespace string, wait b
 	gc := action.NewGet(actionConfig)
 
 	ic := action.NewInstall(actionConfig)
-	ic.Namespace = namespace
-	ic.Wait = wait
-	ic.Timeout = timeout
+	ic.Namespace = args.Namespace
+	ic.Wait = args.Wait
+	ic.Timeout = args.Timeout
+	ic.SkipCRDs = args.SkipCRDs
 
 	uc := action.NewUpgrade(actionConfig)
-	uc.Wait = wait
-	uc.Timeout = timeout
+	uc.Wait = args.Wait
+	uc.Timeout = args.Timeout
+	uc.SkipCRDs = args.SkipCRDs
 
 	uic := action.NewUninstall(actionConfig)
 
 	rb := action.NewRollback(actionConfig)
-	rb.Wait = wait
-	rb.Timeout = timeout
+	rb.Wait = args.Wait
+	rb.Timeout = args.Timeout
 
 	return &client{
 		log:             log,

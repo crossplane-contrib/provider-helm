@@ -89,6 +89,8 @@ type ReleaseParameters struct {
 	PatchesFrom []ValueFromSource `json:"patchesFrom,omitempty"`
 	// ValuesSpec defines the Helm value overrides spec for a Release.
 	ValuesSpec `json:",inline"`
+	// SkipCRDs skips installation of CRDs for the release.
+	SkipCRDs bool `json:"skipCRDs,omitempty"`
 }
 
 // ReleaseObservation are the observable fields of a Release.
