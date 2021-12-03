@@ -127,7 +127,16 @@ type connector struct {
 	gcpInjectorFn   func(ctx context.Context, rc *rest.Config, credentials []byte, scopes ...string) error
 	newRestConfigFn func(kubeconfig []byte) (*rest.Config, error)
 	newKubeClientFn func(config *rest.Config) (client.Client, error)
-	newHelmClientFn func(log logging.Logger, config *rest.Config, namespace string, wait bool, timeout time.Duration) (helmClient.Client, error)
+	newHelmClientFn func(log logging.Logger, config *rest.Config, helmArgs ...helmClient.ArgsApplier) (helmClient.Client, error)
+}
+
+func withRelease(cr *v1beta1.Release) helmClient.ArgsApplier {
+	return func(config *helmClient.Args) {
+		config.Namespace = cr.Spec.ForProvider.Namespace
+		config.Wait = cr.Spec.ForProvider.Wait
+		config.Timeout = waitTimeout(cr)
+		config.SkipCRDs = cr.Spec.ForProvider.SkipCRDs
+	}
 }
 
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
@@ -194,7 +203,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 		return nil, errors.Wrap(err, errNewKubernetesClient)
 	}
 
-	h, err := c.newHelmClientFn(c.logger, rc, cr.Spec.ForProvider.Namespace, cr.Spec.ForProvider.Wait, waitTimeout(cr))
+	h, err := c.newHelmClientFn(c.logger, rc, withRelease(cr))
 	if err != nil {
 		return nil, errors.Wrap(err, errNewKubernetesClient)
 	}
@@ -225,7 +234,7 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 	e.logger.Debug("Observing")
 
 	rel, err := e.helm.GetLastRelease(meta.GetExternalName(cr))
-	if err == driver.ErrReleaseNotFound {
+	if errors.Is(err, driver.ErrReleaseNotFound) {
 		return managed.ExternalObservation{
 			ResourceExists: false,
 		}, nil

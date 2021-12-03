@@ -16,6 +16,7 @@ spec:
     namespace: wordpress
 #   skipCreateNamespace: true
 #   wait: true
+#   skipCRDs: true
     values:
       service:
         type: ClusterIP

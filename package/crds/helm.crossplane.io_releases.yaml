@@ -571,6 +571,9 @@ spec:
                       - name
                       type: object
                     type: array
+                  skipCRDs:
+                    description: SkipCRDs skips installation of CRDs for the release.
+                    type: boolean
                   skipCreateNamespace:
                     description: SkipCreateNamespace won't create the namespace for
                       the release. This requires the namespace to already exist.
