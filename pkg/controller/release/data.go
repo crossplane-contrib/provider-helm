@@ -44,7 +44,7 @@ const (
 func getSecretData(ctx context.Context, kube client.Client, nn types.NamespacedName) (map[string][]byte, error) {
 	s := &corev1.Secret{}
 	if err := kube.Get(ctx, nn, s); err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf(errFailedToGetSecret, nn.Namespace))
+		return nil, errors.Wrapf(err, errFailedToGetSecret, nn.Namespace)
 	}
 	if s.Data == nil {
 		return nil, errors.New(errSecretDataIsNil)
@@ -55,7 +55,7 @@ func getSecretData(ctx context.Context, kube client.Client, nn types.NamespacedN
 func getConfigMapData(ctx context.Context, kube client.Client, nn types.NamespacedName) (map[string]string, error) {
 	cm := &corev1.ConfigMap{}
 	if err := kube.Get(ctx, nn, cm); err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf(errFailedToGetConfigMap, nn.Namespace))
+		return nil, errors.Wrapf(err, errFailedToGetConfigMap, nn.Namespace)
 	}
 	if cm.Data == nil {
 		return nil, errors.New(errConfigMapDataIsNil)
@@ -79,7 +79,7 @@ func getDataValueFromSource(ctx context.Context, kube client.Client, source v1be
 		}
 		valBytes, ok := d[k]
 		if !ok && !r.Optional {
-			return "", errors.New(fmt.Sprintf(errMissingKeyForValuesFrom, k))
+			return "", fmt.Errorf(errMissingKeyForValuesFrom, k)
 		}
 		return string(valBytes), nil
 	}
@@ -98,7 +98,7 @@ func getDataValueFromSource(ctx context.Context, kube client.Client, source v1be
 		}
 		valString, ok := d[k]
 		if !ok && !r.Optional {
-			return "", errors.New(fmt.Sprintf(errMissingKeyForValuesFrom, k))
+			return "", fmt.Errorf(errMissingKeyForValuesFrom, k)
 		}
 		return valString, nil
 	}

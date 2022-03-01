@@ -26,6 +26,8 @@ GO_STATIC_PACKAGES = $(GO_PROJECT)/cmd/provider
 GO_LDFLAGS += -X $(GO_PROJECT)/pkg/version.Version=$(VERSION)
 GO_SUBDIRS += cmd pkg apis
 GO111MODULE = on
+
+GOLANGCILINT_VERSION ?= 1.43.0
 -include build/makelib/golang.mk
 
 # ====================================================================================
@@ -68,14 +70,6 @@ cobertura:
 		grep -v zz_generated.deepcopy | \
 		$(GOCOVER_COBERTURA) > $(GO_TEST_OUTPUT)/cobertura-coverage.xml
 
-crds.clean:
-	@$(INFO) cleaning generated CRDs
-	@find package/crds -name *.yaml -exec sed -i.sed -e '1,2d' {} \; || $(FAIL)
-	@find package/crds -name *.yaml.sed -delete || $(FAIL)
-	@$(OK) cleaned generated CRDs
-
-generate.done: crds.clean
-
 # integration tests
 e2e.run: test-integration
 
@@ -101,4 +95,4 @@ run: $(KUBECTL) generate
 manifests:
 	@$(INFO) Deprecated. Run make generate instead.
 
-.PHONY: cobertura submodules fallthrough test-integration run manifests crds.clean
+.PHONY: cobertura submodules fallthrough test-integration run manifests

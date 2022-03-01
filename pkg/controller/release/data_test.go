@@ -461,7 +461,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 			},
 			want: want{
 				out: "",
-				err: errors.New(fmt.Sprintf(errMissingKeyForValuesFrom, "nonexistingkey")),
+				err: fmt.Errorf(errMissingKeyForValuesFrom, "nonexistingkey"),
 			},
 		},
 		"CMKeyMissingButOptional": {
@@ -521,7 +521,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 			},
 			want: want{
 				out: "",
-				err: errors.New(fmt.Sprintf(errMissingKeyForValuesFrom, "nonexistingkey")),
+				err: fmt.Errorf(errMissingKeyForValuesFrom, "nonexistingkey"),
 			},
 		},
 		"SuccessSecretWithKey": {
