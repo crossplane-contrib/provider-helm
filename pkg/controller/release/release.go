@@ -136,6 +136,7 @@ func withRelease(cr *v1beta1.Release) helmClient.ArgsApplier {
 		config.Wait = cr.Spec.ForProvider.Wait
 		config.Timeout = waitTimeout(cr)
 		config.SkipCRDs = cr.Spec.ForProvider.SkipCRDs
+		config.InsecureSkipTLSVerify = cr.Spec.ForProvider.InsecureSkipTLSVerify
 	}
 }
 
