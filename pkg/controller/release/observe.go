@@ -17,6 +17,7 @@ limitations under the License.
 package release
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -103,7 +104,7 @@ func isUpToDate(ctx context.Context, kube client.Client, in *v1beta1.ReleasePara
 		return false, err
 	}
 
-	if string(d) != string(o) {
+	if !bytes.Equal(d, o) {
 		return false, nil
 	}
 

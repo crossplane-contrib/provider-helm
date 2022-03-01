@@ -31,6 +31,7 @@ import (
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/cli"
+	"helm.sh/helm/v3/pkg/registry"
 	"helm.sh/helm/v3/pkg/release"
 	"k8s.io/client-go/rest"
 	ktype "sigs.k8s.io/kustomize/api/types"
@@ -93,7 +94,13 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 		return nil, err
 	}
 
-	pc := action.NewPull()
+	rc, err := registry.NewClient()
+	if err != nil {
+		return nil, err
+	}
+	actionConfig.RegistryClient = rc
+
+	pc := action.NewPullWithOpts(action.WithConfig(actionConfig))
 
 	if _, err := os.Stat(chartCache); os.IsNotExist(err) {
 		err = os.Mkdir(chartCache, 0750)
@@ -163,7 +170,7 @@ func (hc *client) pullLatestChartVersion(spec *v1beta1.ChartSpec, creds *RepoCre
 	}()
 
 	if err := hc.pullChart(spec, creds, tmpDir); err != nil {
-		return "", nil
+		return "", err
 	}
 
 	chartFileName, err := getChartFileName(tmpDir)
@@ -173,7 +180,7 @@ func (hc *client) pullLatestChartVersion(spec *v1beta1.ChartSpec, creds *RepoCre
 
 	chartFilePath := filepath.Join(chartCache, chartFileName)
 	if err := os.Rename(filepath.Join(tmpDir, chartFileName), chartFilePath); err != nil {
-		return "", nil
+		return "", err
 	}
 	return chartFilePath, nil
 }
