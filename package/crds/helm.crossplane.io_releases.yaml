@@ -481,6 +481,10 @@ spec:
                           latest version if not set
                         type: string
                     type: object
+                  insecureSkipTLSVerify:
+                    description: InsecureSkipTLSVerify skips tls certificate checks
+                      for the chart download
+                    type: boolean
                   namespace:
                     description: Namespace to install the release into.
                     type: string

@@ -51,6 +51,8 @@ const (
 	errFailedToLoadChart               = "failed to load chart"
 	errUnexpectedDirContentTmpl        = "expected 1 .tgz chart file, got [%s]"
 	errFailedToParseURL                = "failed to parse URL"
+	errFailedToLogin                   = "failed to login to registry"
+	errUnexpectedOCIUrlTmpl            = "url not prefixed with oci://, got [%s]"
 )
 
 // Client is the interface to interact with Helm
@@ -71,6 +73,7 @@ type client struct {
 	upgradeClient   *action.Upgrade
 	rollbackClient  *action.Rollback
 	uninstallClient *action.Uninstall
+	loginClient     *action.RegistryLogin
 }
 
 // ArgsApplier defines helm client arguments helper
@@ -111,6 +114,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 
 	pc.DestDir = chartCache
 	pc.Settings = &cli.EnvSettings{}
+	pc.InsecureSkipTLSverify = args.InsecureSkipTLSVerify
 
 	gc := action.NewGet(actionConfig)
 
@@ -119,17 +123,21 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	ic.Wait = args.Wait
 	ic.Timeout = args.Timeout
 	ic.SkipCRDs = args.SkipCRDs
+	ic.InsecureSkipTLSverify = args.InsecureSkipTLSVerify
 
 	uc := action.NewUpgrade(actionConfig)
 	uc.Wait = args.Wait
 	uc.Timeout = args.Timeout
 	uc.SkipCRDs = args.SkipCRDs
+	uc.InsecureSkipTLSverify = args.InsecureSkipTLSVerify
 
 	uic := action.NewUninstall(actionConfig)
 
 	rb := action.NewRollback(actionConfig)
 	rb.Wait = args.Wait
 	rb.Timeout = args.Timeout
+
+	lc := action.NewRegistryLogin(actionConfig)
 
 	return &client{
 		log:             log,
@@ -139,6 +147,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 		upgradeClient:   uc,
 		rollbackClient:  rb,
 		uninstallClient: uic,
+		loginClient:     lc,
 	}, nil
 }
 
@@ -190,15 +199,30 @@ func (hc *client) pullChart(spec *v1beta1.ChartSpec, creds *RepoCreds, chartDir 
 
 	chartRef := spec.URL
 	if spec.URL == "" {
-		chartRef = spec.Name
-
-		pc.RepoURL = spec.Repository
+		if registry.IsOCI(spec.Repository) {
+			chartRef = resolveOCIChartRef(spec.Repository, spec.Name)
+		} else {
+			chartRef = spec.Name
+			pc.RepoURL = spec.Repository
+		}
 		pc.Version = spec.Version
+	} else if registry.IsOCI(spec.URL) {
+		ociURL, version, err := resolveOCIChartVersion(spec.URL)
+		if err != nil {
+			return err
+		}
+		pc.Version = version
+		chartRef = ociURL.String()
 	}
 	pc.Username = creds.Username
 	pc.Password = creds.Password
 
 	pc.DestDir = chartDir
+
+	err := hc.login(spec, creds, pc.InsecureSkipTLSverify)
+	if err != nil {
+		return err
+	}
 
 	o, err := pc.Run(chartRef)
 	hc.log.Debug(o)
@@ -208,32 +232,63 @@ func (hc *client) pullChart(spec *v1beta1.ChartSpec, creds *RepoCreds, chartDir 
 	return nil
 }
 
+func (hc *client) login(spec *v1beta1.ChartSpec, creds *RepoCreds, insecure bool) error {
+	ociURL := spec.URL
+	if spec.URL == "" {
+		ociURL = spec.Repository
+	}
+	if !registry.IsOCI(ociURL) {
+		return nil
+	}
+	parsedURL, err := url.Parse(ociURL)
+	if err != nil {
+		return errors.Wrap(err, errFailedToParseURL)
+	}
+	var out strings.Builder
+	err = hc.loginClient.Run(&out, parsedURL.Host, creds.Username, creds.Password, insecure)
+	hc.log.Debug(out.String())
+	return errors.Wrap(err, errFailedToLogin)
+}
+
 func (hc *client) PullAndLoadChart(spec *v1beta1.ChartSpec, creds *RepoCreds) (*chart.Chart, error) {
 	var chartFilePath string
 	var err error
-	if spec.URL == "" && spec.Version == "" {
+	switch {
+	case spec.URL == "" && spec.Version == "":
 		chartFilePath, err = hc.pullLatestChartVersion(spec, creds)
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		filename := fmt.Sprintf("%s-%s.tgz", spec.Name, spec.Version)
-		if spec.URL != "" {
-			u, err := url.Parse(spec.URL)
-			if err != nil {
-				return nil, errors.Wrap(err, errFailedToParseURL)
-			}
-			filename = path.Base(u.Path)
+	case registry.IsOCI(spec.URL):
+		u, v, err := resolveOCIChartVersion(spec.URL)
+		if err != nil {
+			return nil, err
 		}
-		chartFilePath = filepath.Join(chartCache, filename)
 
-		if _, err := os.Stat(chartFilePath); os.IsNotExist(err) {
-			if err = hc.pullChart(spec, creds, chartCache); err != nil {
+		if v == "" {
+			chartFilePath, err = hc.pullLatestChartVersion(spec, creds)
+			if err != nil {
 				return nil, err
 			}
-		} else if err != nil {
-			return nil, errors.Wrap(err, errFailedToCheckIfLocalChartExists)
+		} else {
+			chartFilePath = resolveChartFilePath(path.Base(u.Path), v)
 		}
+	case spec.URL != "":
+		u, err := url.Parse(spec.URL)
+		if err != nil {
+			return nil, errors.Wrap(err, errFailedToParseURL)
+		}
+		chartFilePath = filepath.Join(chartCache, path.Base(u.Path))
+	default:
+		chartFilePath = resolveChartFilePath(spec.Name, spec.Version)
+	}
+
+	if _, err := os.Stat(chartFilePath); os.IsNotExist(err) {
+		if err = hc.pullChart(spec, creds, chartCache); err != nil {
+			return nil, err
+		}
+	} else if err != nil {
+		return nil, errors.Wrap(err, errFailedToCheckIfLocalChartExists)
 	}
 
 	chart, err := loader.Load(chartFilePath)
@@ -282,4 +337,29 @@ func (hc *client) Rollback(release string) error {
 func (hc *client) Uninstall(release string) error {
 	_, err := hc.uninstallClient.Run(release)
 	return err
+}
+
+func resolveOCIChartVersion(chartURL string) (*url.URL, string, error) {
+	if !registry.IsOCI(chartURL) {
+		return nil, "", errors.Errorf(errUnexpectedOCIUrlTmpl, chartURL)
+	}
+	ociURL, err := url.Parse(chartURL)
+	if err != nil {
+		return nil, "", errors.Wrap(err, errFailedToParseURL)
+	}
+	parts := strings.Split(ociURL.Path, ":")
+	if len(parts) > 1 {
+		ociURL.Path = parts[0]
+		return ociURL, parts[1], nil
+	}
+	return ociURL, "", nil
+}
+
+func resolveChartFilePath(name string, version string) string {
+	filename := fmt.Sprintf("%s-%s.tgz", name, version)
+	return filepath.Join(chartCache, filename)
+}
+
+func resolveOCIChartRef(repository string, name string) string {
+	return strings.Join([]string{strings.TrimSuffix(repository, "/"), name}, "/")
 }
