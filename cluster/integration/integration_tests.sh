@@ -135,15 +135,15 @@ EOF
 )"
 echo "${PVC_YAML}" | "${KUBECTL}" create -f -
 
-# install crossplane from master channel
-echo_step "installing crossplane from master channel"
-"${HELM3}" repo add crossplane-master https://charts.crossplane.io/master/
-chart_version="$("${HELM3}" search repo crossplane-master/crossplane --devel | awk 'FNR == 2 {print $2}')"
+# install crossplane from stable channel
+echo_step "installing crossplane from stable channel"
+"${HELM3}" repo add crossplane-stable https://charts.crossplane.io/stable/
+chart_version="$("${HELM3}" search repo crossplane-stable/crossplane | awk 'FNR == 2 {print $2}')"
 echo_info "using crossplane version ${chart_version}"
 echo
 # we replace empty dir with our PVC so that the /cache dir in the kind node
 # container is exposed to the crossplane pod
-"${HELM3}" install crossplane --namespace crossplane-system crossplane-master/crossplane --version ${chart_version} --devel --set packageCache.pvc=package-cache
+"${HELM3}" install crossplane --namespace crossplane-system crossplane-stable/crossplane --version ${chart_version} --set packageCache.pvc=package-cache
 
 echo_step "waiting for deployment crossplane rollout to finish"
 "${KUBECTL}" -n "${CROSSPLANE_NAMESPACE}" rollout status "deploy/crossplane" --timeout=2m
