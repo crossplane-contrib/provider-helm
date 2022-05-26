@@ -3,7 +3,7 @@ PROJECT_NAME := provider-helm
 PROJECT_REPO := github.com/crossplane-contrib/$(PROJECT_NAME)
 
 PLATFORMS ?= linux_amd64 linux_arm64
-include build/makelib/common.mk
+-include build/makelib/common.mk
 
 # ====================================================================================
 # Setup Output
