@@ -136,7 +136,7 @@ func withRelease(cr *v1beta1.Release) helmClient.ArgsApplier {
 	}
 }
 
-func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
+func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) { //nolint:gocyclo
 	cr, ok := mg.(*v1beta1.Release)
 	if !ok {
 		return nil, errors.New(errNotRelease)
@@ -184,14 +184,21 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	// NOTE(negz): We don't currently check the identity type because at the
 	// time of writing there's only one valid value (Google App Creds), and
 	// that value is required.
-	if id := p.Spec.Identity; id != nil {
-		creds, err := c.gcpExtractorFn(ctx, id.Source, c.client, id.CommonCredentialSelectors)
-		if err != nil {
-			return nil, errors.Wrap(err, errFailedToExtractGoogleCredentials)
-		}
+	if id := p.Spec.Identity; id != nil { //nolint:exhaustive
+		switch id.Source { //nolint:exhaustive
+		case xpv1.CredentialsSourceInjectedIdentity:
+			if err := c.gcpInjectorFn(ctx, rc, nil, gke.DefaultScopes...); err != nil {
+				return nil, errors.Wrap(err, errFailedToInjectGoogleCredentials)
+			}
+		default:
+			creds, err := c.gcpExtractorFn(ctx, id.Source, c.client, id.CommonCredentialSelectors)
+			if err != nil {
+				return nil, errors.Wrap(err, errFailedToExtractGoogleCredentials)
+			}
 
-		if err := c.gcpInjectorFn(ctx, rc, creds, gke.DefaultScopes...); err != nil {
-			return nil, errors.Wrap(err, errFailedToInjectGoogleCredentials)
+			if err := c.gcpInjectorFn(ctx, rc, creds, gke.DefaultScopes...); err != nil {
+				return nil, errors.Wrap(err, errFailedToInjectGoogleCredentials)
+			}
 		}
 	}
 

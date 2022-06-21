@@ -36,14 +36,25 @@ var DefaultScopes = []string{
 // WrapRESTConfig configures the supplied REST config to use OAuth2 bearer
 // tokens fetched using the supplied Google Application Credentials.
 func WrapRESTConfig(ctx context.Context, rc *rest.Config, credentials []byte, scopes ...string) error {
-	creds, err := google.CredentialsFromJSON(ctx, credentials, scopes...)
-	if err != nil {
-		return errors.Wrap(err, "cannot load Google Application Credentials from JSON")
+	var ts oauth2.TokenSource
+	if credentials != nil {
+		// CredentialsFromJSON creates a TokenSource that handles token caching.
+		creds, err := google.CredentialsFromJSON(ctx, credentials, scopes...)
+		if err != nil {
+			return errors.Wrap(err, "cannot load Google Application Credentials from JSON")
+		}
+		ts = creds.TokenSource
+	} else {
+		var t *oauth2.Token
+		// DefaultTokenSource retrieves a token source from an injected identity.
+		gsrc, err := google.DefaultTokenSource(ctx, scopes...)
+		if err != nil {
+			return errors.Wrap(err, "failed to extract default credentials source")
+		}
+		ts = oauth2.ReuseTokenSource(t, gsrc)
 	}
-
-	// CredentialsFromJSON creates a TokenSource that handles token caching.
 	rc.Wrap(func(rt http.RoundTripper) http.RoundTripper {
-		return &oauth2.Transport{Source: creds.TokenSource, Base: rt}
+		return &oauth2.Transport{Source: ts, Base: rt}
 	})
 
 	return nil
