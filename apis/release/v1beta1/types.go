@@ -93,6 +93,8 @@ type ReleaseParameters struct {
 	SkipCRDs bool `json:"skipCRDs,omitempty"`
 	// InsecureSkipTLSVerify skips tls certificate checks for the chart download
 	InsecureSkipTLSVerify bool `json:"insecureSkipTLSVerify,omitempty"`
+	// Devel flag to also include development version (alpha, beta, and release candidate releases)
+	Devel bool `json:"devel,omitempty"`
 }
 
 // ReleaseObservation are the observable fields of a Release.

@@ -14,4 +14,6 @@ type Args struct {
 	SkipCRDs bool
 	// InsecureSkipTLSVerify skips tls certificate checks for the chart download
 	InsecureSkipTLSVerify bool
+	// Devel flag to also include development version (alpha, beta, and release candidate releases)
+	Devel bool
 }

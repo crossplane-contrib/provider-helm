@@ -124,13 +124,15 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	ic.Timeout = args.Timeout
 	ic.SkipCRDs = args.SkipCRDs
 	ic.InsecureSkipTLSverify = args.InsecureSkipTLSVerify
+	ic.Devel = args.Devel
 
 	uc := action.NewUpgrade(actionConfig)
 	uc.Wait = args.Wait
 	uc.Timeout = args.Timeout
 	uc.SkipCRDs = args.SkipCRDs
 	uc.InsecureSkipTLSverify = args.InsecureSkipTLSVerify
-
+	uc.Devel = args.Devel
+	
 	uic := action.NewUninstall(actionConfig)
 
 	rb := action.NewRollback(actionConfig)
