@@ -53,6 +53,7 @@ const (
 	errFailedToParseURL                = "failed to parse URL"
 	errFailedToLogin                   = "failed to login to registry"
 	errUnexpectedOCIUrlTmpl            = "url not prefixed with oci://, got [%s]"
+	devel 							   = ">0.0.0-0"
 )
 
 // Client is the interface to interact with Helm
@@ -254,7 +255,7 @@ func (hc *client) PullAndLoadChart(spec *v1beta1.ChartSpec, creds *RepoCreds) (*
 	var chartFilePath string
 	var err error
 	switch {
-	case spec.URL == "" && spec.Version == "":
+	case spec.URL == "" && spec.Version == "" || spec.URL == "" && spec.Version == devel:
 		chartFilePath, err = hc.pullLatestChartVersion(spec, creds)
 		if err != nil {
 			return nil, err
@@ -280,9 +281,10 @@ func (hc *client) PullAndLoadChart(spec *v1beta1.ChartSpec, creds *RepoCreds) (*
 		}
 		chartFilePath = filepath.Join(chartCache, path.Base(u.Path))
 	default:
+		fmt.Printf("i am here   %s\n", spec.Version)
 		chartFilePath = resolveChartFilePath(spec.Name, spec.Version)
 	}
-
+	fmt.Println(chartFilePath)
 	if _, err := os.Stat(chartFilePath); os.IsNotExist(err) {
 		if err = hc.pullChart(spec, creds, chartCache); err != nil {
 			return nil, err
