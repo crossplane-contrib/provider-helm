@@ -284,7 +284,6 @@ func (hc *client) PullAndLoadChart(spec *v1beta1.ChartSpec, creds *RepoCreds) (*
 		fmt.Printf("i am here   %s\n", spec.Version)
 		chartFilePath = resolveChartFilePath(spec.Name, spec.Version)
 	}
-	fmt.Println(chartFilePath)
 	if _, err := os.Stat(chartFilePath); os.IsNotExist(err) {
 		if err = hc.pullChart(spec, creds, chartCache); err != nil {
 			return nil, err
