@@ -255,7 +255,7 @@ func (hc *client) PullAndLoadChart(spec *v1beta1.ChartSpec, creds *RepoCreds) (*
 	var chartFilePath string
 	var err error
 	switch {
-	case spec.URL == "" && spec.Version == "" || spec.URL == "" && spec.Version == devel:
+	case spec.URL == "" && (spec.Version == "" || spec.Version == devel):
 		chartFilePath, err = hc.pullLatestChartVersion(spec, creds)
 		if err != nil {
 			return nil, err
