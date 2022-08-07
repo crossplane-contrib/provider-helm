@@ -281,7 +281,6 @@ func (hc *client) PullAndLoadChart(spec *v1beta1.ChartSpec, creds *RepoCreds) (*
 		}
 		chartFilePath = filepath.Join(chartCache, path.Base(u.Path))
 	default:
-		fmt.Printf("i am here   %s\n", spec.Version)
 		chartFilePath = resolveChartFilePath(spec.Name, spec.Version)
 	}
 	if _, err := os.Stat(chartFilePath); os.IsNotExist(err) {
