@@ -53,7 +53,7 @@ const (
 	errFailedToParseURL                = "failed to parse URL"
 	errFailedToLogin                   = "failed to login to registry"
 	errUnexpectedOCIUrlTmpl            = "url not prefixed with oci://, got [%s]"
-	devel 							   = ">0.0.0-0"
+	devel 				   = ">0.0.0-0"
 )
 
 // Client is the interface to interact with Helm
