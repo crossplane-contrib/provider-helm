@@ -32,8 +32,8 @@ GOLANGCILINT_VERSION ?= 1.43.0
 
 # ====================================================================================
 # Setup Kubernetes tools
-KIND_VERSION ?= v0.11.1
-KIND_NODE_IMAGE_TAG ?= v1.19.11
+KIND_VERSION ?= v0.14.0
+KIND_NODE_IMAGE_TAG ?= v1.23.6
 USE_HELM3 = true
 -include build/makelib/k8s_tools.mk
 
