@@ -53,6 +53,7 @@ const (
 	errFailedToParseURL                = "failed to parse URL"
 	errFailedToLogin                   = "failed to login to registry"
 	errUnexpectedOCIUrlTmpl            = "url not prefixed with oci://, got [%s]"
+	devel                              = ">0.0.0-0"
 )
 
 // Client is the interface to interact with Helm
@@ -254,7 +255,7 @@ func (hc *client) PullAndLoadChart(spec *v1beta1.ChartSpec, creds *RepoCreds) (*
 	var chartFilePath string
 	var err error
 	switch {
-	case spec.URL == "" && spec.Version == "":
+	case spec.URL == "" && (spec.Version == "" || spec.Version == devel):
 		chartFilePath, err = hc.pullLatestChartVersion(spec, creds)
 		if err != nil {
 			return nil, err
