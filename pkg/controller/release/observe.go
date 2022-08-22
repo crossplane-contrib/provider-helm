@@ -42,6 +42,7 @@ const (
 	errChartNilInObservedRelease       = "chart field is nil in observed helm release"
 	errChartMetaNilInObservedRelease   = "chart metadata field is nil in observed helm release"
 	errObjectNotPartOfRelease          = "object is not part of release: %v"
+	devel                              = ">0.0.0-0"
 )
 
 // generateObservation generates release observation for the input release object
@@ -79,7 +80,7 @@ func isUpToDate(ctx context.Context, kube client.Client, in *v1beta1.ReleasePara
 	if in.Chart.Name != ocm.Name {
 		return false, nil
 	}
-	if in.Chart.Version != ocm.Version {
+	if in.Chart.Version != ocm.Version && in.Chart.Version != devel {
 		return false, nil
 	}
 	desiredConfig, err := composeValuesFromSpec(ctx, kube, in.ValuesSpec)
