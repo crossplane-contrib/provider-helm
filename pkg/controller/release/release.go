@@ -20,6 +20,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
@@ -31,12 +32,11 @@ import (
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 	ktype "sigs.k8s.io/kustomize/api/types"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	"github.com/crossplane/crossplane-runtime/pkg/controller"
 	"github.com/crossplane/crossplane-runtime/pkg/event"
-	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
@@ -49,11 +49,6 @@ import (
 )
 
 const (
-	maxConcurrency = 10
-
-	resyncPeriod     = 10 * time.Minute
-	reconcileTimeout = 10 * time.Minute
-
 	defaultWaitTimeout = 5 * time.Minute
 
 	helmReleaseNameAnnotation      = "meta.helm.sh/release-name"
@@ -88,15 +83,15 @@ const (
 )
 
 // Setup adds a controller that reconciles Release managed resources.
-func Setup(mgr ctrl.Manager, l logging.Logger) error {
+func Setup(mgr ctrl.Manager, o controller.Options, timeout time.Duration) error {
 	name := managed.ControllerName(v1beta1.ReleaseGroupKind)
-	logger := l.WithValues("controller", name)
+	cps := []managed.ConnectionPublisher{managed.NewAPISecretPublisher(mgr.GetClient(), mgr.GetScheme())}
 
 	r := managed.NewReconciler(mgr,
 		resource.ManagedKind(v1beta1.ReleaseGroupVersionKind),
 		managed.WithExternalConnecter(&connector{
-			logger:          logger,
 			client:          mgr.GetClient(),
+			logger:          o.Logger,
 			usage:           resource.NewProviderConfigUsageTracker(mgr.GetClient(), &helmv1beta1.ProviderConfigUsage{}),
 			kcfgExtractorFn: resource.CommonCredentialExtractor,
 			gcpExtractorFn:  resource.CommonCredentialExtractor,
@@ -105,15 +100,16 @@ func Setup(mgr ctrl.Manager, l logging.Logger) error {
 			newKubeClientFn: clients.NewKubeClient,
 			newHelmClientFn: helmClient.NewClient,
 		}),
-		managed.WithLogger(logger),
-		managed.WithTimeout(reconcileTimeout),
-		managed.WithPollInterval(resyncPeriod),
-		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))))
+		managed.WithPollInterval(o.PollInterval),
+		managed.WithLogger(o.Logger.WithValues("controller", name)),
+		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
+		managed.WithTimeout(timeout),
+		managed.WithConnectionPublishers(cps...))
 
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).
 		For(&v1beta1.Release{}).
-		WithOptions(controller.Options{MaxConcurrentReconciles: maxConcurrency}).
+		WithOptions(o.ForControllerRuntime()).
 		Complete(r)
 }
 
