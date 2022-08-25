@@ -19,6 +19,7 @@ package gke
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	"github.com/pkg/errors"
@@ -39,11 +40,18 @@ func WrapRESTConfig(ctx context.Context, rc *rest.Config, credentials []byte, sc
 	var ts oauth2.TokenSource
 	if credentials != nil {
 		// CredentialsFromJSON creates a TokenSource that handles token caching.
-		creds, err := google.CredentialsFromJSON(ctx, credentials, scopes...)
-		if err != nil {
-			return errors.Wrap(err, "cannot load Google Application Credentials from JSON")
+		if isJSON(credentials) {
+			creds, err := google.CredentialsFromJSON(ctx, credentials, scopes...)
+			if err != nil {
+				return errors.Wrap(err, "cannot load Google Application Credentials from JSON")
+			}
+			ts = creds.TokenSource
+		} else {
+			t := oauth2.Token{
+				AccessToken: string(credentials),
+			}
+			ts = oauth2.StaticTokenSource(&t)
 		}
-		ts = creds.TokenSource
 	} else {
 		var t *oauth2.Token
 		// DefaultTokenSource retrieves a token source from an injected identity.
@@ -58,4 +66,9 @@ func WrapRESTConfig(ctx context.Context, rc *rest.Config, credentials []byte, sc
 	})
 
 	return nil
+}
+
+func isJSON(b []byte) bool {
+	var js json.RawMessage
+	return json.Unmarshal(b, &js) == nil
 }
