@@ -39,14 +39,16 @@ var DefaultScopes = []string{
 func WrapRESTConfig(ctx context.Context, rc *rest.Config, credentials []byte, scopes ...string) error {
 	var ts oauth2.TokenSource
 	if credentials != nil {
-		// CredentialsFromJSON creates a TokenSource that handles token caching.
 		if isJSON(credentials) {
+			// If credentials are in a JSON format, extract the credential from the JSON
+			// CredentialsFromJSON creates a TokenSource that handles token caching.
 			creds, err := google.CredentialsFromJSON(ctx, credentials, scopes...)
 			if err != nil {
 				return errors.Wrap(err, "cannot load Google Application Credentials from JSON")
 			}
 			ts = creds.TokenSource
 		} else {
+			// if the credential not in a JSON format, treat the credential as an access token
 			t := oauth2.Token{
 				AccessToken: string(credentials),
 			}
