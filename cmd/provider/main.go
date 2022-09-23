@@ -38,6 +38,10 @@ import (
 	template "github.com/crossplane-contrib/provider-helm/pkg/controller"
 )
 
+const (
+	maxConcurrency = 10
+)
+
 func main() {
 	var (
 		app              = kingpin.New(filepath.Base(os.Args[0]), "Helm support for Crossplane.").DefaultEnvars()
@@ -83,7 +87,7 @@ func main() {
 	kingpin.FatalIfError(apis.AddToScheme(mgr.GetScheme()), "Cannot add Helm APIs to scheme")
 	o := controller.Options{
 		Logger:                  log,
-		MaxConcurrentReconciles: *maxReconcileRate,
+		MaxConcurrentReconciles: maxConcurrency,
 		PollInterval:            *pollInterval,
 		GlobalRateLimiter:       ratelimiter.NewGlobal(*maxReconcileRate),
 		Features:                &feature.Flags{},
