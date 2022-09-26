@@ -179,6 +179,8 @@ SA=$("${KUBECTL}" -n crossplane-system get sa -o name | grep provider-helm | sed
 echo_step "install example chart"
 "${KUBECTL}" apply -f examples/sample/release.yaml
 "${KUBECTL}" wait --for=condition=Ready release --all --timeout=1m
+
+echo_step "waiting for wordpress pods to be ready"
 "${KUBECTL}" -n wordpress wait --for=condition=Ready pods --all --timeout=3m
 
 echo_sub_step "check namespace label"
