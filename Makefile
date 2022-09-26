@@ -34,6 +34,8 @@ GO111MODULE = on
 
 UP_VERSION = v0.13.0
 UP_CHANNEL = stable
+KIND_NODE_IMAGE_TAG ?= v1.24.0
+USE_HELM3 = true
 -include build/makelib/k8s_tools.mk
 
 # ====================================================================================
