@@ -8,7 +8,7 @@ spec:
     chart:
       name: wordpress
       repository: "oci://localhost:5000/helm-charts"
-      version: 9.3.19
+      version: 15.2.5
 #     pullSecretRef:
 #       name: oci-creds
 #       namespace: default
