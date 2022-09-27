@@ -15,9 +15,6 @@ metadata:
       management of [Helm](https://helm.sh) Releases on Kubernetes clusters
       typically provisioned by Crossplane.
 
-      Available resources and their fields can be found in the [CRD
-      Docs](https://doc.crds.dev/github.com/crossplane-contrib/provider-helm).
-
       If you encounter an issue please reach out on
       [slack.crossplane.io](https://slack.crossplane.io) and create an issue in
       the
