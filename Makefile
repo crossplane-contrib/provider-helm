@@ -31,17 +31,32 @@ GO111MODULE = on
 
 # ====================================================================================
 # Setup Kubernetes tools
-KIND_VERSION ?= v0.14.0
-KIND_NODE_IMAGE_TAG ?= v1.23.6
+
+UP_VERSION = v0.13.0
+UP_CHANNEL = stable
+KIND_NODE_IMAGE_TAG ?= v1.24.0
 USE_HELM3 = true
 -include build/makelib/k8s_tools.mk
 
 # ====================================================================================
 # Setup Images
 
-DOCKER_REGISTRY = crossplane
-IMAGES = provider-helm provider-helm-controller
--include build/makelib/image.mk
+IMAGES = provider-helm
+-include build/makelib/imagelight.mk
+
+# ====================================================================================
+# Setup XPKG
+
+XPKG_REG_ORGS ?= xpkg.upbound.io/crossplane index.docker.io/crossplane
+# NOTE(hasheddan): skip promoting on xpkg.upbound.io as channel tags are
+# inferred.
+XPKG_REG_ORGS_NO_PROMOTE ?= xpkg.upbound.io/crossplane
+XPKGS = provider-helm
+-include build/makelib/xpkg.mk
+
+# We force image building to happen prior to xpkg build so that we ensure image
+# is present in daemon.
+xpkg.build.provider-helm: do.build.images
 
 # ====================================================================================
 # Setup Local Dev
@@ -91,6 +106,10 @@ submodules:
 # identify its location in CI so that we cache between builds.
 go.cachedir:
 	@go env GOCACHE
+
+# We must ensure up is installed in tool cache prior to build as including the
+# k8s_tools machinery prior to the xpkg machinery sets UP to point to tool cache.
+build.init: $(UP)
 
 # This is for running out-of-cluster locally, and is for convenience. Running
 # this make target will print out the command which was used. For more control,
