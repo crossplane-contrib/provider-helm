@@ -7,7 +7,7 @@ require (
 	github.com/crossplane/crossplane-tools v0.0.0-20220901191540-806c0b01097b
 	github.com/google/go-cmp v0.5.8
 	github.com/pkg/errors v0.9.1
-	go.uber.org/zap v1.21.0
+	go.uber.org/zap v1.23.0
 	golang.org/x/oauth2 v0.0.0-20220223155221-ee480838109b
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	helm.sh/helm/v3 v3.10.2
