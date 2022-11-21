@@ -133,6 +133,8 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	uc.InsecureSkipTLSverify = args.InsecureSkipTLSVerify
 
 	uic := action.NewUninstall(actionConfig)
+	uic.Wait = args.Wait
+	uic.Timeout = args.Timeout
 
 	rb := action.NewRollback(actionConfig)
 	rb.Wait = args.Wait
