@@ -124,6 +124,8 @@ type ReleaseStatus struct {
 type ConnectionDetail struct {
 	v1.ObjectReference    `json:",inline"`
 	ToConnectionSecretKey string `json:"toConnectionSecretKey,omitempty"`
+	// SkipPartOfReleaseCheck skips check for meta.helm.sh/release-name annotation.
+	SkipPartOfReleaseCheck bool `json:"skipPartOfReleaseCheck,omitempty"`
 }
 
 // +kubebuilder:object:root=true

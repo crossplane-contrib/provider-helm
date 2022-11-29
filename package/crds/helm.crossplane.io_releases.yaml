@@ -555,6 +555,10 @@ spec:
                       description: 'Specific resourceVersion to which this reference
                         is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
                       type: string
+                    skipPartOfReleaseCheck:
+                      description: SkipPartOfReleaseCheck skips check for meta.helm.sh/release-name
+                        annotation.
+                      type: boolean
                     toConnectionSecretKey:
                       type: string
                     uid:
