@@ -502,7 +502,7 @@ func Test_connectionDetails(t *testing.T) {
 							APIVersion: "v1",
 							FieldPath:  "data.db-password",
 						},
-						ToConnectionSecretKey: "password",
+						ToConnectionSecretKey:  "password",
 						SkipPartOfReleaseCheck: true,
 					},
 				},
