@@ -55,6 +55,14 @@ spec:
 #      namespace: wordpress
 #      fieldPath: data.wordpress-password
 #      toConnectionSecretKey: password
+#    - apiVersion: v1
+#      kind: Secret
+#      name: manual-api-secret
+#      namespace: wordpress
+#      fieldPath: data.api-key
+#      toConnectionSecretKey: api-key
+#      # this secret created manually (not via Helm chart), so skip 'part of helm release' check
+#      skipPartOfReleaseCheck: true
 #  writeConnectionSecretToRef:
 #    name: wordpress-credentials
 #    namespace: crossplane-system
