@@ -134,8 +134,7 @@ func connectionDetails(ctx context.Context, kube client.Client, connDetails []v1
 			return mcd, errors.Wrap(err, "cannot get object")
 		}
 
-		// TODO(hasan): consider making this check configurable, i.e. possible to skip via a field in spec
-		if !partOfRelease(ro, relName, relNamespace) {
+		if !cd.SkipPartOfReleaseCheck && !partOfRelease(ro, relName, relNamespace) {
 			return mcd, errors.Errorf(errObjectNotPartOfRelease, cd.ObjectReference)
 		}
 

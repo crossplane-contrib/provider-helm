@@ -475,7 +475,48 @@ func Test_connectionDetails(t *testing.T) {
 				},
 			},
 		},
+
+		"Success_NotPartOfReleaseAndSkipPartOfReleaseCheck": {
+			args: args{
+				kube: &test.MockClient{
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						if o, ok := obj.(*unstructured.Unstructured); o.GetKind() == "Secret" && ok && key.Name == testSecretName && key.Namespace == testNamespace {
+							*obj.(*unstructured.Unstructured) = unstructured.Unstructured{
+								Object: map[string]interface{}{
+									"data": map[string]interface{}{
+										"db-password": "MTIzNDU=",
+									},
+								},
+							}
+						}
+						return nil
+					},
+				},
+
+				connDetails: []v1beta1.ConnectionDetail{
+					{
+						ObjectReference: corev1.ObjectReference{
+							Kind:       "Secret",
+							Namespace:  testNamespace,
+							Name:       testSecretName,
+							APIVersion: "v1",
+							FieldPath:  "data.db-password",
+						},
+						ToConnectionSecretKey:  "password",
+						SkipPartOfReleaseCheck: true,
+					},
+				},
+				relName:      testReleaseName,
+				relNamespace: testNamespace,
+			},
+			want: want{
+				out: managed.ConnectionDetails{
+					"password": []byte("12345"),
+				},
+			},
+		},
 	}
+
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			got, gotErr := connectionDetails(context.Background(), tc.args.kube, tc.args.connDetails, tc.args.relName, tc.args.relNamespace)
