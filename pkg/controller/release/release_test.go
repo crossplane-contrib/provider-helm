@@ -291,7 +291,7 @@ func Test_connector_Connect(t *testing.T) {
 						}
 						return errBoom
 					},
-					MockStatusUpdate: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+					MockStatusUpdate: func(ctx context.Context, obj client.Object, opts ...client.SubResourceUpdateOption) error {
 						return nil
 					},
 				},
@@ -327,7 +327,7 @@ func Test_connector_Connect(t *testing.T) {
 						}
 						return errBoom
 					},
-					MockStatusUpdate: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+					MockStatusUpdate: func(ctx context.Context, obj client.Object, opts ...client.SubResourceUpdateOption) error {
 						return nil
 					},
 				},
@@ -368,7 +368,7 @@ func Test_connector_Connect(t *testing.T) {
 						}
 						return nil
 					},
-					MockStatusUpdate: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+					MockStatusUpdate: func(ctx context.Context, obj client.Object, opts ...client.SubResourceUpdateOption) error {
 						return nil
 					},
 				},

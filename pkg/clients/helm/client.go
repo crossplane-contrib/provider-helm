@@ -18,7 +18,6 @@ package helm
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"path"
@@ -155,7 +154,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 }
 
 func getChartFileName(dir string) (string, error) {
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	if err != nil {
 		return "", err
 	}
@@ -171,7 +170,7 @@ func getChartFileName(dir string) (string, error) {
 
 // Pulls latest chart version. Returns absolute chartFilePath or error.
 func (hc *client) pullLatestChartVersion(spec *v1beta1.ChartSpec, creds *RepoCreds) (string, error) {
-	tmpDir, err := ioutil.TempDir(chartCache, "")
+	tmpDir, err := os.MkdirTemp(chartCache, "")
 	if err != nil {
 		return "", err
 	}

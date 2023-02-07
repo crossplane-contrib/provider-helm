@@ -3,7 +3,7 @@ package helm
 import (
 	"bytes"
 	"encoding/json"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
@@ -26,7 +26,7 @@ type KustomizationRender struct {
 
 // Run runs a set of Kustomize patches against yaml input and returns the patched content.
 func (kr KustomizationRender) Run(renderedManifests *bytes.Buffer) (modifiedManifests *bytes.Buffer, err error) {
-	d, err := ioutil.TempDir("", helmTempDirNamePattern)
+	d, err := os.MkdirTemp("", helmTempDirNamePattern)
 	if err != nil {
 		return nil, err
 	}
