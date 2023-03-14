@@ -18,7 +18,7 @@ so using the Crossplane CLI in a Kubernetes cluster where Crossplane is
 installed:
 
 ```console
-kubectl crossplane install provider crossplane/provider-helm:master
+kubectl crossplane install provider crossplanecontrib/provider-helm:master
 ```
 
 You may also manually install `provider-helm` by creating a `Provider` directly:
@@ -29,7 +29,7 @@ kind: Provider
 metadata:
   name: provider-helm
 spec:
-  package: "crossplane/provider-helm:master"
+  package: "crossplanecontrib/provider-helm:master"
 ```
 
 ## Design 
