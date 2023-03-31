@@ -108,6 +108,7 @@ func Setup(mgr ctrl.Manager, o controller.Options, timeout time.Duration) error 
 
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).
+		WithEventFilter(resource.DesiredStateChanged()).
 		For(&v1beta1.Release{}).
 		WithOptions(o.ForControllerRuntime()).
 		Complete(r)

@@ -3,7 +3,7 @@ module github.com/crossplane-contrib/provider-helm
 go 1.19
 
 require (
-	github.com/crossplane/crossplane-runtime v0.19.0
+	github.com/crossplane/crossplane-runtime v0.20.0-rc.0.0.20230320143010-c424c4aca5b0
 	github.com/crossplane/crossplane-tools v0.0.0-20220901191540-806c0b01097b
 	github.com/google/go-cmp v0.5.9
 	github.com/pkg/errors v0.9.1
