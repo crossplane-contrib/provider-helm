@@ -661,12 +661,16 @@ spec:
                       type: object
                     type: array
                   set:
+                    description: 'Set sets a specific key in values (precedence order:
+                      Values < ValuesFrom < Set)'
                     items:
                       description: SetVal represents a "set" value override in a Release
                       properties:
                         name:
+                          description: Name of the key to be set
                           type: string
                         value:
+                          description: Value of the to be set key
                           type: string
                         valueFrom:
                           description: ValueFromSource represents source of a value
@@ -716,9 +720,13 @@ spec:
                       the release. This requires the namespace to already exist.
                     type: boolean
                   values:
+                    description: 'Values literals (precedence order: Values < ValuesFrom
+                      < Set)'
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
                   valuesFrom:
+                    description: 'ValuesFrom will be merged to values in order (later
+                      ones win, overall precedence order: Values < ValuesFrom < Set)'
                     items:
                       description: ValueFromSource represents source of a value
                       properties:
