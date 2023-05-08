@@ -69,7 +69,7 @@ type SetVal struct {
 
 // ValuesSpec defines the Helm value overrides spec for a Release
 type ValuesSpec struct {
-	// Values literals (precedence order: Values < ValuesFrom < Set)
+	// Values literals (precedence order: ValuesFrom < Values < Set)
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Values runtime.RawExtension `json:"values,omitempty"`
 	// ValuesFrom will be merged to values in order (later ones win, overall precedence order: Values < ValuesFrom < Set)
