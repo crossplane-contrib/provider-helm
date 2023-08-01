@@ -47,25 +47,29 @@ func WrapRESTConfig(ctx context.Context, rc *rest.Config, credentials []byte, sc
 				return errors.Wrap(err, "cannot load Google Application Credentials from JSON")
 			}
 			ts = creds.TokenSource
-		} else {
-			// if the credential not in a JSON format, treat the credential as an access token
-			t := oauth2.Token{
-				AccessToken: string(credentials),
-			}
-			if ok := t.Valid(); !ok {
-				return errors.New("Access token invalid")
-			}
-			ts = oauth2.StaticTokenSource(&t)
+			rc.Wrap(func(rt http.RoundTripper) http.RoundTripper {
+				return &oauth2.Transport{Source: ts, Base: rt}
+			})
 		}
-	} else {
-		var t *oauth2.Token
-		// DefaultTokenSource retrieves a token source from an injected identity.
-		gsrc, err := google.DefaultTokenSource(ctx, scopes...)
-		if err != nil {
-			return errors.Wrap(err, "failed to extract default credentials source")
+		// if the credential not in a JSON format, treat the credential as an access token
+		t := oauth2.Token{
+			AccessToken: string(credentials),
 		}
-		ts = oauth2.ReuseTokenSource(t, gsrc)
+		if ok := t.Valid(); !ok {
+			return errors.New("Access token invalid")
+		}
+		ts = oauth2.StaticTokenSource(&t)
+		rc.Wrap(func(rt http.RoundTripper) http.RoundTripper {
+			return &oauth2.Transport{Source: ts, Base: rt}
+		})
 	}
+	var t *oauth2.Token
+	// DefaultTokenSource retrieves a token source from an injected identity.
+	gsrc, err := google.DefaultTokenSource(ctx, scopes...)
+	if err != nil {
+		return errors.Wrap(err, "failed to extract default credentials source")
+	}
+	ts = oauth2.ReuseTokenSource(t, gsrc)
 	rc.Wrap(func(rt http.RoundTripper) http.RoundTripper {
 		return &oauth2.Transport{Source: ts, Base: rt}
 	})
