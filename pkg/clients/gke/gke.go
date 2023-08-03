@@ -50,6 +50,7 @@ func WrapRESTConfig(ctx context.Context, rc *rest.Config, credentials []byte, sc
 			rc.Wrap(func(rt http.RoundTripper) http.RoundTripper {
 				return &oauth2.Transport{Source: ts, Base: rt}
 			})
+			return nil
 		}
 		// if the credential not in a JSON format, treat the credential as an access token
 		t := oauth2.Token{
@@ -62,6 +63,7 @@ func WrapRESTConfig(ctx context.Context, rc *rest.Config, credentials []byte, sc
 		rc.Wrap(func(rt http.RoundTripper) http.RoundTripper {
 			return &oauth2.Transport{Source: ts, Base: rt}
 		})
+		return nil
 	}
 	var t *oauth2.Token
 	// DefaultTokenSource retrieves a token source from an injected identity.
