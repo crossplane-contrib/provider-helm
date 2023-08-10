@@ -33,6 +33,10 @@ type ProviderConfigSpec struct {
 	// example by configuring a bearer token source such as OAuth.
 	// +optional
 	Identity *Identity `json:"identity,omitempty"`
+
+	// Proxy used to connect to the Kubernetes API.
+	// +optional
+	Proxy string `json:"proxy,omitempty"`
 }
 
 // ProviderCredentials required to authenticate.

@@ -163,6 +163,9 @@ spec:
                 - source
                 - type
                 type: object
+              proxy:
+                description: Proxy used to connect to the Kubernetes API.
+                type: string
             required:
             - credentials
             type: object
@@ -358,6 +361,9 @@ spec:
                 - source
                 - type
                 type: object
+              proxy:
+                description: Proxy used to connect to the Kubernetes API.
+                type: string
             required:
             - credentials
             type: object

@@ -18,6 +18,8 @@ package release
 
 import (
 	"context"
+	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
@@ -80,6 +82,7 @@ const (
 	errFailedToSetName                  = "failed to update chart spec with the name from URL"
 	errFailedToSetVersion               = "failed to update chart spec with the latest version"
 	errFailedToCreateNamespace          = "failed to create namespace for release"
+	errFailedToParseProxy               = "failed to parse proxy url"
 )
 
 // Setup adds a controller that reconciles Release managed resources.
@@ -200,6 +203,14 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 				return nil, errors.Wrap(err, errFailedToInjectGoogleCredentials)
 			}
 		}
+	}
+
+	if proxy := p.Spec.Proxy; proxy != "" {
+		u, err := url.Parse(proxy)
+		if err != nil {
+			return nil, errors.Wrap(err, errFailedToParseProxy)
+		}
+		rc.Proxy = http.ProxyURL(u)
 	}
 
 	k, err := c.newKubeClientFn(rc)
