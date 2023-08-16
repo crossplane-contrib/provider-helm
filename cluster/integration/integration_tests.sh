@@ -65,7 +65,7 @@ echo_step "setting up local package cache"
 CACHE_PATH="${projectdir}/.work/inttest-package-cache"
 mkdir -p "${CACHE_PATH}"
 echo "created cache dir at ${CACHE_PATH}"
-"${UP}" alpha xpkg xp-extract --from-xpkg "${OUTPUT_DIR}"/xpkg/"${HOSTOS}"_"${SAFEHOSTARCH}"/"${PACKAGE_NAME}"-"${VERSION}".xpkg -o "${CACHE_PATH}/${PACKAGE_NAME}.gz" && chmod 644 "${CACHE_PATH}/${PACKAGE_NAME}.gz"
+"${UP}" alpha xpkg xp-extract --from-xpkg "${OUTPUT_DIR}"/xpkg/linux_"${SAFEHOSTARCH}"/"${PACKAGE_NAME}"-"${VERSION}".xpkg -o "${CACHE_PATH}/${PACKAGE_NAME}.gz" && chmod 644 "${CACHE_PATH}/${PACKAGE_NAME}.gz"
 
 # create kind cluster with extra mounts
 KIND_NODE_IMAGE="kindest/node:${KIND_NODE_IMAGE_TAG}"
@@ -181,7 +181,7 @@ echo_step "install example chart"
 "${KUBECTL}" wait --for=condition=Ready release --all --timeout=1m
 
 echo_step "waiting for wordpress pods to be ready"
-"${KUBECTL}" -n wordpress wait --for=condition=Ready pods --all --timeout=3m
+"${KUBECTL}" -n wordpress wait --for=condition=Ready pods --all --timeout=5m
 
 echo_sub_step "check namespace label"
 if $("${KUBECTL}" get namespaces --no-headers --selector="app.kubernetes.io/managed-by=provider-helm" | grep -iq 'No resources found'); then

@@ -8,7 +8,7 @@ spec:
     chart:
       name: wordpress
       repository: https://charts.bitnami.com/bitnami
-      version: 15.2.5 ## To use devlopment versions, set ">0.0.0-0"
+      version: 17.0.5 ## To use devlopment versions, set ">0.0.0-0"
 #     pullSecretRef:
 #       name: museum-creds
 #       namespace: default
