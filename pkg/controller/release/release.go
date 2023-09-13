@@ -98,6 +98,7 @@ func Setup(mgr ctrl.Manager, o controller.Options, timeout time.Duration) error 
 			kcfgExtractorFn: resource.CommonCredentialExtractor,
 			gcpExtractorFn:  resource.CommonCredentialExtractor,
 			gcpInjectorFn:   gke.WrapRESTConfig,
+			parseURLFn:      url.Parse,
 			newRestConfigFn: clients.NewRESTConfig,
 			newKubeClientFn: clients.NewKubeClient,
 			newHelmClientFn: helmClient.NewClient,
@@ -123,6 +124,7 @@ type connector struct {
 	kcfgExtractorFn func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error)
 	gcpExtractorFn  func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error)
 	gcpInjectorFn   func(ctx context.Context, rc *rest.Config, credentials []byte, scopes ...string) error
+	parseURLFn      func(str string) (url *url.URL, err error)
 	newRestConfigFn func(kubeconfig []byte) (*rest.Config, error)
 	newKubeClientFn func(config *rest.Config) (client.Client, error)
 	newHelmClientFn func(log logging.Logger, config *rest.Config, helmArgs ...helmClient.ArgsApplier) (helmClient.Client, error)
@@ -205,7 +207,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	}
 
 	if proxy := p.Spec.Proxy; proxy != "" {
-		u, err := url.Parse(proxy)
+		u, err := c.parseURLFn(proxy)
 		if err != nil {
 			return nil, errors.Wrap(err, errFailedToParseProxy)
 		}
