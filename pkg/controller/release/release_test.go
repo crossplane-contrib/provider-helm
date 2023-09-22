@@ -2,6 +2,7 @@ package release
 
 import (
 	"context"
+	"net/url"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -123,6 +124,7 @@ func Test_connector_Connect(t *testing.T) {
 					Source: xpv1.CredentialsSourceNone,
 				},
 			},
+			Proxy: "10.1.1.0",
 		},
 	}
 
@@ -131,6 +133,7 @@ func Test_connector_Connect(t *testing.T) {
 		kcfgExtractorFn func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error)
 		gcpExtractorFn  func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error)
 		gcpInjectorFn   func(ctx context.Context, rc *rest.Config, credentials []byte, scopes ...string) error
+		parseURL        func(rawURL string) (*url.URL, error)
 		newRestConfigFn func(kubeconfig []byte) (*rest.Config, error)
 		newKubeClientFn func(config *rest.Config) (client.Client, error)
 		newHelmClientFn func(log logging.Logger, config *rest.Config, helmArgs ...helmClient.ArgsApplier) (helmClient.Client, error)
@@ -281,6 +284,39 @@ func Test_connector_Connect(t *testing.T) {
 				err: errors.Wrap(errBoom, errFailedToInjectGoogleCredentials),
 			},
 		},
+		"FailedToParseProxyURL": {
+			args: args{
+				client: &test.MockClient{
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						if key.Name == providerName {
+							*obj.(*helmv1beta1.ProviderConfig) = providerConfig
+							return nil
+						}
+						return errBoom
+					},
+				},
+				kcfgExtractorFn: func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error) {
+					return nil, nil
+				},
+				newRestConfigFn: func(kubeconfig []byte) (config *rest.Config, err error) {
+					return nil, nil
+				},
+				gcpExtractorFn: func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error) {
+					return nil, nil
+				},
+				gcpInjectorFn: func(ctx context.Context, rc *rest.Config, credentials []byte, scopes ...string) error {
+					return nil
+				},
+				parseURL: func(rawURL string) (*url.URL, error) {
+					return nil, errBoom
+				},
+				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return nil }),
+				mg:    helmRelease(),
+			},
+			want: want{
+				err: errors.Wrap(errBoom, errFailedToParseProxy),
+			},
+		},
 		"FailedToCreateNewKubernetesClient": {
 			args: args{
 				client: &test.MockClient{
@@ -303,6 +339,9 @@ func Test_connector_Connect(t *testing.T) {
 				},
 				gcpInjectorFn: func(ctx context.Context, rc *rest.Config, credentials []byte, scopes ...string) error {
 					return nil
+				},
+				parseURL: func(rawURL string) (*url.URL, error) {
+					return nil, nil
 				},
 				newRestConfigFn: func(kubeconfig []byte) (config *rest.Config, err error) {
 					return &rest.Config{}, nil
@@ -339,6 +378,9 @@ func Test_connector_Connect(t *testing.T) {
 				},
 				gcpInjectorFn: func(ctx context.Context, rc *rest.Config, credentials []byte, scopes ...string) error {
 					return nil
+				},
+				parseURL: func(rawURL string) (*url.URL, error) {
+					return nil, nil
 				},
 				newRestConfigFn: func(kubeconfig []byte) (config *rest.Config, err error) {
 					return &rest.Config{}, nil
@@ -381,6 +423,9 @@ func Test_connector_Connect(t *testing.T) {
 				gcpInjectorFn: func(ctx context.Context, rc *rest.Config, credentials []byte, scopes ...string) error {
 					return nil
 				},
+				parseURL: func(rawURL string) (*url.URL, error) {
+					return nil, nil
+				},
 				newRestConfigFn: func(kubeconfig []byte) (config *rest.Config, err error) {
 					return &rest.Config{}, nil
 				},
@@ -406,6 +451,7 @@ func Test_connector_Connect(t *testing.T) {
 				kcfgExtractorFn: tc.args.kcfgExtractorFn,
 				gcpExtractorFn:  tc.args.gcpExtractorFn,
 				gcpInjectorFn:   tc.args.gcpInjectorFn,
+				parseURLFn:      tc.args.parseURL,
 				newRestConfigFn: tc.args.newRestConfigFn,
 				newKubeClientFn: tc.args.newKubeClientFn,
 				newHelmClientFn: tc.args.newHelmClientFn,

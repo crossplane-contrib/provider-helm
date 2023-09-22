@@ -18,8 +18,6 @@ package release
 
 import (
 	"context"
-	"time"
-
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
@@ -30,9 +28,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
+	"net/http"
+	"net/url"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ktype "sigs.k8s.io/kustomize/api/types"
+	"time"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/pkg/controller"
@@ -80,6 +81,7 @@ const (
 	errFailedToSetName                  = "failed to update chart spec with the name from URL"
 	errFailedToSetVersion               = "failed to update chart spec with the latest version"
 	errFailedToCreateNamespace          = "failed to create namespace for release"
+	errFailedToParseProxy               = "failed to parse proxy url"
 )
 
 // Setup adds a controller that reconciles Release managed resources.
@@ -96,6 +98,7 @@ func Setup(mgr ctrl.Manager, o controller.Options, timeout time.Duration) error 
 			kcfgExtractorFn: resource.CommonCredentialExtractor,
 			gcpExtractorFn:  resource.CommonCredentialExtractor,
 			gcpInjectorFn:   gke.WrapRESTConfig,
+			parseURLFn:      url.Parse,
 			newRestConfigFn: clients.NewRESTConfig,
 			newKubeClientFn: clients.NewKubeClient,
 			newHelmClientFn: helmClient.NewClient,
@@ -121,6 +124,7 @@ type connector struct {
 	kcfgExtractorFn func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error)
 	gcpExtractorFn  func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error)
 	gcpInjectorFn   func(ctx context.Context, rc *rest.Config, credentials []byte, scopes ...string) error
+	parseURLFn      func(str string) (url *url.URL, err error)
 	newRestConfigFn func(kubeconfig []byte) (*rest.Config, error)
 	newKubeClientFn func(config *rest.Config) (client.Client, error)
 	newHelmClientFn func(log logging.Logger, config *rest.Config, helmArgs ...helmClient.ArgsApplier) (helmClient.Client, error)
@@ -200,6 +204,14 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 				return nil, errors.Wrap(err, errFailedToInjectGoogleCredentials)
 			}
 		}
+	}
+
+	if proxy := p.Spec.Proxy; proxy != "" {
+		u, err := c.parseURLFn(proxy)
+		if err != nil {
+			return nil, errors.Wrap(err, errFailedToParseProxy)
+		}
+		rc.Proxy = http.ProxyURL(u)
 	}
 
 	k, err := c.newKubeClientFn(rc)
