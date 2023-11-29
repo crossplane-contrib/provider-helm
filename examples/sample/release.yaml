@@ -66,5 +66,4 @@ spec:
 #  writeConnectionSecretToRef:
 #    name: wordpress-credentials
 #    namespace: crossplane-system
-  providerConfigRef:
-    name: helm-provider
+
