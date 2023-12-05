@@ -59,10 +59,8 @@ func (kr KustomizationRender) Run(renderedManifests *bytes.Buffer) (modifiedMani
 	}
 
 	opts := &krusty.Options{
-		DoLegacyResourceSort: false,
-		LoadRestrictions:     types.LoadRestrictionsRootOnly,
-		DoPrune:              false,
-		PluginConfig:         types.DisabledPluginConfig(),
+		LoadRestrictions: types.LoadRestrictionsRootOnly,
+		PluginConfig:     types.DisabledPluginConfig(),
 	}
 
 	kust := krusty.MakeKustomizer(opts)
