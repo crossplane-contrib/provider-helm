@@ -1,6 +1,6 @@
 module github.com/crossplane-contrib/provider-helm
 
-go 1.19
+go 1.20
 
 require (
 	github.com/Azure/kubelogin v0.0.34
@@ -180,4 +180,6 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 )
 
+// This is a workaround until kubelogin project supports being consumed as a go module
+// See https://github.com/Azure/kubelogin/pull/371
 replace github.com/Azure/kubelogin => github.com/upbound/kubelogin v0.0.34-hotfix.1
