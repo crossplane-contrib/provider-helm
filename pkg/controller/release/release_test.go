@@ -126,16 +126,42 @@ func Test_connector_Connect(t *testing.T) {
 		},
 	}
 
+	providerConfigGoogleInjectedIdentity := *providerConfig.DeepCopy()
+	providerConfigGoogleInjectedIdentity.Spec.Identity.Source = xpv1.CredentialsSourceInjectedIdentity
+
+	providerConfigAzure := helmv1beta1.ProviderConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: providerName},
+		Spec: helmv1beta1.ProviderConfigSpec{
+			Credentials: helmv1beta1.ProviderCredentials{
+				Source: xpv1.CredentialsSourceNone,
+			},
+			Identity: &helmv1beta1.Identity{
+				Type: helmv1beta1.IdentityTypeAzureServicePrincipalCredentials,
+				ProviderCredentials: helmv1beta1.ProviderCredentials{
+					Source: xpv1.CredentialsSourceNone,
+				},
+			},
+		},
+	}
+
+	providerConfigAzureInjectedIdentity := *providerConfigAzure.DeepCopy()
+	providerConfigAzureInjectedIdentity.Spec.Identity.Source = xpv1.CredentialsSourceInjectedIdentity
+
+	providerConfigUnknownIdentitySource := *providerConfigAzure.DeepCopy()
+	providerConfigUnknownIdentitySource.Spec.Identity.Type = "foo"
+
 	type args struct {
-		client          client.Client
-		kcfgExtractorFn func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error)
-		gcpExtractorFn  func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error)
-		gcpInjectorFn   func(ctx context.Context, rc *rest.Config, credentials []byte, scopes ...string) error
-		newRestConfigFn func(kubeconfig []byte) (*rest.Config, error)
-		newKubeClientFn func(config *rest.Config) (client.Client, error)
-		newHelmClientFn func(log logging.Logger, config *rest.Config, helmArgs ...helmClient.ArgsApplier) (helmClient.Client, error)
-		usage           resource.Tracker
-		mg              resource.Managed
+		client           client.Client
+		kcfgExtractorFn  func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error)
+		gcpExtractorFn   func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error)
+		gcpInjectorFn    func(ctx context.Context, rc *rest.Config, credentials []byte, scopes ...string) error
+		azureExtractorFn func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error)
+		azureInjectorFn  func(ctx context.Context, rc *rest.Config, credentials []byte, scopes ...string) error
+		newRestConfigFn  func(kubeconfig []byte) (*rest.Config, error)
+		newKubeClientFn  func(config *rest.Config) (client.Client, error)
+		newHelmClientFn  func(log logging.Logger, config *rest.Config, helmArgs ...helmClient.ArgsApplier) (helmClient.Client, error)
+		usage            resource.Tracker
+		mg               resource.Managed
 	}
 	type want struct {
 		err error
@@ -281,6 +307,154 @@ func Test_connector_Connect(t *testing.T) {
 				err: errors.Wrap(errBoom, errFailedToInjectGoogleCredentials),
 			},
 		},
+		"FailedToInjectGoogleCredentialsWithInjectedIdentitySource": {
+			args: args{
+				client: &test.MockClient{
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						if key.Name == providerName {
+							*obj.(*helmv1beta1.ProviderConfig) = providerConfigGoogleInjectedIdentity
+							return nil
+						}
+						return errBoom
+					},
+				},
+				kcfgExtractorFn: func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error) {
+					return nil, nil
+				},
+				newRestConfigFn: func(kubeconfig []byte) (config *rest.Config, err error) {
+					return nil, nil
+				},
+				gcpExtractorFn: func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error) {
+					return nil, nil
+				},
+				gcpInjectorFn: func(ctx context.Context, rc *rest.Config, credentials []byte, scopes ...string) error {
+					return errBoom
+				},
+				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return nil }),
+				mg:    helmRelease(),
+			},
+			want: want{
+				err: errors.Wrap(errBoom, errFailedToInjectGoogleCredentials),
+			},
+		},
+		"FailedToExtractAzureCredentials": {
+			args: args{
+				client: &test.MockClient{
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						if key.Name == providerName {
+							*obj.(*helmv1beta1.ProviderConfig) = providerConfigAzure
+							return nil
+						}
+						return errBoom
+					},
+				},
+				kcfgExtractorFn: func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error) {
+					return nil, nil
+				},
+				newRestConfigFn: func(kubeconfig []byte) (config *rest.Config, err error) {
+					return nil, nil
+				},
+				azureExtractorFn: func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error) {
+					return nil, errBoom
+				},
+				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return nil }),
+				mg:    helmRelease(),
+			},
+			want: want{
+				err: errors.Wrap(errBoom, errFailedToExtractAzureCredentials),
+			},
+		},
+		"FailedToInjectAzureCredentials": {
+			args: args{
+				client: &test.MockClient{
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						if key.Name == providerName {
+							*obj.(*helmv1beta1.ProviderConfig) = providerConfigAzure
+							return nil
+						}
+						return errBoom
+					},
+				},
+				kcfgExtractorFn: func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error) {
+					return nil, nil
+				},
+				newRestConfigFn: func(kubeconfig []byte) (config *rest.Config, err error) {
+					return nil, nil
+				},
+				azureExtractorFn: func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error) {
+					return nil, nil
+				},
+				azureInjectorFn: func(ctx context.Context, rc *rest.Config, credentials []byte, scopes ...string) error {
+					return errBoom
+				},
+				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return nil }),
+				mg:    helmRelease(),
+			},
+			want: want{
+				err: errors.Wrap(errBoom, errFailedToInjectAzureCredentials),
+			},
+		},
+		"AzureCredentialsInjectedIdentitySourceNotSupported": {
+			args: args{
+				client: &test.MockClient{
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						if key.Name == providerName {
+							*obj.(*helmv1beta1.ProviderConfig) = providerConfigAzureInjectedIdentity
+							return nil
+						}
+						return errBoom
+					},
+				},
+				kcfgExtractorFn: func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error) {
+					return nil, nil
+				},
+				newRestConfigFn: func(kubeconfig []byte) (config *rest.Config, err error) {
+					return nil, nil
+				},
+				azureExtractorFn: func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error) {
+					return nil, nil
+				},
+				azureInjectorFn: func(ctx context.Context, rc *rest.Config, credentials []byte, scopes ...string) error {
+					return errBoom
+				},
+				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return nil }),
+				mg:    helmRelease(),
+			},
+			want: want{
+				err: errors.Errorf("%s is not supported as identity source for identity type %s",
+					xpv1.CredentialsSourceInjectedIdentity, helmv1beta1.IdentityTypeAzureServicePrincipalCredentials),
+			},
+		},
+		"FailedToInjectUnknownIdentityType": {
+			args: args{
+				client: &test.MockClient{
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						if key.Name == providerName {
+							*obj.(*helmv1beta1.ProviderConfig) = providerConfigUnknownIdentitySource
+							return nil
+						}
+						return errBoom
+					},
+				},
+				kcfgExtractorFn: func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error) {
+					return nil, nil
+				},
+				newRestConfigFn: func(kubeconfig []byte) (config *rest.Config, err error) {
+					return nil, nil
+				},
+				azureExtractorFn: func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error) {
+					return nil, nil
+				},
+				azureInjectorFn: func(ctx context.Context, rc *rest.Config, credentials []byte, scopes ...string) error {
+					return errBoom
+				},
+				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return nil }),
+				mg:    helmRelease(),
+			},
+			want: want{
+				err: errors.Errorf("unknown identity type: %s", "foo"),
+			},
+		},
 		"FailedToCreateNewKubernetesClient": {
 			args: args{
 				client: &test.MockClient{
@@ -401,15 +575,17 @@ func Test_connector_Connect(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			c := &connector{
-				logger:          logging.NewNopLogger(),
-				client:          tc.args.client,
-				kcfgExtractorFn: tc.args.kcfgExtractorFn,
-				gcpExtractorFn:  tc.args.gcpExtractorFn,
-				gcpInjectorFn:   tc.args.gcpInjectorFn,
-				newRestConfigFn: tc.args.newRestConfigFn,
-				newKubeClientFn: tc.args.newKubeClientFn,
-				newHelmClientFn: tc.args.newHelmClientFn,
-				usage:           tc.usage,
+				logger:           logging.NewNopLogger(),
+				client:           tc.args.client,
+				kcfgExtractorFn:  tc.args.kcfgExtractorFn,
+				gcpExtractorFn:   tc.args.gcpExtractorFn,
+				gcpInjectorFn:    tc.args.gcpInjectorFn,
+				azureExtractorFn: tc.args.azureExtractorFn,
+				azureInjectorFn:  tc.args.azureInjectorFn,
+				newRestConfigFn:  tc.args.newRestConfigFn,
+				newKubeClientFn:  tc.args.newKubeClientFn,
+				newHelmClientFn:  tc.args.newHelmClientFn,
+				usage:            tc.usage,
 			}
 			_, gotErr := c.Connect(context.Background(), tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
