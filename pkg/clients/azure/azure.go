@@ -29,7 +29,10 @@ func WrapRESTConfig(_ context.Context, rc *rest.Config, credentials []byte, _ ..
 	fs := pflag.NewFlagSet("kubelogin", pflag.ContinueOnError)
 	opts := token.NewOptions()
 	opts.AddFlags(fs)
-	// opts are filled with provided args
+	// opts are filled according to the provided args in the execProvider section of the kubeconfig
+	// we are parsing serverID from here
+	// this will also parse other flags, that will help future integrations with other auth types
+	// see token.Options struct for options reference
 	err := fs.Parse(rc.ExecProvider.Args)
 	if err != nil {
 		return errors.Wrap(err, "could not parse execProvider arguments in kubeconfig")
@@ -46,9 +49,6 @@ func WrapRESTConfig(_ context.Context, rc *rest.Config, credentials []byte, _ ..
 			opts.ClientCertPassword = certpass
 		}
 	}
-	// ServerID is extracted from the execProvider section of unconverted kubeconfig
-	// it is constant for Azure AKS
-	// opts.ServerID = "6dae42f8-4368-4678-94ff-3960e28e3630"
 
 	p, err := token.NewTokenProvider(&opts)
 	if err != nil {

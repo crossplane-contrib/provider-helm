@@ -210,12 +210,11 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 					return nil, errors.Wrap(err, errFailedToInjectGoogleCredentials)
 				}
 			}
-		case helmv1beta1.IdentityTypeAzurePrincipalCredentials:
+		case helmv1beta1.IdentityTypeAzureServicePrincipalCredentials:
 			switch id.Source { //nolint:exhaustive
 			case xpv1.CredentialsSourceInjectedIdentity:
-				if err := c.azureInjectorFn(ctx, rc, nil); err != nil {
-					return nil, errors.Wrap(err, errFailedToInjectAzureCredentials)
-				}
+				return nil, errors.Errorf("%s is not supported as identity source for identity type %s",
+					xpv1.CredentialsSourceInjectedIdentity, helmv1beta1.IdentityTypeAzureServicePrincipalCredentials)
 			default:
 				creds, err := c.azureExtractorFn(ctx, id.Source, c.client, id.CommonCredentialSelectors)
 				if err != nil {
