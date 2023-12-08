@@ -247,7 +247,7 @@ func (hc *client) login(spec *v1beta1.ChartSpec, creds *RepoCreds, insecure bool
 		return errors.Wrap(err, errFailedToParseURL)
 	}
 	var out strings.Builder
-	err = hc.loginClient.Run(&out, parsedURL.Host, creds.Username, creds.Password, insecure)
+	err = hc.loginClient.Run(&out, parsedURL.Host, creds.Username, creds.Password, action.WithInsecure(insecure))
 	hc.log.Debug(out.String())
 	return errors.Wrap(err, errFailedToLogin)
 }

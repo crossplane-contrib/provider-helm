@@ -17,9 +17,12 @@ limitations under the License.
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"time"
+
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 
 	"github.com/crossplane/crossplane-runtime/pkg/controller"
 	"github.com/crossplane/crossplane-runtime/pkg/feature"
@@ -56,6 +59,8 @@ func main() {
 
 	zl := zap.New(zap.UseDevMode(*debug), UseISO8601())
 	log := logging.NewLogrLogger(zl.WithName("provider-helm"))
+	// explicitly  provide a no-op logger by default, otherwise controller-runtime gives a warning
+	ctrl.SetLogger(zap.New(zap.WriteTo(io.Discard)))
 	if *debug {
 		// The controller-runtime runs with a no-op logger by default. It is
 		// *very* verbose even at info level, so we only provide it a real
@@ -67,7 +72,9 @@ func main() {
 	kingpin.FatalIfError(err, "Cannot get API server rest config")
 
 	mgr, err := ctrl.NewManager(ratelimiter.LimitRESTConfig(cfg, *maxReconcileRate), ctrl.Options{
-		SyncPeriod: syncInterval,
+		Cache: cache.Options{
+			SyncPeriod: syncInterval,
+		},
 
 		// controller-runtime uses both ConfigMaps and Leases for leader
 		// election by default. Leases expire after 15 seconds, with a

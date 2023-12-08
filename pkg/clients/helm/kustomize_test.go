@@ -2,14 +2,13 @@ package helm
 
 import (
 	"bytes"
-	"fmt"
 	"reflect"
 	"testing"
 
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 	"github.com/google/go-cmp/cmp"
-	"github.com/pkg/errors"
 	"sigs.k8s.io/kustomize/api/types"
+	"sigs.k8s.io/kustomize/kyaml/errors"
 	"sigs.k8s.io/kustomize/kyaml/resid"
 )
 
@@ -80,7 +79,7 @@ func TestKustomize(t *testing.T) {
 			},
 			want: want{
 				result: "",
-				err:    errors.WithStack(fmt.Errorf("trouble configuring builtin PatchTransformer with config: `\npatch: '- bad patch'\ntarget:\n  kind: Deployment\n`: unable to parse SM or JSON patch from [- bad patch]")),
+				err:    errors.WrapPrefixf(errors.Errorf("unable to parse SM or JSON patch from [- bad patch]"), "trouble configuring builtin PatchTransformer with config: `\npatch: '- bad patch'\ntarget:\n  kind: Deployment\n`"),
 			},
 		},
 	}
