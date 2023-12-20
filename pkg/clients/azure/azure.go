@@ -18,7 +18,25 @@ const (
 	CredentialsKeyTenantID       = "tenantId"
 	CredentialsKeyClientCert     = "clientCertificate"
 	CredentialsKeyClientCertPass = "clientCertificatePassword"
+
+	kubeloginCLIFlagServerID = "server-id"
 )
+
+func kubeloginTokenOptionsFromRESTConfig(rc *rest.Config) (*token.Options, error) {
+	opts := &token.Options{}
+
+	// opts are filled according to the provided args in the execProvider section of the kubeconfig
+	// we are parsing serverID from here
+	// add other flags if new login methods are introduced
+	fs := pflag.NewFlagSet("kubelogin", pflag.ContinueOnError)
+	fs.StringVar(&opts.ServerID, kubeloginCLIFlagServerID, "", "Microsoft Entra (AAD) server application id")
+	err := fs.Parse(rc.ExecProvider.Args)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not parse execProvider arguments in kubeconfig")
+	}
+
+	return opts, nil
+}
 
 func WrapRESTConfig(_ context.Context, rc *rest.Config, credentials []byte, _ ...string) error {
 	m := map[string]string{}
@@ -26,18 +44,12 @@ func WrapRESTConfig(_ context.Context, rc *rest.Config, credentials []byte, _ ..
 		return err
 	}
 
-	fs := pflag.NewFlagSet("kubelogin", pflag.ContinueOnError)
-	opts := token.NewOptions()
-	opts.AddFlags(fs)
-	// opts are filled according to the provided args in the execProvider section of the kubeconfig
-	// we are parsing serverID from here
-	// this will also parse other flags, that will help future integrations with other auth types
-	// see token.Options struct for options reference
-	err := fs.Parse(rc.ExecProvider.Args)
+	opts, err := kubeloginTokenOptionsFromRESTConfig(rc)
 	if err != nil {
-		return errors.Wrap(err, "could not parse execProvider arguments in kubeconfig")
+		return err
 	}
 	rc.ExecProvider = nil
+
 	// TODO: support other login methods like MSI, Workload Identity in the future
 	opts.LoginMethod = token.ServicePrincipalLogin
 	opts.ClientID = m[CredentialsKeyClientID]
@@ -50,9 +62,9 @@ func WrapRESTConfig(_ context.Context, rc *rest.Config, credentials []byte, _ ..
 		}
 	}
 
-	p, err := token.NewTokenProvider(&opts)
+	p, err := token.GetTokenProvider(opts)
 	if err != nil {
-		return errors.New("cannot build azure token provider")
+		return errors.Wrap(err, "cannot build azure token provider")
 	}
 
 	rc.Wrap(func(rt http.RoundTripper) http.RoundTripper {
