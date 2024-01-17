@@ -29,6 +29,7 @@ func kubeloginTokenOptionsFromRESTConfig(rc *rest.Config) (*token.Options, error
 	// we are parsing serverID from here
 	// add other flags if new login methods are introduced
 	fs := pflag.NewFlagSet("kubelogin", pflag.ContinueOnError)
+	fs.ParseErrorsWhitelist = pflag.ParseErrorsWhitelist{UnknownFlags: true}
 	fs.StringVar(&opts.ServerID, kubeloginCLIFlagServerID, "", "Microsoft Entra (AAD) server application id")
 	err := fs.Parse(rc.ExecProvider.Args)
 	if err != nil {
