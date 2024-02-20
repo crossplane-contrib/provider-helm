@@ -86,14 +86,26 @@ cobertura:
 		grep -v zz_generated.deepcopy | \
 		$(GOCOVER_COBERTURA) > $(GO_TEST_OUTPUT)/cobertura-coverage.xml
 
-# integration tests
-e2e.run: test-integration
+# ====================================================================================
+# End to End Testing
+CROSSPLANE_NAMESPACE = crossplane-system
+-include build/makelib/local.xpkg.mk
+-include build/makelib/controlplane.mk
 
-# Run integration tests.
-test-integration: $(KIND) $(KUBECTL) $(UP) $(HELM3)
-	@$(INFO) running integration tests using kind $(KIND_VERSION)
-	@KIND_NODE_IMAGE_TAG=${KIND_NODE_IMAGE_TAG} $(ROOT_DIR)/cluster/integration/integration_tests.sh || $(FAIL)
-	@$(OK) integration tests passed
+UPTEST_EXAMPLE_LIST ?= "examples/sample/release.yaml"
+uptest: $(UPTEST) $(KUBECTL) $(KUTTL)
+	@$(INFO) running automated tests
+	@KUBECTL=$(KUBECTL) KUTTL=$(KUTTL) $(UPTEST) e2e "$(UPTEST_EXAMPLE_LIST)" --setup-script=cluster/test/setup.sh || $(FAIL)
+	@$(OK) running automated tests
+
+local-dev: controlplane.up
+local-deploy: build controlplane.up local.xpkg.deploy.provider.$(PROJECT_NAME)
+	@$(INFO) running locally built provider
+	@$(KUBECTL) wait provider.pkg $(PROJECT_NAME) --for condition=Healthy --timeout 5m
+	@$(KUBECTL) -n crossplane-system wait --for=condition=Available deployment --all --timeout=5m
+	@$(OK) running locally built provider
+
+e2e: local-deploy uptest
 
 # Update the submodules, such as the common build scripts.
 submodules:

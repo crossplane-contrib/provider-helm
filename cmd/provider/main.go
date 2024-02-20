@@ -41,10 +41,6 @@ import (
 	template "github.com/crossplane-contrib/provider-helm/pkg/controller"
 )
 
-const (
-	maxConcurrency = 10
-)
-
 func main() {
 	var (
 		app              = kingpin.New(filepath.Base(os.Args[0]), "Helm support for Crossplane.").DefaultEnvars()
@@ -53,7 +49,7 @@ func main() {
 		timeout          = app.Flag("timeout", "Controls how long helm commands may run before they are killed.").Default("10m").Duration()
 		syncInterval     = app.Flag("sync", "How often all resources will be double-checked for drift from the desired state.").Short('s').Default("1h").Duration()
 		pollInterval     = app.Flag("poll", "How often individual resources will be checked for drift from the desired state").Default("10m").Duration()
-		maxReconcileRate = app.Flag("max-reconcile-rate", "The global maximum rate per second at which resources may checked for drift from the desired state.").Default("10").Int()
+		maxReconcileRate = app.Flag("max-reconcile-rate", "The global maximum rate per second at which resources may checked for drift from the desired state.").Default("100").Int()
 	)
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -94,7 +90,7 @@ func main() {
 	kingpin.FatalIfError(apis.AddToScheme(mgr.GetScheme()), "Cannot add Helm APIs to scheme")
 	o := controller.Options{
 		Logger:                  log,
-		MaxConcurrentReconciles: maxConcurrency,
+		MaxConcurrentReconciles: *maxReconcileRate,
 		PollInterval:            *pollInterval,
 		GlobalRateLimiter:       ratelimiter.NewGlobal(*maxReconcileRate),
 		Features:                &feature.Flags{},
