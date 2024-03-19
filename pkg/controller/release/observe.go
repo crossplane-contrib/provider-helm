@@ -23,11 +23,13 @@ import (
 	"fmt"
 	"strings"
 
+	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/pkg/fieldpath"
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/release"
@@ -59,7 +61,7 @@ func generateObservation(in *release.Release) v1beta1.ReleaseObservation {
 }
 
 // isUpToDate checks whether desired spec up to date with the observed state for a given release
-func isUpToDate(ctx context.Context, kube client.Client, in *v1beta1.ReleaseParameters, observed *release.Release, s v1beta1.ReleaseStatus) (bool, error) {
+func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSpec, observed *release.Release, s v1beta1.ReleaseStatus) (bool, error) { // nolint:gocyclo
 	if observed.Info == nil {
 		return false, errors.New(errReleaseInfoNilInObservedRelease)
 	}
@@ -77,9 +79,20 @@ func isUpToDate(ctx context.Context, kube client.Client, in *v1beta1.ReleasePara
 	if ocm == nil {
 		return false, errors.New(errChartMetaNilInObservedRelease)
 	}
+
+	in := spec.ForProvider
+
 	if in.Chart.Name != ocm.Name {
 		return false, nil
 	}
+
+	mp := sets.New[xpv1.ManagementAction](spec.ManagementPolicies...)
+
+	if len(mp) != 0 && !mp.HasAny(xpv1.ManagementActionUpdate, xpv1.ManagementActionAll) {
+		// Treated as up-to-date as we don't update or create the resource
+		return true, nil
+	}
+
 	if in.Chart.Version != ocm.Version && in.Chart.Version != devel {
 		return false, nil
 	}
