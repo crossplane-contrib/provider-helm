@@ -94,17 +94,18 @@ func Setup(mgr ctrl.Manager, o controller.Options, timeout time.Duration) error 
 
 	reconcilerOptions := []managed.ReconcilerOption{
 		managed.WithExternalConnecter(&connector{
-			client:           mgr.GetClient(),
-			logger:           o.Logger,
-			usage:            resource.NewProviderConfigUsageTracker(mgr.GetClient(), &helmv1beta1.ProviderConfigUsage{}),
-			kcfgExtractorFn:  resource.CommonCredentialExtractor,
-			gcpExtractorFn:   resource.CommonCredentialExtractor,
-			gcpInjectorFn:    gke.WrapRESTConfig,
-			azureExtractorFn: resource.CommonCredentialExtractor,
-			azureInjectorFn:  azure.WrapRESTConfig,
-			newRestConfigFn:  clients.NewRESTConfig,
-			newKubeClientFn:  clients.NewKubeClient,
-			newHelmClientFn:  helmClient.NewClient,
+			client:                    mgr.GetClient(),
+			logger:                    o.Logger,
+			usage:                     resource.NewProviderConfigUsageTracker(mgr.GetClient(), &helmv1beta1.ProviderConfigUsage{}),
+			managementPoliciesEnabled: o.Features.Enabled(feature.EnableBetaManagementPolicies),
+			kcfgExtractorFn:           resource.CommonCredentialExtractor,
+			gcpExtractorFn:            resource.CommonCredentialExtractor,
+			gcpInjectorFn:             gke.WrapRESTConfig,
+			azureExtractorFn:          resource.CommonCredentialExtractor,
+			azureInjectorFn:           azure.WrapRESTConfig,
+			newRestConfigFn:           clients.NewRESTConfig,
+			newKubeClientFn:           clients.NewKubeClient,
+			newHelmClientFn:           helmClient.NewClient,
 		}),
 		managed.WithPollInterval(o.PollInterval),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
@@ -130,9 +131,10 @@ func Setup(mgr ctrl.Manager, o controller.Options, timeout time.Duration) error 
 }
 
 type connector struct {
-	logger logging.Logger
-	client client.Client
-	usage  resource.Tracker
+	logger                    logging.Logger
+	client                    client.Client
+	usage                     resource.Tracker
+	managementPoliciesEnabled bool
 
 	kcfgExtractorFn  func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error)
 	gcpExtractorFn   func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error)
@@ -251,20 +253,22 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	}
 
 	return &helmExternal{
-		logger:    l,
-		localKube: c.client,
-		kube:      k,
-		helm:      h,
-		patch:     newPatcher(),
+		logger:                    l,
+		localKube:                 c.client,
+		kube:                      k,
+		helm:                      h,
+		patch:                     newPatcher(),
+		managementPoliciesEnabled: c.managementPoliciesEnabled,
 	}, nil
 }
 
 type helmExternal struct {
-	logger    logging.Logger
-	localKube client.Client
-	kube      client.Client
-	helm      helmClient.Client
-	patch     Patcher
+	logger                    logging.Logger
+	localKube                 client.Client
+	kube                      client.Client
+	helm                      helmClient.Client
+	patch                     Patcher
+	managementPoliciesEnabled bool
 }
 
 func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
@@ -301,7 +305,7 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 		return managed.ExternalObservation{ResourceExists: true}, nil
 	}
 
-	s, err := isUpToDate(ctx, e.localKube, &cr.Spec, rel, cr.Status)
+	s, err := isUpToDate(ctx, e.localKube, e.managementPoliciesEnabled, &cr.Spec, rel, cr.Status)
 	if err != nil {
 		return managed.ExternalObservation{}, errors.Wrap(err, errFailedToCheckIfUpToDate)
 	}
