@@ -61,7 +61,7 @@ func generateObservation(in *release.Release) v1beta1.ReleaseObservation {
 }
 
 // isUpToDate checks whether desired spec up to date with the observed state for a given release
-func isUpToDate(ctx context.Context, kube client.Client, managementPoliciesEnabled bool, spec *v1beta1.ReleaseSpec, observed *release.Release, s v1beta1.ReleaseStatus) (bool, error) { // nolint:gocyclo
+func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSpec, observed *release.Release, s v1beta1.ReleaseStatus) (bool, error) { // nolint:gocyclo
 	if observed.Info == nil {
 		return false, errors.New(errReleaseInfoNilInObservedRelease)
 	}
@@ -88,7 +88,7 @@ func isUpToDate(ctx context.Context, kube client.Client, managementPoliciesEnabl
 
 	mp := sets.New[xpv1.ManagementAction](spec.ManagementPolicies...)
 
-	if managementPoliciesEnabled && len(mp) != 0 && !mp.HasAny(xpv1.ManagementActionUpdate, xpv1.ManagementActionAll) {
+	if len(mp) != 0 && !mp.HasAny(xpv1.ManagementActionUpdate, xpv1.ManagementActionAll) {
 		// Treated as up-to-date as we don't update or create the resource
 		return true, nil
 	}
