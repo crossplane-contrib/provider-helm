@@ -5,11 +5,12 @@
 # provider-helm
 
 `provider-helm` is a Crossplane Provider that enables deployment and management
-of Helm Releases on Kubernetes clusters typically provisioned by Crossplane:
+of Helm Releases on Kubernetes clusters typically provisioned by Crossplane, and
+has the following functionality:
 
-- A `Provider` resource type that only points to a credentials `Secret`.
-- A `Release` resource type that is to manage Helm Releases.
-- A managed resource controller that reconciles `Release` objects and manages Helm releases.
+- A `Release` resource type to manage Helm Releases.
+- A managed resource controller that reconciles `Release` objects and manages
+  Helm releases.
 
 ## Install
 
@@ -18,70 +19,79 @@ so using the Crossplane CLI in a Kubernetes cluster where Crossplane is
 installed:
 
 ```console
-kubectl crossplane install provider crossplanecontrib/provider-helm:master
+crossplane xpkg install provider xpkg.upbound.io/crossplane-contrib/provider-helm:v0.17.0
 ```
 
-You may also manually install `provider-helm` by creating a `Provider` directly:
+Then you will need to create a `ProviderConfig` that specifies the credentials
+to connect to the Kubernetes API. This is commonly done within a `Composition`
+by storing a `kubeconfig` into a secret that the `ProviderConfig` references. An
+example of this approach can be found in
+[`configuration-aws-eks`](https://github.com/upbound/configuration-aws-eks/blob/release-0.7/apis/composition.yaml#L427-L452).
 
-```yaml
-apiVersion: pkg.crossplane.io/v1
-kind: Provider
-metadata:
-  name: provider-helm
-spec:
-  package: "crossplanecontrib/provider-helm:master"
+### Quick start
+
+An alternative, that will get you started quickly, is to reuse existing
+credentials from within the control plane.
+
+First install `provider-helm` with [additional
+configuration](./examples/provider-config/provider-incluster.yaml) to bind its
+service account to an existing role in the cluster:
+
+```console 
+kubectl apply -f ./examples/provider-config/provider-incluster.yaml
+```
+
+Then simply create a
+[`ProviderConfig`](./examples/provider-config/provider-config-incluster.yaml)
+that uses an `InjectedIdentity` source:
+  
+```console 
+kubectl apply -f ./examples/provider-config/provider-config-incluster.yaml
+```
+
+`provider-helm` will then be installed and ready to use within the cluster. You
+can now create `Release` resources, such as [sample
+release.yaml](examples/sample/release.yaml).
+
+```console
+kubectl create -f examples/sample/release.yaml
 ```
 
 ## Design 
 
-See [the design document](https://github.com/crossplane/crossplane/blob/master/design/one-pager-helm-provider.md).
+See [the design
+document](https://github.com/crossplane/crossplane/blob/master/design/one-pager-helm-provider.md).
 
 ## Developing locally
 
-Start a local development environment with Kind where `crossplane` is installed:
+**Pre-requisite:** A Kubernetes cluster with Crossplane installed
 
-```
-make local-dev
-```
+To run the `provider-helm` controller against your existing local cluster,
+simply run:
 
-Run controller against the cluster:
-
-```
+```console
 make run
 ```
 
-Since controller is running outside of the Kind cluster, you need to make api server accessible (on a separate terminal):
+Since the controller is running outside of the local cluster, you need to make
+the API server accessible (on a separate terminal):
 
-```
+```console
 sudo kubectl proxy --port=8081
 ```
 
-### Testing in Local Cluster
+Then we must prepare a `ProviderConfig` for the local cluster (assuming you are
+using `kind` for local development):
 
-1. Prepare provider config for local cluster:
-    1. If helm provider running in cluster (e.g. provider installed with crossplane):
-    
-        ```
-        SA=$(kubectl -n crossplane-system get sa -o name | grep provider-helm | sed -e 's|serviceaccount\/|crossplane-system:|g')
-        kubectl create clusterrolebinding provider-helm-admin-binding --clusterrole cluster-admin --serviceaccount="${SA}"
-        kubectl apply -f examples/provider-config/provider-config-incluster.yaml
-        ```
-    1. If provider helm running outside of the cluster (e.g. running locally with `make run`)
-    
-        ```
-        KUBECONFIG=$(kind get kubeconfig --name local-dev | sed -e 's|server:\s*.*$|server: http://localhost:8081|g')
-        kubectl -n crossplane-system create secret generic cluster-config --from-literal=kubeconfig="${KUBECONFIG}" 
-        kubectl apply -f examples/provider-config/provider-config-with-secret.yaml
-        ```
-
-1. Now you can create `Release` resources with provider reference, see [sample release.yaml](examples/sample/release.yaml).
-
-    ```
-    kubectl create -f examples/sample/release.yaml
-    ```
-
-### Cleanup
-
+```console
+KUBECONFIG=$(kind get kubeconfig | sed -e 's|server:\s*.*$|server: http://localhost:8081|g')
+kubectl -n crossplane-system create secret generic cluster-config --from-literal=kubeconfig="${KUBECONFIG}" 
+kubectl apply -f examples/provider-config/provider-config-with-secret.yaml
 ```
-make local.down
+
+Now you can create `Release` resources with this `ProviderConfig`, for example
+[sample release.yaml](examples/sample/release.yaml).
+
+```console
+kubectl create -f examples/sample/release.yaml
 ```
