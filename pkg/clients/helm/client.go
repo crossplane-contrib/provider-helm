@@ -221,9 +221,11 @@ func (hc *client) pullChart(spec *v1beta1.ChartSpec, creds *RepoCreds, chartDir 
 
 	pc.DestDir = chartDir
 
-	err := hc.login(spec, creds, pc.InsecureSkipTLSverify)
-	if err != nil {
-		return err
+	if creds.Username != "" && creds.Password != "" {
+		err := hc.login(spec, creds, pc.InsecureSkipTLSverify)
+		if err != nil {
+			return err
+		}
 	}
 
 	o, err := pc.Run(chartRef)
