@@ -23,10 +23,13 @@ import (
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	"github.com/crossplane/crossplane-runtime/pkg/controller"
 	"github.com/crossplane/crossplane-runtime/pkg/feature"
 	"github.com/crossplane/crossplane-runtime/pkg/ratelimiter"
+	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
+	"github.com/crossplane/crossplane-runtime/pkg/statemetrics"
 	"go.uber.org/zap/zapcore"
 
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
@@ -43,13 +46,14 @@ import (
 
 func main() {
 	var (
-		app              = kingpin.New(filepath.Base(os.Args[0]), "Helm support for Crossplane.").DefaultEnvars()
-		debug            = app.Flag("debug", "Run with debug logging.").Short('d').Bool()
-		leaderElection   = app.Flag("leader-election", "Use leader election for the conroller manager.").Short('l').Default("false").Envar("LEADER_ELECTION").Bool()
-		timeout          = app.Flag("timeout", "Controls how long helm commands may run before they are killed.").Default("10m").Duration()
-		syncInterval     = app.Flag("sync", "How often all resources will be double-checked for drift from the desired state.").Short('s').Default("1h").Duration()
-		pollInterval     = app.Flag("poll", "How often individual resources will be checked for drift from the desired state").Default("10m").Duration()
-		maxReconcileRate = app.Flag("max-reconcile-rate", "The global maximum rate per second at which resources may checked for drift from the desired state.").Default("100").Int()
+		app                     = kingpin.New(filepath.Base(os.Args[0]), "Helm support for Crossplane.").DefaultEnvars()
+		debug                   = app.Flag("debug", "Run with debug logging.").Short('d').Bool()
+		leaderElection          = app.Flag("leader-election", "Use leader election for the conroller manager.").Short('l').Default("false").Envar("LEADER_ELECTION").Bool()
+		timeout                 = app.Flag("timeout", "Controls how long helm commands may run before they are killed.").Default("10m").Duration()
+		syncInterval            = app.Flag("sync", "How often all resources will be double-checked for drift from the desired state.").Short('s').Default("1h").Duration()
+		pollInterval            = app.Flag("poll", "How often individual resources will be checked for drift from the desired state").Default("10m").Duration()
+		pollStateMetricInterval = app.Flag("poll-state-metric", "State metric recording interval").Default("5s").Duration()
+		maxReconcileRate        = app.Flag("max-reconcile-rate", "The global maximum rate per second at which resources may checked for drift from the desired state.").Default("100").Int()
 
 		enableManagementPolicies = app.Flag("enable-management-policies", "Enable support for Management Policies.").Default("true").Envar("ENABLE_MANAGEMENT_POLICIES").Bool()
 	)
@@ -89,6 +93,18 @@ func main() {
 	})
 	kingpin.FatalIfError(err, "Cannot create controller manager")
 
+	mm := managed.NewMRMetricRecorder()
+	sm := statemetrics.NewMRStateMetrics()
+
+	metrics.Registry.MustRegister(mm)
+	metrics.Registry.MustRegister(sm)
+
+	mo := controller.MetricOptions{
+		PollStateMetricInterval: *pollStateMetricInterval,
+		MRMetrics:               mm,
+		MRStateMetrics:          sm,
+	}
+
 	kingpin.FatalIfError(apis.AddToScheme(mgr.GetScheme()), "Cannot add Helm APIs to scheme")
 	o := controller.Options{
 		Logger:                  log,
@@ -96,6 +112,7 @@ func main() {
 		PollInterval:            *pollInterval,
 		GlobalRateLimiter:       ratelimiter.NewGlobal(*maxReconcileRate),
 		Features:                &feature.Flags{},
+		MetricOptions:           &mo,
 	}
 
 	if *enableManagementPolicies {

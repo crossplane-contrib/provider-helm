@@ -20,9 +20,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/crossplane-contrib/provider-helm/pkg/clients/azure"
-
-	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
@@ -40,13 +37,16 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/controller"
 	"github.com/crossplane/crossplane-runtime/pkg/event"
 	"github.com/crossplane/crossplane-runtime/pkg/feature"
+	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
+	"github.com/crossplane/crossplane-runtime/pkg/statemetrics"
 
 	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
 	helmv1beta1 "github.com/crossplane-contrib/provider-helm/apis/v1beta1"
 	"github.com/crossplane-contrib/provider-helm/pkg/clients"
+	"github.com/crossplane-contrib/provider-helm/pkg/clients/azure"
 	"github.com/crossplane-contrib/provider-helm/pkg/clients/gke"
 	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
 )
@@ -111,10 +111,16 @@ func Setup(mgr ctrl.Manager, o controller.Options, timeout time.Duration) error 
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
 		managed.WithTimeout(timeout),
 		managed.WithConnectionPublishers(cps...),
+		managed.WithMetricRecorder(o.MetricOptions.MRMetrics),
 	}
 
 	if o.Features.Enabled(feature.EnableBetaManagementPolicies) {
 		reconcilerOptions = append(reconcilerOptions, managed.WithManagementPolicies())
+	}
+
+	if err := mgr.Add(statemetrics.NewMRStateRecorder(
+		mgr.GetClient(), o.Logger, o.MetricOptions.MRStateMetrics, &v1beta1.ReleaseList{}, o.MetricOptions.PollStateMetricInterval)); err != nil {
+		return err
 	}
 
 	r := managed.NewReconciler(mgr,
