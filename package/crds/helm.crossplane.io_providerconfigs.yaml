@@ -271,7 +271,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: A ProviderConfigSpec defines the desired state of a Provider.
+            description: A ProviderConfigSpec defines the desired state of a ProviderConfig.
             properties:
               credentials:
                 description: |-
@@ -392,6 +392,8 @@ spec:
                     enum:
                     - GoogleApplicationCredentials
                     - AzureServicePrincipalCredentials
+                    - AzureWorkloadIdentityCredentials
+                    - UpboundTokens
                     type: string
                 required:
                 - source

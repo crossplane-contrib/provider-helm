@@ -43,11 +43,10 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/pkg/statemetrics"
 
+	kubeclient "github.com/crossplane-contrib/provider-kubernetes/pkg/kube/client"
+
 	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
 	helmv1beta1 "github.com/crossplane-contrib/provider-helm/apis/v1beta1"
-	"github.com/crossplane-contrib/provider-helm/pkg/clients"
-	"github.com/crossplane-contrib/provider-helm/pkg/clients/azure"
-	"github.com/crossplane-contrib/provider-helm/pkg/clients/gke"
 	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
 )
 
@@ -61,30 +60,25 @@ const (
 )
 
 const (
-	errNotRelease                       = "managed resource is not a Release custom resource"
-	errProviderConfigNotSet             = "provider config is not set"
-	errProviderNotRetrieved             = "provider could not be retrieved"
-	errNewKubernetesClient              = "cannot create new Kubernetes client"
-	errFailedToGetLastRelease           = "failed to get last helm release"
-	errLastReleaseIsNil                 = "last helm release is nil"
-	errFailedToCheckIfUpToDate          = "failed to check if release is up to date"
-	errFailedToInstall                  = "failed to install release"
-	errFailedToUpgrade                  = "failed to upgrade release"
-	errFailedToUninstall                = "failed to uninstall release"
-	errFailedToGetRepoCreds             = "failed to get user name and password from secret reference"
-	errFailedToComposeValues            = "failed to compose values"
-	errFailedToExtractKubeconfig        = "failed to extract kubeconfig"
-	errFailedToExtractGoogleCredentials = "failed to extract Google Application Credentials"
-	errFailedToInjectGoogleCredentials  = "failed to wrap REST client with Google Application Credentials"
-	errFailedToExtractAzureCredentials  = "failed to extract Azure Application Credentials"
-	errFailedToInjectAzureCredentials   = "failed to wrap REST client with Azure Application Credentials"
-	errFailedToCreateRESTConfig         = "cannot create new rest config using provider secret"
-	errFailedToTrackUsage               = "cannot track provider config usage"
-	errFailedToLoadPatches              = "failed to load patches"
-	errFailedToUpdatePatchSha           = "failed to update patch sha"
-	errFailedToSetName                  = "failed to update chart spec with the name from URL"
-	errFailedToSetVersion               = "failed to update chart spec with the latest version"
-	errFailedToCreateNamespace          = "failed to create namespace for release"
+	errNotRelease                 = "managed resource is not a Release custom resource"
+	errProviderConfigNotSet       = "provider config is not set"
+	errGetProviderConfig          = "cannot get provider config"
+	errNewHelmClient              = "cannot create new Helm client"
+	errFailedToGetLastRelease     = "failed to get last helm release"
+	errLastReleaseIsNil           = "last helm release is nil"
+	errFailedToCheckIfUpToDate    = "failed to check if release is up to date"
+	errFailedToInstall            = "failed to install release"
+	errFailedToUpgrade            = "failed to upgrade release"
+	errFailedToUninstall          = "failed to uninstall release"
+	errFailedToGetRepoCreds       = "failed to get user name and password from secret reference"
+	errFailedToComposeValues      = "failed to compose values"
+	errBuildKubeForProviderConfig = "cannot build kube client for provider config"
+	errFailedToTrackUsage         = "cannot track provider config usage"
+	errFailedToLoadPatches        = "failed to load patches"
+	errFailedToUpdatePatchSha     = "failed to update patch sha"
+	errFailedToSetName            = "failed to update chart spec with the name from URL"
+	errFailedToSetVersion         = "failed to update chart spec with the latest version"
+	errFailedToCreateNamespace    = "failed to create namespace for release"
 )
 
 // Setup adds a controller that reconciles Release managed resources.
@@ -94,17 +88,11 @@ func Setup(mgr ctrl.Manager, o controller.Options, timeout time.Duration) error 
 
 	reconcilerOptions := []managed.ReconcilerOption{
 		managed.WithExternalConnecter(&connector{
-			client:           mgr.GetClient(),
-			logger:           o.Logger,
-			usage:            resource.NewProviderConfigUsageTracker(mgr.GetClient(), &helmv1beta1.ProviderConfigUsage{}),
-			kcfgExtractorFn:  resource.CommonCredentialExtractor,
-			gcpExtractorFn:   resource.CommonCredentialExtractor,
-			gcpInjectorFn:    gke.WrapRESTConfig,
-			azureExtractorFn: resource.CommonCredentialExtractor,
-			azureInjectorFn:  azure.WrapRESTConfig,
-			newRestConfigFn:  clients.NewRESTConfig,
-			newKubeClientFn:  clients.NewKubeClient,
-			newHelmClientFn:  helmClient.NewClient,
+			client:          mgr.GetClient(),
+			logger:          o.Logger,
+			usage:           resource.NewProviderConfigUsageTracker(mgr.GetClient(), &helmv1beta1.ProviderConfigUsage{}),
+			clientBuilder:   kubeclient.NewIdentityAwareBuilder(mgr.GetClient()),
+			newHelmClientFn: helmClient.NewClient,
 		}),
 		managed.WithPollInterval(o.PollInterval),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
@@ -140,14 +128,8 @@ type connector struct {
 	client client.Client
 	usage  resource.Tracker
 
-	kcfgExtractorFn  func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error)
-	gcpExtractorFn   func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error)
-	gcpInjectorFn    func(ctx context.Context, rc *rest.Config, credentials []byte, scopes ...string) error
-	azureExtractorFn func(ctx context.Context, src xpv1.CredentialsSource, c client.Client, ccs xpv1.CommonCredentialSelectors) ([]byte, error)
-	azureInjectorFn  func(ctx context.Context, rc *rest.Config, credentials []byte, scopes ...string) error
-	newRestConfigFn  func(kubeconfig []byte) (*rest.Config, error)
-	newKubeClientFn  func(config *rest.Config) (client.Client, error)
-	newHelmClientFn  func(log logging.Logger, config *rest.Config, helmArgs ...helmClient.ArgsApplier) (helmClient.Client, error)
+	clientBuilder   kubeclient.Builder
+	newHelmClientFn func(log logging.Logger, config *rest.Config, helmArgs ...helmClient.ArgsApplier) (helmClient.Client, error)
 }
 
 func withRelease(cr *v1beta1.Release) helmClient.ArgsApplier {
@@ -169,7 +151,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 
 	l.Debug("Connecting")
 
-	p := &helmv1beta1.ProviderConfig{}
+	pc := &helmv1beta1.ProviderConfig{}
 
 	if cr.GetProviderConfigReference() == nil {
 		return nil, errors.New(errProviderConfigNotSet)
@@ -180,80 +162,17 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	}
 
 	n := types.NamespacedName{Name: cr.GetProviderConfigReference().Name}
-	if err := c.client.Get(ctx, n, p); err != nil {
-		return nil, errors.Wrap(err, errProviderNotRetrieved)
+	if err := c.client.Get(ctx, n, pc); err != nil {
+		return nil, errors.Wrap(err, errGetProviderConfig)
 	}
 
-	var rc *rest.Config
-	var err error
-
-	switch pc := p.Spec.Credentials; pc.Source { //nolint:exhaustive
-	case xpv1.CredentialsSourceInjectedIdentity:
-		rc, err = rest.InClusterConfig()
-		if err != nil {
-			return nil, errors.Wrap(err, errFailedToCreateRESTConfig)
-		}
-	default:
-		kc, err := c.kcfgExtractorFn(ctx, pc.Source, c.client, pc.CommonCredentialSelectors)
-		if err != nil {
-			return nil, errors.Wrap(err, errFailedToExtractKubeconfig)
-		}
-
-		rc, err = c.newRestConfigFn(kc)
-		if err != nil {
-			return nil, errors.Wrap(err, errFailedToCreateRESTConfig)
-		}
-	}
-
-	// NOTE(negz): We don't currently check the identity type because at the
-	// time of writing there's only one valid value (Google App Creds), and
-	// that value is required.
-	if id := p.Spec.Identity; id != nil {
-		switch id.Type {
-		case helmv1beta1.IdentityTypeGoogleApplicationCredentials:
-			switch id.Source { //nolint:exhaustive
-			case xpv1.CredentialsSourceInjectedIdentity:
-				if err := c.gcpInjectorFn(ctx, rc, nil, gke.DefaultScopes...); err != nil {
-					return nil, errors.Wrap(err, errFailedToInjectGoogleCredentials)
-				}
-			default:
-				creds, err := c.gcpExtractorFn(ctx, id.Source, c.client, id.CommonCredentialSelectors)
-				if err != nil {
-					return nil, errors.Wrap(err, errFailedToExtractGoogleCredentials)
-				}
-
-				if err := c.gcpInjectorFn(ctx, rc, creds, gke.DefaultScopes...); err != nil {
-					return nil, errors.Wrap(err, errFailedToInjectGoogleCredentials)
-				}
-			}
-		case helmv1beta1.IdentityTypeAzureServicePrincipalCredentials:
-			switch id.Source { //nolint:exhaustive
-			case xpv1.CredentialsSourceInjectedIdentity:
-				return nil, errors.Errorf("%s is not supported as identity source for identity type %s",
-					xpv1.CredentialsSourceInjectedIdentity, helmv1beta1.IdentityTypeAzureServicePrincipalCredentials)
-			default:
-				creds, err := c.azureExtractorFn(ctx, id.Source, c.client, id.CommonCredentialSelectors)
-				if err != nil {
-					return nil, errors.Wrap(err, errFailedToExtractAzureCredentials)
-				}
-
-				if err := c.azureInjectorFn(ctx, rc, creds); err != nil {
-					return nil, errors.Wrap(err, errFailedToInjectAzureCredentials)
-				}
-			}
-		default:
-			return nil, errors.Errorf("unknown identity type: %s", id.Type)
-		} //nolint:exhaustive
-	}
-
-	k, err := c.newKubeClientFn(rc)
+	k, rc, err := c.clientBuilder.KubeForProviderConfig(ctx, pc.Spec)
 	if err != nil {
-		return nil, errors.Wrap(err, errNewKubernetesClient)
+		return nil, errors.Wrap(err, errBuildKubeForProviderConfig)
 	}
-
 	h, err := c.newHelmClientFn(c.logger, rc, withRelease(cr))
 	if err != nil {
-		return nil, errors.Wrap(err, errNewKubernetesClient)
+		return nil, errors.Wrap(err, errNewHelmClient)
 	}
 
 	return &helmExternal{
