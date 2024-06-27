@@ -103,6 +103,7 @@ type ReleaseStatus struct {
 
 // A Release is an example API type
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="NAMESPACE",type="string",JSONPath=".spec.forProvider.namespace"
 // +kubebuilder:printcolumn:name="CHART",type="string",JSONPath=".spec.forProvider.chart.name"
 // +kubebuilder:printcolumn:name="VERSION",type="string",JSONPath=".spec.forProvider.chart.version"
 // +kubebuilder:printcolumn:name="SYNCED",type="string",JSONPath=".status.conditions[?(@.type=='Synced')].status"
