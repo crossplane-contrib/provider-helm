@@ -320,4 +320,4 @@ jobs:
         run: make -j2 promote
         env:
           BRANCH_NAME: main
-          CHANNEL: main
+          CHANNEL: master
