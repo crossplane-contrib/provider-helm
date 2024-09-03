@@ -60,7 +60,7 @@ kubectl create -f examples/sample/release.yaml
 ## Design 
 
 See [the design
-document](https://github.com/crossplane/crossplane/blob/master/design/one-pager-helm-provider.md).
+document](https://github.com/crossplane/crossplane/blob/main/design/one-pager-helm-provider.md).
 
 ## Developing locally
 
