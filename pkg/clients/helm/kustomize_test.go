@@ -79,7 +79,7 @@ func TestKustomize(t *testing.T) {
 			},
 			want: want{
 				result: "",
-				err:    errors.WrapPrefixf(errors.Errorf("unable to parse SM or JSON patch from [- bad patch]"), "trouble configuring builtin PatchTransformer with config: `\npatch: '- bad patch'\ntarget:\n  kind: Deployment\n`"),
+				err:    errors.WrapPrefixf(errors.Errorf("unable to parse SM or JSON patch from [patch: \"- bad patch\"]"), "trouble configuring builtin PatchTransformer with config: `\npatch: '- bad patch'\ntarget:\n  kind: Deployment\n`"),
 			},
 		},
 	}

@@ -192,6 +192,10 @@ type helmExternal struct {
 	patch     Patcher
 }
 
+func (e *helmExternal) Disconnect(ctx context.Context) error {
+	return nil
+}
+
 func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
 	cr, ok := mg.(*v1beta1.Release)
 	if !ok {
@@ -354,15 +358,15 @@ func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed
 	return managed.ExternalUpdate{}, errors.Wrap(e.deploy(ctx, cr, e.helm.Upgrade), errFailedToUpgrade)
 }
 
-func (e *helmExternal) Delete(_ context.Context, mg resource.Managed) error {
+func (e *helmExternal) Delete(_ context.Context, mg resource.Managed) (managed.ExternalDelete, error) {
 	cr, ok := mg.(*v1beta1.Release)
 	if !ok {
-		return errors.New(errNotRelease)
+		return managed.ExternalDelete{}, errors.New(errNotRelease)
 	}
 
 	e.logger.Debug("Deleting")
 
-	return errors.Wrap(e.helm.Uninstall(meta.GetExternalName(cr)), errFailedToUninstall)
+	return managed.ExternalDelete{}, errors.Wrap(e.helm.Uninstall(meta.GetExternalName(cr)), errFailedToUninstall)
 }
 
 func shouldRollBack(cr *v1beta1.Release) bool {
