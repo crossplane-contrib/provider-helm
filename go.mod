@@ -16,8 +16,8 @@ require (
 	k8s.io/client-go v0.31.2
 	sigs.k8s.io/controller-runtime v0.19.1
 	sigs.k8s.io/controller-tools v0.16.5
-	sigs.k8s.io/kustomize/api v0.17.2
-	sigs.k8s.io/kustomize/kyaml v0.17.1
+	sigs.k8s.io/kustomize/api v0.18.0
+	sigs.k8s.io/kustomize/kyaml v0.18.1
 	sigs.k8s.io/yaml v1.4.0
 )
 
@@ -153,7 +153,6 @@ require (
 	go.opentelemetry.io/otel v1.28.0 // indirect
 	go.opentelemetry.io/otel/metric v1.28.0 // indirect
 	go.opentelemetry.io/otel/trace v1.28.0 // indirect
-	go.starlark.net v0.0.0-20230525235612-a134d8f9ddca // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.28.0 // indirect
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
