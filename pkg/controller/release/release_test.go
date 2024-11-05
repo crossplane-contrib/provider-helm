@@ -835,7 +835,7 @@ func Test_helmExternal_Delete(t *testing.T) {
 				kube:      tc.args.kube,
 				helm:      tc.args.helm,
 			}
-			gotErr := e.Delete(context.Background(), tc.args.mg)
+			_, gotErr := e.Delete(context.Background(), tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
 				t.Fatalf("e.Delete(...): -want error, +got error: %s", diff)
 			}
