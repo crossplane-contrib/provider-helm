@@ -701,6 +701,10 @@ spec:
                           type: object
                       type: object
                     type: array
+                  plainHTTP:
+                    description: PlainHTTP uses insecure HTTP connections for the
+                      chart download
+                    type: boolean
                   set:
                     items:
                       description: SetVal represents a "set" value override in a Release
