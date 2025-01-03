@@ -47,7 +47,7 @@ type NamespacedName struct {
 
 // DataKeySelector defines required spec to access a key of a configmap or secret
 type DataKeySelector struct {
-	NamespacedName `json:",inline,omitempty"`
+	NamespacedName `json:",inline"`
 	Key            string `json:"key,omitempty"`
 	Optional       bool   `json:"optional,omitempty"`
 }
