@@ -2,6 +2,7 @@ package release
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
@@ -233,7 +234,7 @@ func Test_isUpToDate(t *testing.T) {
 			},
 			want: want{
 				out: false,
-				err: nil,
+				err: fmt.Errorf("expected chart name %s, got %s", "another-chart", testChart),
 			},
 		},
 		"NotUpToDate_ChartVersionDifferent": {

@@ -141,7 +141,7 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 	// comparing it against the deployed chart would loop forever after a URL
 	// change to a differently-named chart.
 	if in.Chart.URL == "" && in.Chart.Name != ocm.Name {
-		return false, nil
+		return false, fmt.Errorf("expected chart name %s, got %s", in.Chart.Name, ocm.Name)
 	}
 
 	mp := sets.New[xpv2.ManagementAction](spec.ManagementPolicies...)
