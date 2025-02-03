@@ -1,6 +1,6 @@
 module github.com/crossplane-contrib/provider-helm
 
-go 1.22.7
+go 1.22.12
 
 require (
 	github.com/crossplane-contrib/provider-kubernetes v0.14.0-rc0.0.20240528114550-5b2412e9cab8
