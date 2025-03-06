@@ -60,17 +60,22 @@ type ValueFromSource struct {
 
 // SetVal represents a "set" value override in a Release
 type SetVal struct {
-	Name      string           `json:"name"`
+	// Name of the key to be set
+	Name string `json:"name"`
+	// Value of the to be set key
 	Value     string           `json:"value,omitempty"`
 	ValueFrom *ValueFromSource `json:"valueFrom,omitempty"`
 }
 
 // ValuesSpec defines the Helm value overrides spec for a Release
 type ValuesSpec struct {
+	// Values literals (precedence order: ValuesFrom < Values < Set)
 	// +kubebuilder:pruning:PreserveUnknownFields
-	Values     runtime.RawExtension `json:"values,omitempty"`
-	ValuesFrom []ValueFromSource    `json:"valuesFrom,omitempty"`
-	Set        []SetVal             `json:"set,omitempty"`
+	Values runtime.RawExtension `json:"values,omitempty"`
+	// ValuesFrom will be merged to values in order (later ones win, overall precedence order: Values < ValuesFrom < Set)
+	ValuesFrom []ValueFromSource `json:"valuesFrom,omitempty"`
+	// Set sets a specific key in values (precedence order: Values < ValuesFrom < Set)
+	Set []SetVal `json:"set,omitempty"`
 }
 
 // ReleaseParameters are the configurable fields of a Release.
