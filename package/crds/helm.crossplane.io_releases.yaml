@@ -620,6 +620,11 @@ spec:
               forProvider:
                 description: ReleaseParameters are the configurable fields of a Release.
                 properties:
+                  MaxHistory:
+                    default: 20
+                    description: MaxHistory limits the maximum number of revisions
+                      saved per release. Use 0 for no limit.
+                    type: integer
                   chart:
                     description: A ChartSpec defines the chart spec for a Release
                     properties:
@@ -806,6 +811,7 @@ spec:
                       ready. Only applies if wait is also set. Defaults to 5m.
                     type: string
                 required:
+                - MaxHistory
                 - chart
                 - namespace
                 type: object
