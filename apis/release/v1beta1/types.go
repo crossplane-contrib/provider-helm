@@ -93,6 +93,9 @@ type ReleaseParameters struct {
 	SkipCRDs bool `json:"skipCRDs,omitempty"`
 	// InsecureSkipTLSVerify skips tls certificate checks for the chart download
 	InsecureSkipTLSVerify bool `json:"insecureSkipTLSVerify,omitempty"`
+	// MaxHistory limits the maximum number of revisions saved per release. Use 0 for no limit.
+	// +kubebuilder:default:=20
+	MaxHistory int `json:"MaxHistory"`
 }
 
 // ReleaseObservation are the observable fields of a Release.
