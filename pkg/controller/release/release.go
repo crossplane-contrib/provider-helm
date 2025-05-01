@@ -102,6 +102,10 @@ func Setup(mgr ctrl.Manager, o controller.Options, timeout time.Duration) error 
 		managed.WithMetricRecorder(o.MetricOptions.MRMetrics),
 	}
 
+	if o.Features.Enabled(feature.EnableAlphaChangeLogs) {
+		reconcilerOptions = append(reconcilerOptions, managed.WithChangeLogger(o.ChangeLogOptions.ChangeLogger))
+	}
+
 	if o.Features.Enabled(feature.EnableBetaManagementPolicies) {
 		reconcilerOptions = append(reconcilerOptions, managed.WithManagementPolicies())
 	}
