@@ -45,7 +45,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/crossplane-contrib/provider-helm/apis"
-	template "github.com/crossplane-contrib/provider-helm/pkg/controller"
+	helmControllers "github.com/crossplane-contrib/provider-helm/pkg/controller"
 	"github.com/crossplane-contrib/provider-helm/pkg/version"
 )
 
@@ -137,12 +137,12 @@ func main() {
 		clo := controller.ChangeLogOptions{
 			ChangeLogger: managed.NewGRPCChangeLogger(
 				changelogsv1alpha1.NewChangeLogServiceClient(conn),
-				managed.WithProviderVersion(fmt.Sprintf("provider-template: %s", version.Version))),
+				managed.WithProviderVersion(fmt.Sprintf("provider-helm:%s", version.Version))),
 		}
 		o.ChangeLogOptions = &clo
 	}
 
-	kingpin.FatalIfError(template.Setup(mgr, o, *timeout), "Cannot setup Template controllers")
+	kingpin.FatalIfError(helmControllers.Setup(mgr, o, *timeout), "Cannot setup helm controllers")
 	kingpin.FatalIfError(mgr.Start(ctrl.SetupSignalHandler()), "Cannot start controller manager")
 }
 
