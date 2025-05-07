@@ -27,6 +27,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	changelogsv1alpha1 "github.com/crossplane/crossplane-runtime/apis/changelogs/proto/v1alpha1"
 	"github.com/crossplane/crossplane-runtime/pkg/controller"
@@ -59,6 +61,8 @@ func main() {
 		pollInterval            = app.Flag("poll", "How often individual resources will be checked for drift from the desired state").Default("10m").Duration()
 		pollStateMetricInterval = app.Flag("poll-state-metric", "State metric recording interval").Default("5s").Duration()
 		maxReconcileRate        = app.Flag("max-reconcile-rate", "The global maximum rate per second at which resources may checked for drift from the desired state.").Default("100").Int()
+		webhookPort             = app.Flag("webhook-port", "Port for the webhook server.").Default("9443").Int()
+		metricsBindAddress      = app.Flag("metrics-bind-address", "Address for the metrics server.").Default(":8080").String()
 
 		enableManagementPolicies = app.Flag("enable-management-policies", "Enable support for Management Policies.").Default("true").Envar("ENABLE_MANAGEMENT_POLICIES").Bool()
 		enableChangeLogs         = app.Flag("enable-changelogs", "Enable support for capturing change logs during reconciliation.").Default("false").Envar("ENABLE_CHANGE_LOGS").Bool()
@@ -83,6 +87,12 @@ func main() {
 	mgr, err := ctrl.NewManager(ratelimiter.LimitRESTConfig(cfg, *maxReconcileRate), ctrl.Options{
 		Cache: cache.Options{
 			SyncPeriod: syncInterval,
+		},
+		WebhookServer: webhook.NewServer(webhook.Options{
+			Port: *webhookPort,
+		}),
+		Metrics: metricsserver.Options{
+			BindAddress: *metricsBindAddress,
 		},
 
 		// controller-runtime uses both ConfigMaps and Leases for leader
