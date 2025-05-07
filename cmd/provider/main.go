@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -80,8 +81,9 @@ func main() {
 		pollInterval            = app.Flag("poll", "How often individual resources will be checked for drift from the desired state").Default("10m").Duration()
 		pollStateMetricInterval = app.Flag("poll-state-metric", "State metric recording interval").Default("5s").Duration()
 		maxReconcileRate        = app.Flag("max-reconcile-rate", "The global maximum rate per second at which resources may checked for drift from the desired state.").Default("100").Int()
-		webhookPort             = app.Flag("webhook-port", "Port for the webhook server.").Default("9443").Int()
-		metricsBindAddress      = app.Flag("metrics-bind-address", "Address for the metrics server.").Default(":8080").String()
+		webhookPort             = app.Flag("webhook-port", "Port for the webhook server.").Default("9443").Envar("WEBHOOK_PORT").Int()
+		metricsPort             = app.Flag("metrics-port", "Port for the metrics server.").Default("8080").Envar("METRICS_PORT").Int()
+		healthProbePort         = app.Flag("health-probe-port", "Port for the health probe server.").Default("8081").Envar("HEALTH_PROBE_PORT").Int()
 
 		enableManagementPolicies = app.Flag("enable-management-policies", "Enable support for Management Policies.").Default("true").Envar("ENABLE_MANAGEMENT_POLICIES").Bool()
 		enableChangeLogs         = app.Flag("enable-changelogs", "Enable support for capturing change logs during reconciliation.").Default("false").Envar("ENABLE_CHANGE_LOGS").Bool()
@@ -111,8 +113,9 @@ func main() {
 			Port: *webhookPort,
 		}),
 		Metrics: metricsserver.Options{
-			BindAddress: *metricsBindAddress,
+			BindAddress: fmt.Sprintf(":%d", *metricsPort),
 		},
+		HealthProbeBindAddress: fmt.Sprintf(":%d", *healthProbePort),
 
 		// controller-runtime uses both ConfigMaps and Leases for leader
 		// election by default. Leases expire after 15 seconds, with a
@@ -201,6 +204,10 @@ func main() {
 		kingpin.FatalIfError(clustercontroller.Setup(mgr, clusterOpts, *timeout), "Cannot setup cluster-scoped AzureAD controllers")
 		kingpin.FatalIfError(namespacedcontroller.Setup(mgr, namespacedOpts, *timeout), "Cannot setup namespaced AzureAD controllers")
 	}
+
+	// Setup health probes
+	kingpin.FatalIfError(setupHealthProbes(mgr), "Cannot setup health probes")
+
 	kingpin.FatalIfError(mgr.Start(ctrl.SetupSignalHandler()), "Cannot start controller manager")
 }
 
@@ -234,4 +241,30 @@ func canWatchCRD(ctx context.Context, mgr manager.Manager) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// setupHealthProbes configures liveness and readiness probes for the manager
+func setupHealthProbes(mgr ctrl.Manager) error {
+	log := logging.NewLogrLogger(zap.New().WithName("health-probes"))
+
+	// Add readiness probe
+	if err := mgr.AddReadyzCheck("ready", func(_ *http.Request) error {
+		// Add any specific readiness checks here
+		return nil
+	}); err != nil {
+		log.Debug("Unable to set up readiness check", "error", err)
+		return err
+	}
+
+	// Add liveness probe
+	if err := mgr.AddHealthzCheck("healthz", func(_ *http.Request) error {
+		// Add any specific liveness checks here
+		return nil
+	}); err != nil {
+		log.Debug("Unable to set up health check", "error", err)
+		return err
+	}
+
+	log.Debug("Health probes configured successfully")
+	return nil
 }
