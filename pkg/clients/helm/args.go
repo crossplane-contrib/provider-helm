@@ -14,4 +14,6 @@ type Args struct {
 	SkipCRDs bool
 	// InsecureSkipTLSVerify skips tls certificate checks for the chart download
 	InsecureSkipTLSVerify bool
+	// MaxHistory limits the maximum number of revisions saved per release.
+	MaxHistory int
 }
