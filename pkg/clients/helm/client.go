@@ -271,42 +271,9 @@ func (hc *client) login(spec *v1beta1.ChartSpec, creds *RepoCreds, insecure bool
 }
 
 func (hc *client) PullAndLoadChart(spec *v1beta1.ChartSpec, creds *RepoCreds) (*chart.Chart, error) {
-	var chartFilePath string
-	var err error
-
-	switch {
-	case spec.URL == "" && (spec.Version == "" || spec.Version == devel):
-		chartFilePath, err = hc.pullLatestChartVersion(spec, creds)
-		if err != nil {
-			return nil, err
-		}
-	case registry.IsOCI(spec.URL):
-		_, v, err := resolveOCIChartVersion(spec.URL)
-		if err != nil {
-			return nil, err
-		}
-
-		if v == "" {
-			chartFilePath, err = hc.pullLatestChartVersion(spec, creds)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			chartFilePath, err = hc.pullChart(spec, creds, chartCache)
-			if err != nil {
-				return nil, err
-			}
-		}
-	case spec.URL != "":
-		chartFilePath, err = hc.pullChart(spec, creds, chartCache)
-		if err != nil {
-			return nil, err
-		}
-	default:
-		chartFilePath, err = hc.pullChart(spec, creds, chartCache)
-		if err != nil {
-			return nil, err
-		}
+	chartFilePath, err := hc.resolveChartFilePath(spec, creds)
+	if err != nil {
+		return nil, err
 	}
 
 	if _, err := os.Stat(chartFilePath); os.IsNotExist(err) {
@@ -381,4 +348,29 @@ func resolveOCIChartVersion(chartURL string) (*url.URL, string, error) {
 
 func resolveOCIChartRef(repository string, name string) string {
 	return strings.Join([]string{strings.TrimSuffix(repository, "/"), name}, "/")
+}
+
+func (hc *client) resolveChartFilePath(spec *v1beta1.ChartSpec, creds *RepoCreds) (string, error) {
+	switch {
+	case spec.URL == "" && (spec.Version == "" || spec.Version == devel):
+		return hc.pullLatestChartVersion(spec, creds)
+	case registry.IsOCI(spec.URL):
+		return hc.resolveOCIChart(spec, creds)
+	case spec.URL != "":
+		return hc.pullChart(spec, creds, chartCache)
+	default:
+		return hc.pullChart(spec, creds, chartCache)
+	}
+}
+
+func (hc *client) resolveOCIChart(spec *v1beta1.ChartSpec, creds *RepoCreds) (string, error) {
+	_, v, err := resolveOCIChartVersion(spec.URL)
+	if err != nil {
+		return "", err
+	}
+
+	if v == "" {
+		return hc.pullLatestChartVersion(spec, creds)
+	}
+	return hc.pullChart(spec, creds, chartCache)
 }
