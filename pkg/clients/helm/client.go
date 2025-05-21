@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -180,11 +179,7 @@ func (hc *client) pullLatestChartVersion(spec *v1beta1.ChartSpec, creds *RepoCre
 		}
 	}()
 
-	if err := hc.pullChart(spec, creds, tmpDir); err != nil {
-		return "", err
-	}
-
-	chartFileName, err := getChartFileName(tmpDir)
+	chartFileName, err := hc.pullChart(spec, creds, tmpDir)
 	if err != nil {
 		return "", err
 	}
@@ -196,7 +191,17 @@ func (hc *client) pullLatestChartVersion(spec *v1beta1.ChartSpec, creds *RepoCre
 	return chartFilePath, nil
 }
 
-func (hc *client) pullChart(spec *v1beta1.ChartSpec, creds *RepoCreds, chartDir string) error {
+func (hc *client) pullChart(spec *v1beta1.ChartSpec, creds *RepoCreds, chartDir string) (string, error) {
+	tmpDir, err := os.MkdirTemp(chartDir, "")
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			hc.log.WithValues("tmpDir", tmpDir).Info("failed to remove temporary directory")
+		}
+	}()
+
 	pc := hc.pullClient
 
 	chartRef := spec.URL
@@ -211,7 +216,7 @@ func (hc *client) pullChart(spec *v1beta1.ChartSpec, creds *RepoCreds, chartDir 
 	} else if registry.IsOCI(spec.URL) {
 		ociURL, version, err := resolveOCIChartVersion(spec.URL)
 		if err != nil {
-			return err
+			return "", err
 		}
 		pc.Version = version
 		chartRef = ociURL.String()
@@ -219,21 +224,38 @@ func (hc *client) pullChart(spec *v1beta1.ChartSpec, creds *RepoCreds, chartDir 
 	pc.Username = creds.Username
 	pc.Password = creds.Password
 
-	pc.DestDir = chartDir
+	pc.DestDir = tmpDir
 
 	if creds.Username != "" && creds.Password != "" {
 		err := hc.login(spec, creds, pc.InsecureSkipTLSverify)
 		if err != nil {
-			return err
+			return "", err
 		}
 	}
 
 	o, err := pc.Run(chartRef)
 	hc.log.Debug(o)
+
 	if err != nil {
-		return errors.Wrap(err, errFailedToPullChart)
+		return "", errors.Wrap(err, errFailedToPullChart)
 	}
-	return nil
+
+	chartFileName, err := getChartFileName(tmpDir)
+	if err != nil {
+		return "", err
+	}
+
+	chartFilePath := filepath.Join(chartDir, chartFileName)
+	if _, err := os.Stat(chartFilePath); err == nil {
+		if err := os.Remove(chartFilePath); err != nil {
+			return "", errors.Wrap(err, "failed to remove existing file")
+		}
+	}
+	if err := os.Rename(filepath.Join(tmpDir, chartFileName), chartFilePath); err != nil {
+		return "", err
+	}
+
+	return chartFilePath, nil
 }
 
 func (hc *client) login(spec *v1beta1.ChartSpec, creds *RepoCreds, insecure bool) error {
@@ -255,44 +277,15 @@ func (hc *client) login(spec *v1beta1.ChartSpec, creds *RepoCreds, insecure bool
 }
 
 func (hc *client) PullAndLoadChart(spec *v1beta1.ChartSpec, creds *RepoCreds) (*chart.Chart, error) {
-	var chartFilePath string
-	var err error
-	switch {
-	case spec.URL == "" && (spec.Version == "" || spec.Version == devel):
-		chartFilePath, err = hc.pullLatestChartVersion(spec, creds)
-		if err != nil {
-			return nil, err
-		}
-	case registry.IsOCI(spec.URL):
-		u, v, err := resolveOCIChartVersion(spec.URL)
-		if err != nil {
-			return nil, err
-		}
-
-		if v == "" {
-			chartFilePath, err = hc.pullLatestChartVersion(spec, creds)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			chartFilePath = resolveChartFilePath(path.Base(u.Path), v)
-		}
-	case spec.URL != "":
-		u, err := url.Parse(spec.URL)
-		if err != nil {
-			return nil, errors.Wrap(err, errFailedToParseURL)
-		}
-		chartFilePath = filepath.Join(chartCache, path.Base(u.Path))
-	default:
-		chartFilePath = resolveChartFilePath(spec.Name, spec.Version)
+	chartFilePath, err := hc.resolveChartFilePath(spec, creds)
+	if err != nil {
+		return nil, err
 	}
 
 	if _, err := os.Stat(chartFilePath); os.IsNotExist(err) {
-		if err = hc.pullChart(spec, creds, chartCache); err != nil {
-			return nil, err
-		}
-	} else if err != nil {
 		return nil, errors.Wrap(err, errFailedToCheckIfLocalChartExists)
+	} else if err != nil {
+		return nil, err
 	}
 
 	chart, err := loader.Load(chartFilePath)
@@ -359,11 +352,31 @@ func resolveOCIChartVersion(chartURL string) (*url.URL, string, error) {
 	return ociURL, "", nil
 }
 
-func resolveChartFilePath(name string, version string) string {
-	filename := fmt.Sprintf("%s-%s.tgz", name, version)
-	return filepath.Join(chartCache, filename)
-}
-
 func resolveOCIChartRef(repository string, name string) string {
 	return strings.Join([]string{strings.TrimSuffix(repository, "/"), name}, "/")
+}
+
+func (hc *client) resolveChartFilePath(spec *v1beta1.ChartSpec, creds *RepoCreds) (string, error) {
+	switch {
+	case spec.URL == "" && (spec.Version == "" || spec.Version == devel):
+		return hc.pullLatestChartVersion(spec, creds)
+	case registry.IsOCI(spec.URL):
+		return hc.resolveOCIChart(spec, creds)
+	case spec.URL != "":
+		return hc.pullChart(spec, creds, chartCache)
+	default:
+		return hc.pullChart(spec, creds, chartCache)
+	}
+}
+
+func (hc *client) resolveOCIChart(spec *v1beta1.ChartSpec, creds *RepoCreds) (string, error) {
+	_, v, err := resolveOCIChartVersion(spec.URL)
+	if err != nil {
+		return "", err
+	}
+
+	if v == "" {
+		return hc.pullLatestChartVersion(spec, creds)
+	}
+	return hc.pullChart(spec, creds, chartCache)
 }
