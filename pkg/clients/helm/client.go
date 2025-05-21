@@ -246,9 +246,15 @@ func (hc *client) pullChart(spec *v1beta1.ChartSpec, creds *RepoCreds, chartDir 
 	}
 
 	chartFilePath := filepath.Join(chartDir, chartFileName)
+	if _, err := os.Stat(chartFilePath); err == nil {
+		if err := os.Remove(chartFilePath); err != nil {
+			return "", errors.Wrap(err, "failed to remove existing file")
+		}
+	}
 	if err := os.Rename(filepath.Join(tmpDir, chartFileName), chartFilePath); err != nil {
 		return "", err
 	}
+
 	return chartFilePath, nil
 }
 
