@@ -100,6 +100,7 @@ func Setup(mgr ctrl.Manager, o controller.Options, timeout time.Duration) error 
 		managed.WithTimeout(timeout),
 		managed.WithConnectionPublishers(cps...),
 		managed.WithMetricRecorder(o.MetricOptions.MRMetrics),
+		managed.WithDeterministicExternalName(true),
 	}
 
 	if o.Features.Enabled(feature.EnableAlphaChangeLogs) {
