@@ -19,6 +19,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -27,6 +28,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	changelogsv1alpha1 "github.com/crossplane/crossplane-runtime/apis/changelogs/proto/v1alpha1"
 	"github.com/crossplane/crossplane-runtime/pkg/controller"
@@ -59,6 +62,9 @@ func main() {
 		pollInterval            = app.Flag("poll", "How often individual resources will be checked for drift from the desired state").Default("10m").Duration()
 		pollStateMetricInterval = app.Flag("poll-state-metric", "State metric recording interval").Default("5s").Duration()
 		maxReconcileRate        = app.Flag("max-reconcile-rate", "The global maximum rate per second at which resources may checked for drift from the desired state.").Default("100").Int()
+		webhookPort             = app.Flag("webhook-port", "Port for the webhook server.").Default("9443").Envar("WEBHOOK_PORT").Int()
+		metricsPort             = app.Flag("metrics-port", "Port for the metrics server.").Default("8080").Envar("METRICS_PORT").Int()
+		healthProbePort         = app.Flag("health-probe-port", "Port for the health probe server.").Default("8081").Envar("HEALTH_PROBE_PORT").Int()
 
 		enableManagementPolicies = app.Flag("enable-management-policies", "Enable support for Management Policies.").Default("true").Envar("ENABLE_MANAGEMENT_POLICIES").Bool()
 		enableChangeLogs         = app.Flag("enable-changelogs", "Enable support for capturing change logs during reconciliation.").Default("false").Envar("ENABLE_CHANGE_LOGS").Bool()
@@ -84,6 +90,13 @@ func main() {
 		Cache: cache.Options{
 			SyncPeriod: syncInterval,
 		},
+		WebhookServer: webhook.NewServer(webhook.Options{
+			Port: *webhookPort,
+		}),
+		Metrics: metricsserver.Options{
+			BindAddress: fmt.Sprintf(":%d", *metricsPort),
+		},
+		HealthProbeBindAddress: fmt.Sprintf(":%d", *healthProbePort),
 
 		// controller-runtime uses both ConfigMaps and Leases for leader
 		// election by default. Leases expire after 15 seconds, with a
@@ -143,6 +156,10 @@ func main() {
 	}
 
 	kingpin.FatalIfError(helmControllers.Setup(mgr, o, *timeout), "Cannot setup helm controllers")
+
+	// Setup health probes
+	kingpin.FatalIfError(setupHealthProbes(mgr), "Cannot setup health probes")
+
 	kingpin.FatalIfError(mgr.Start(ctrl.SetupSignalHandler()), "Cannot start controller manager")
 }
 
@@ -151,4 +168,30 @@ func UseISO8601() zap.Opts {
 	return func(o *zap.Options) {
 		o.TimeEncoder = zapcore.ISO8601TimeEncoder
 	}
+}
+
+// setupHealthProbes configures liveness and readiness probes for the manager
+func setupHealthProbes(mgr ctrl.Manager) error {
+	log := logging.NewLogrLogger(zap.New().WithName("health-probes"))
+
+	// Add readiness probe
+	if err := mgr.AddReadyzCheck("ready", func(_ *http.Request) error {
+		// Add any specific readiness checks here
+		return nil
+	}); err != nil {
+		log.Debug("Unable to set up readiness check", "error", err)
+		return err
+	}
+
+	// Add liveness probe
+	if err := mgr.AddHealthzCheck("healthz", func(_ *http.Request) error {
+		// Add any specific liveness checks here
+		return nil
+	}); err != nil {
+		log.Debug("Unable to set up health check", "error", err)
+		return err
+	}
+
+	log.Debug("Health probes configured successfully")
+	return nil
 }
