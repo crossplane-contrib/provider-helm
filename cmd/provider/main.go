@@ -19,6 +19,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -45,9 +46,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/crossplane-contrib/provider-helm/apis"
+	"github.com/crossplane-contrib/provider-helm/internal/bootcheck"
 	helmControllers "github.com/crossplane-contrib/provider-helm/pkg/controller"
 	"github.com/crossplane-contrib/provider-helm/pkg/version"
 )
+
+func init() {
+	err := bootcheck.CheckEnv()
+	if err != nil {
+		log.Fatalf("bootcheck failed. provider will not be started: %v", err)
+	}
+}
 
 func main() {
 	var (
