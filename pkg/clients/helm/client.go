@@ -39,9 +39,8 @@ import (
 )
 
 const (
-	helmDriverSecret  = "secret"
-	chartCache        = "/tmp/charts"
-	releaseMaxHistory = 20
+	helmDriverSecret = "secret"
+	chartCache       = "/tmp/charts"
 )
 
 const (
@@ -130,6 +129,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	uc.Timeout = args.Timeout
 	uc.SkipCRDs = args.SkipCRDs
 	uc.InsecureSkipTLSverify = args.InsecureSkipTLSVerify
+	uc.MaxHistory = args.MaxHistory
 
 	uic := action.NewUninstall(actionConfig)
 	uic.Wait = args.Wait
@@ -322,7 +322,6 @@ func (hc *client) Install(release string, chart *chart.Chart, vals map[string]in
 func (hc *client) Upgrade(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error) {
 	// Reset values so that source of truth for desired state is always the CR itself
 	hc.upgradeClient.ResetValues = true
-	hc.upgradeClient.MaxHistory = releaseMaxHistory
 
 	if len(patches) > 0 {
 		hc.upgradeClient.PostRenderer = &KustomizationRender{
