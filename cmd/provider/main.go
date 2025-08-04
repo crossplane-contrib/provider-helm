@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -27,27 +28,36 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
-	changelogsv1alpha1 "github.com/crossplane/crossplane-runtime/apis/changelogs/proto/v1alpha1"
-	"github.com/crossplane/crossplane-runtime/pkg/controller"
-	"github.com/crossplane/crossplane-runtime/pkg/feature"
-	"github.com/crossplane/crossplane-runtime/pkg/ratelimiter"
-	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
-	"github.com/crossplane/crossplane-runtime/pkg/statemetrics"
+	changelogsv1alpha1 "github.com/crossplane/crossplane-runtime/v2/apis/changelogs/proto/v1alpha1"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/feature"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/gate"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/ratelimiter"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/customresourcesgate"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/statemetrics"
 	"go.uber.org/zap/zapcore"
 
+	authv1 "k8s.io/api/authorization/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 
-	"github.com/crossplane/crossplane-runtime/pkg/logging"
-	"gopkg.in/alecthomas/kingpin.v2"
+	"github.com/alecthomas/kingpin/v2"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/crossplane-contrib/provider-helm/apis"
+	clusterapis "github.com/crossplane-contrib/provider-helm/apis/cluster"
+	namespacedapis "github.com/crossplane-contrib/provider-helm/apis/namespaced"
 	"github.com/crossplane-contrib/provider-helm/internal/bootcheck"
-	helmControllers "github.com/crossplane-contrib/provider-helm/pkg/controller"
+	clustercontroller "github.com/crossplane-contrib/provider-helm/pkg/controller/cluster"
+	namespacedcontroller "github.com/crossplane-contrib/provider-helm/pkg/controller/namespaced"
 	"github.com/crossplane-contrib/provider-helm/pkg/version"
 )
 
@@ -121,8 +131,21 @@ func main() {
 		MRStateMetrics:          sm,
 	}
 
-	kingpin.FatalIfError(apis.AddToScheme(mgr.GetScheme()), "Cannot add Helm APIs to scheme")
-	o := controller.Options{
+	kingpin.FatalIfError(clusterapis.AddToScheme(mgr.GetScheme()), "Cannot add cluster-scoped Helm APIs to scheme")
+	kingpin.FatalIfError(namespacedapis.AddToScheme(mgr.GetScheme()), "Cannot add namespaced Helm APIs to scheme")
+	kingpin.FatalIfError(apiextensionsv1.AddToScheme(mgr.GetScheme()), "Cannot register k8s apiextensions APIs to scheme")
+
+	ctx := context.Background()
+	clusterOpts := controller.Options{
+		Logger:                  log,
+		MaxConcurrentReconciles: *maxReconcileRate,
+		PollInterval:            *pollInterval,
+		GlobalRateLimiter:       ratelimiter.NewGlobal(*maxReconcileRate),
+		Features:                &feature.Flags{},
+		MetricOptions:           &mo,
+	}
+
+	namespacedOpts := controller.Options{
 		Logger:                  log,
 		MaxConcurrentReconciles: *maxReconcileRate,
 		PollInterval:            *pollInterval,
@@ -132,12 +155,14 @@ func main() {
 	}
 
 	if *enableManagementPolicies {
-		o.Features.Enable(feature.EnableBetaManagementPolicies)
+		clusterOpts.Features.Enable(feature.EnableBetaManagementPolicies)
+		namespacedOpts.Features.Enable(feature.EnableBetaManagementPolicies)
 		log.Info("Beta feature enabled", "flag", feature.EnableBetaManagementPolicies)
 	}
 
 	if *enableChangeLogs {
-		o.Features.Enable(feature.EnableAlphaChangeLogs)
+		clusterOpts.Features.Enable(feature.EnableAlphaChangeLogs)
+		namespacedOpts.Features.Enable(feature.EnableAlphaChangeLogs)
 		log.Info("Alpha feature enabled", "flag", feature.EnableAlphaChangeLogs)
 
 		conn, err := grpc.NewClient("unix://"+*changelogsSocketPath, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -148,10 +173,24 @@ func main() {
 				changelogsv1alpha1.NewChangeLogServiceClient(conn),
 				managed.WithProviderVersion(fmt.Sprintf("provider-helm:%s", version.Version))),
 		}
-		o.ChangeLogOptions = &clo
+		clusterOpts.ChangeLogOptions = &clo
+		namespacedOpts.ChangeLogOptions = &clo
 	}
 
-	kingpin.FatalIfError(helmControllers.Setup(mgr, o, *timeout), "Cannot setup helm controllers")
+	canSafeStart, err := canWatchCRD(ctx, mgr)
+	kingpin.FatalIfError(err, "SafeStart precheck failed")
+	if canSafeStart {
+		crdGate := new(gate.Gate[schema.GroupVersionKind])
+		clusterOpts.Gate = crdGate
+		namespacedOpts.Gate = crdGate
+		kingpin.FatalIfError(customresourcesgate.Setup(mgr, namespacedOpts), "Cannot setup CRD gate")
+		kingpin.FatalIfError(clustercontroller.SetupGated(mgr, clusterOpts, *timeout), "Cannot setup cluster-scoped AzureAD controllers")
+		kingpin.FatalIfError(namespacedcontroller.SetupGated(mgr, namespacedOpts, *timeout), "Cannot setup namespaced AzureAD controllers")
+	} else {
+		log.Info("Provider has missing RBAC permissions for watching CRDs, controller SafeStart capability will be disabled")
+		kingpin.FatalIfError(clustercontroller.Setup(mgr, clusterOpts, *timeout), "Cannot setup cluster-scoped AzureAD controllers")
+		kingpin.FatalIfError(namespacedcontroller.Setup(mgr, namespacedOpts, *timeout), "Cannot setup namespaced AzureAD controllers")
+	}
 	kingpin.FatalIfError(mgr.Start(ctrl.SetupSignalHandler()), "Cannot start controller manager")
 }
 
@@ -160,4 +199,29 @@ func UseISO8601() zap.Opts {
 	return func(o *zap.Options) {
 		o.TimeEncoder = zapcore.ISO8601TimeEncoder
 	}
+}
+
+func canWatchCRD(ctx context.Context, mgr manager.Manager) (bool, error) {
+	if err := authv1.AddToScheme(mgr.GetScheme()); err != nil {
+		return false, err
+	}
+	verbs := []string{"get", "list", "watch"}
+	for _, verb := range verbs {
+		sar := &authv1.SelfSubjectAccessReview{
+			Spec: authv1.SelfSubjectAccessReviewSpec{
+				ResourceAttributes: &authv1.ResourceAttributes{
+					Group:    "apiextensions.k8s.io",
+					Resource: "customresourcedefinitions",
+					Verb:     verb,
+				},
+			},
+		}
+		if err := mgr.GetClient().Create(ctx, sar); err != nil {
+			return false, errors.Wrapf(err, "unable to perform RBAC check for verb %s on CustomResourceDefinitions", verbs)
+		}
+		if !sar.Status.Allowed {
+			return false, nil
+		}
+	}
+	return true, nil
 }

@@ -1,0 +1,70 @@
+apiVersion: helm.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: wordpress-example
+spec:
+# rollbackLimit: 3
+  forProvider:
+    chart:
+      name: wordpress
+      repository: "oci://localhost:5000/helm-charts"
+      version: 15.2.5
+#     pullSecretRef:
+#       name: oci-creds
+#       namespace: default
+#     url: "oci://localhost:5000/helm-charts/wordpress:9.3.19"
+    namespace: wordpress
+#   insecureSkipTLSVerify: true
+#   skipCreateNamespace: true
+#   wait: true
+#   skipCRDs: true
+    values:
+      service:
+        type: ClusterIP
+    set:
+      - name: param1
+        value: value2
+#   valuesFrom:
+#     - configMapKeyRef:
+#         key: values.yaml
+#         name: default-vals
+#         namespace: wordpress
+#         optional: false
+#     - secretKeyRef:
+#         key: svalues.yaml
+#         name: svals
+#         namespace: wordpress
+#         optional: false
+#  connectionDetails:
+#    - apiVersion: v1
+#      kind: Service
+#      name: wordpress-example
+#      namespace: wordpress
+#      fieldPath: spec.clusterIP
+#      #fieldPath: status.loadBalancer.ingress[0].ip
+#      toConnectionSecretKey: ip
+#    - apiVersion: v1
+#      kind: Service
+#      name: wordpress-example
+#      namespace: wordpress
+#      fieldPath: spec.ports[0].port
+#      toConnectionSecretKey: port
+#    - apiVersion: v1
+#      kind: Secret
+#      name: wordpress-example
+#      namespace: wordpress
+#      fieldPath: data.wordpress-password
+#      toConnectionSecretKey: password
+#    - apiVersion: v1
+#      kind: Secret
+#      name: manual-api-secret
+#      namespace: wordpress
+#      fieldPath: data.api-key
+#      toConnectionSecretKey: api-key
+#      # this secret created manually (not via Helm chart), so skip 'part of helm release' check
+#      skipPartOfReleaseCheck: true
+#  writeConnectionSecretToRef:
+#    name: wordpress-credentials
+#    namespace: crossplane-system
+  providerConfigRef:
+    name: helm-provider
