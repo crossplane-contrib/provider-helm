@@ -14,4 +14,6 @@ type Args struct {
 	SkipCRDs bool
 	// InsecureSkipTLSVerify skips tls certificate checks for the chart download
 	InsecureSkipTLSVerify bool
+	// PlainHTTP uses HTTP connections for the chart download
+	PlainHTTP bool
 }
