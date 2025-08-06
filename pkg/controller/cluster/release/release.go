@@ -139,7 +139,7 @@ func SetupGated(mgr ctrl.Manager, o controller.Options, timeout time.Duration) e
 type connector struct {
 	logger logging.Logger
 	client client.Client
-	usage  *resource.LegacyProviderConfigUsageTracker
+	usage  helmClient.LegacyTracker
 
 	clientBuilder   kubeclient.Builder
 	newHelmClientFn func(log logging.Logger, config *rest.Config, helmArgs ...helmClient.ArgsApplier) (helmClient.Client, error)
@@ -164,7 +164,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 
 	l.Debug("Connecting")
 
-	pcSpec, err := helmClient.ResolveProviderConfig(ctx, c.client, mg)
+	pcSpec, err := helmClient.ResolveProviderConfig(ctx, c.client, c.usage, nil, mg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to resolve provider config")
 	}

@@ -36,18 +36,18 @@ const (
 	errFailedToTrackUsage   = "cannot track provider config usage"
 )
 
-func ResolveProviderConfig(ctx context.Context, crClient kclient.Client, mg resource.Managed) (*kconfig.ProviderConfigSpec, error) {
+func ResolveProviderConfig(ctx context.Context, crClient kclient.Client, lt LegacyTracker, mt ModernTracker, mg resource.Managed) (*kconfig.ProviderConfigSpec, error) {
 	switch m := mg.(type) {
 	case resource.LegacyManaged:
-		return resolveProviderConfigLegacy(ctx, crClient, m)
+		return resolveProviderConfigLegacy(ctx, crClient, m, lt)
 	case resource.ModernManaged:
-		return resolveProviderConfigModern(ctx, crClient, m)
+		return resolveProviderConfigModern(ctx, crClient, m, mt)
 	default:
 		return nil, errors.New("resource is not a managed")
 	}
 }
 
-func resolveProviderConfigLegacy(ctx context.Context, client kclient.Client, mg resource.LegacyManaged) (*kconfig.ProviderConfigSpec, error) {
+func resolveProviderConfigLegacy(ctx context.Context, client kclient.Client, mg resource.LegacyManaged, lt LegacyTracker) (*kconfig.ProviderConfigSpec, error) {
 	configRef := mg.GetProviderConfigReference()
 	if configRef == nil {
 		return nil, errors.New(errProviderConfigNotSet)
@@ -57,15 +57,14 @@ func resolveProviderConfigLegacy(ctx context.Context, client kclient.Client, mg 
 		return nil, errors.Wrap(err, errGetProviderConfig)
 	}
 
-	t := resource.NewLegacyProviderConfigUsageTracker(client, &clusterv1beta1.ProviderConfigUsage{})
-	if err := t.Track(ctx, mg); err != nil {
+	if err := lt.Track(ctx, mg); err != nil {
 		return nil, errors.Wrap(err, errFailedToTrackUsage)
 	}
 
 	return legacyToModernProviderConfigSpec(pc)
 }
 
-func resolveProviderConfigModern(ctx context.Context, crClient kclient.Client, mg resource.ModernManaged) (*kconfig.ProviderConfigSpec, error) {
+func resolveProviderConfigModern(ctx context.Context, crClient kclient.Client, mg resource.ModernManaged, mt ModernTracker) (*kconfig.ProviderConfigSpec, error) {
 	configRef := mg.GetProviderConfigReference()
 	if configRef == nil {
 		return nil, errors.New(errProviderConfigNotSet)
@@ -96,8 +95,8 @@ func resolveProviderConfigModern(ctx context.Context, crClient kclient.Client, m
 		// TODO(erhan)
 		return nil, errors.New("unknown")
 	}
-	t := resource.NewProviderConfigUsageTracker(crClient, &namespacedv1beta1.ProviderConfigUsage{})
-	if err := t.Track(ctx, mg); err != nil {
+
+	if err := mt.Track(ctx, mg); err != nil {
 		return nil, errors.Wrap(err, errFailedToTrackUsage)
 	}
 	return &pcSpec, nil

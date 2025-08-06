@@ -34,7 +34,7 @@ var (
 func Test_userInfoFromSecret(t *testing.T) {
 	type args struct {
 		kube      client.Client
-		secretRef xpv1.SecretReference
+		secretRef xpv1.LocalSecretReference
 	}
 	type want struct {
 		out *helm.RepoCreds
@@ -55,31 +55,6 @@ func Test_userInfoFromSecret(t *testing.T) {
 				err: nil,
 			},
 		},
-		"PullSecretMissingNamespace": {
-			args: args{
-				kube: &test.MockClient{
-					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
-						if key.Name == testPullSecretName && key.Namespace == testPullSecretNamespace {
-							pullSecret := corev1.Secret{
-								Data: map[string][]byte{
-									keyRepoUsername: []byte(testUser),
-									keyRepoPassword: []byte(testPass),
-								},
-							}
-							*obj.(*corev1.Secret) = pullSecret
-							return nil
-						}
-						return errBoom
-					},
-				},
-				secretRef: xpv1.SecretReference{
-					Name: testPullSecretName,
-				},
-			},
-			want: want{
-				err: errors.New(errChartPullSecretMissingNamespace),
-			},
-		},
 		"PullSecretMissing": {
 			args: args{
 				kube: &test.MockClient{
@@ -90,9 +65,8 @@ func Test_userInfoFromSecret(t *testing.T) {
 						return errBoom
 					},
 				},
-				secretRef: xpv1.SecretReference{
-					Name:      testPullSecretName,
-					Namespace: testPullSecretNamespace,
+				secretRef: xpv1.LocalSecretReference{
+					Name: testPullSecretName,
 				},
 			},
 			want: want{
@@ -117,9 +91,8 @@ func Test_userInfoFromSecret(t *testing.T) {
 						return errBoom
 					},
 				},
-				secretRef: xpv1.SecretReference{
-					Name:      testPullSecretName,
-					Namespace: testPullSecretNamespace,
+				secretRef: xpv1.LocalSecretReference{
+					Name: testPullSecretName,
 				},
 			},
 			want: want{
@@ -143,9 +116,8 @@ func Test_userInfoFromSecret(t *testing.T) {
 						return errBoom
 					},
 				},
-				secretRef: xpv1.SecretReference{
-					Name:      testPullSecretName,
-					Namespace: testPullSecretNamespace,
+				secretRef: xpv1.LocalSecretReference{
+					Name: testPullSecretName,
 				},
 			},
 			want: want{
@@ -169,9 +141,8 @@ func Test_userInfoFromSecret(t *testing.T) {
 						return errBoom
 					},
 				},
-				secretRef: xpv1.SecretReference{
-					Name:      testPullSecretName,
-					Namespace: testPullSecretNamespace,
+				secretRef: xpv1.LocalSecretReference{
+					Name: testPullSecretName,
 				},
 			},
 			want: want{
@@ -185,7 +156,7 @@ func Test_userInfoFromSecret(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got, gotErr := repoCredsFromSecret(context.Background(), tc.args.kube, tc.args.secretRef)
+			got, gotErr := repoCredsFromSecret(context.Background(), tc.args.kube, testNamespace, tc.args.secretRef)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
 				t.Fatalf("repoCredsFromSecret(...): -want error, +got error: %s", diff)
 			}

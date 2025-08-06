@@ -119,7 +119,7 @@ type mockPatchGet struct {
 	err     error
 }
 
-func (m mockPatchGet) getFromSpec(ctx context.Context, kube client.Client, vals []v1beta1.ValueFromSource) ([]types.Patch, error) {
+func (m mockPatchGet) getFromSpec(ctx context.Context, kube client.Client, vals []v1beta1.ValueFromSource, namespace string) ([]types.Patch, error) {
 	return m.patches, m.err
 }
 
@@ -221,7 +221,7 @@ func Test_PatchHasUpdates(t *testing.T) {
 			s := v1beta1.ReleaseStatus{
 				PatchesSha: tc.existingSha,
 			}
-			got, gotErr := p.hasUpdates(context.Background(), nil, nil, s)
+			got, gotErr := p.hasUpdates(context.Background(), nil, nil, s, testNamespace)
 
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
 				t.Fatalf("Patch.hasUpdates(...): -want error, +got error: %s", diff)
@@ -267,8 +267,7 @@ func Test_getPatchesFromSpec(t *testing.T) {
 					{
 						ConfigMapKeyRef: &v1beta1.DataKeySelector{
 							NamespacedName: v1beta1.NamespacedName{
-								Name:      testCMName,
-								Namespace: testNamespace,
+								Name: testCMName,
 							},
 							Key:      keyDefaultPatchFrom,
 							Optional: false,
@@ -307,8 +306,7 @@ func Test_getPatchesFromSpec(t *testing.T) {
 					{
 						ConfigMapKeyRef: &v1beta1.DataKeySelector{
 							NamespacedName: v1beta1.NamespacedName{
-								Name:      "1",
-								Namespace: testNamespace,
+								Name: "1",
 							},
 							Key:      keyDefaultPatchFrom,
 							Optional: false,
@@ -317,8 +315,7 @@ func Test_getPatchesFromSpec(t *testing.T) {
 					{
 						ConfigMapKeyRef: &v1beta1.DataKeySelector{
 							NamespacedName: v1beta1.NamespacedName{
-								Name:      "2",
-								Namespace: testNamespace,
+								Name: "2",
 							},
 							Key:      keyDefaultPatchFrom,
 							Optional: false,
@@ -327,8 +324,7 @@ func Test_getPatchesFromSpec(t *testing.T) {
 					{
 						ConfigMapKeyRef: &v1beta1.DataKeySelector{
 							NamespacedName: v1beta1.NamespacedName{
-								Name:      "3",
-								Namespace: testNamespace,
+								Name: "3",
 							},
 							Key:      keyDefaultPatchFrom,
 							Optional: false,
@@ -377,8 +373,7 @@ func Test_getPatchesFromSpec(t *testing.T) {
 					{
 						ConfigMapKeyRef: &v1beta1.DataKeySelector{
 							NamespacedName: v1beta1.NamespacedName{
-								Name:      "1",
-								Namespace: testNamespace,
+								Name: "1",
 							},
 							Key:      keyDefaultPatchFrom,
 							Optional: true,
@@ -395,7 +390,7 @@ func Test_getPatchesFromSpec(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			pg := patchGet{}
-			got, gotErr := pg.getFromSpec(context.Background(), tc.args.kube, tc.args.spec)
+			got, gotErr := pg.getFromSpec(context.Background(), tc.args.kube, tc.args.spec, testNamespace)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
 				t.Fatalf("getFromSpec(...): -want error, +got error: %s", diff)
 			}

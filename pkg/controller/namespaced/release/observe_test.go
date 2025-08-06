@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
+	xpv2 "github.com/crossplane/crossplane-runtime/v2/apis/common/v2"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
 	"github.com/google/go-cmp/cmp"
@@ -309,7 +310,7 @@ func Test_isUpToDate(t *testing.T) {
 					MockGet: nil,
 				},
 				spec: &v1beta1.ReleaseSpec{
-					ResourceSpec: xpv1.ResourceSpec{
+					ManagedResourceSpec: xpv2.ManagedResourceSpec{
 						ManagementPolicies: []xpv1.ManagementAction{
 							xpv1.ManagementActionCreate,
 							xpv1.ManagementActionDelete,
@@ -351,7 +352,7 @@ func Test_isUpToDate(t *testing.T) {
 					MockGet: nil,
 				},
 				spec: &v1beta1.ReleaseSpec{
-					ResourceSpec: xpv1.ResourceSpec{
+					ManagedResourceSpec: xpv2.ManagedResourceSpec{
 						ManagementPolicies: []xpv1.ManagementAction{
 							xpv1.ManagementActionCreate,
 							xpv1.ManagementActionDelete,
@@ -462,7 +463,7 @@ func Test_isUpToDate(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got, gotErr := isUpToDate(context.Background(), tc.args.kube, tc.args.spec, tc.args.observed, v1beta1.ReleaseStatus{})
+			got, gotErr := isUpToDate(context.Background(), tc.args.kube, tc.args.spec, tc.args.observed, v1beta1.ReleaseStatus{}, testNamespace)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
 				t.Fatalf("isUpToDate(...): -want error, +got error: %s", diff)
 			}

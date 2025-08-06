@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/api/types"
 
+	xpv1v1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
@@ -71,7 +72,7 @@ type MockInstallFn func(release string, chart *chart.Chart, vals map[string]inte
 type MockUpgradeFn func(release string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (*release.Release, error)
 type MockRollBackFn func(release string) error
 type MockUninstallFn func(release string) error
-type MockPullAndLoadChartFn func(spec *v1beta1.ChartSpec, creds *helmClient.RepoCreds) (*chart.Chart, error)
+type MockPullAndLoadChartFn func(mg resource.Managed, creds *helmClient.RepoCreds) (*chart.Chart, error)
 
 type MockHelmClient struct {
 	MockGetLastRelease   MockGetLastReleaseFn
@@ -102,9 +103,9 @@ func (c *MockHelmClient) Uninstall(release string) error {
 	return c.MockUninstall(release)
 }
 
-func (c *MockHelmClient) PullAndLoadChart(spec *v1beta1.ChartSpec, creds *helmClient.RepoCreds) (*chart.Chart, error) {
+func (c *MockHelmClient) PullAndLoadChart(mg resource.Managed, creds *helmClient.RepoCreds) (*chart.Chart, error) {
 	if c.MockPullAndLoadChart != nil {
-		return c.MockPullAndLoadChart(spec, creds)
+		return c.MockPullAndLoadChart(mg, creds)
 	}
 	return nil, nil
 }
@@ -118,37 +119,41 @@ func Test_connector_Connect(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: providerName},
 		Spec: kconfig.ProviderConfigSpec{
 			Credentials: kconfig.ProviderCredentials{
-				Source: xpv1.CredentialsSourceNone,
+				Source: xpv1v1.CredentialsSourceNone,
 			},
 			Identity: &kconfig.Identity{
 				Type: kconfig.IdentityTypeGoogleApplicationCredentials,
 				ProviderCredentials: kconfig.ProviderCredentials{
-					Source: xpv1.CredentialsSourceNone,
+					Source: xpv1v1.CredentialsSourceNone,
 				},
 			},
 		},
 	}
 
+	providerConfigUsage := helmv1beta1.ProviderConfigUsage{
+		ObjectMeta: metav1.ObjectMeta{Name: providerName},
+	}
+
 	providerConfigGoogleInjectedIdentity := *providerConfig.DeepCopy()
-	providerConfigGoogleInjectedIdentity.Spec.Identity.Source = xpv1.CredentialsSourceInjectedIdentity
+	providerConfigGoogleInjectedIdentity.Spec.Identity.Source = xpv1v1.CredentialsSourceInjectedIdentity
 
 	providerConfigAzure := helmv1beta1.ProviderConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: providerName},
 		Spec: kconfig.ProviderConfigSpec{
 			Credentials: kconfig.ProviderCredentials{
-				Source: xpv1.CredentialsSourceNone,
+				Source: xpv1v1.CredentialsSourceNone,
 			},
 			Identity: &kconfig.Identity{
 				Type: kconfig.IdentityTypeAzureServicePrincipalCredentials,
 				ProviderCredentials: kconfig.ProviderCredentials{
-					Source: xpv1.CredentialsSourceNone,
+					Source: xpv1v1.CredentialsSourceNone,
 				},
 			},
 		},
 	}
 
 	providerConfigAzureInjectedIdentity := *providerConfigAzure.DeepCopy()
-	providerConfigAzureInjectedIdentity.Spec.Identity.Source = xpv1.CredentialsSourceInjectedIdentity
+	providerConfigAzureInjectedIdentity.Spec.Identity.Source = xpv1v1.CredentialsSourceInjectedIdentity
 
 	providerConfigUnknownIdentitySource := *providerConfigAzure.DeepCopy()
 	providerConfigUnknownIdentitySource.Spec.Identity.Type = "foo"
@@ -157,7 +162,7 @@ func Test_connector_Connect(t *testing.T) {
 		client            client.Client
 		clientForProvider client.Client
 		newHelmClientFn   func(log logging.Logger, config *rest.Config, helmArgs ...helmClient.ArgsApplier) (helmClient.Client, error)
-		usage             resource.Tracker
+		usage             helmClient.LegacyTracker
 		mg                resource.Managed
 	}
 	type want struct {
@@ -177,11 +182,29 @@ func Test_connector_Connect(t *testing.T) {
 		},
 		"FailedToTrackUsage": {
 			args: args{
-				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return errBoom }),
-				mg:    helmRelease(),
+				client: &test.MockClient{
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						switch obj.(type) {
+						case *helmv1beta1.ProviderConfig:
+							*obj.(*helmv1beta1.ProviderConfig) = providerConfig
+						case *helmv1beta1.ProviderConfigUsage:
+							*obj.(*helmv1beta1.ProviderConfigUsage) = providerConfigUsage
+						default:
+							return errBoom
+						}
+						return nil
+					},
+					MockUpdate: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+						return nil
+					},
+				},
+				usage: helmClient.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error {
+					return errBoom
+				}),
+				mg: helmRelease(),
 			},
 			want: want{
-				err: errors.Wrap(errBoom, errFailedToTrackUsage),
+				err: errors.Wrap(errors.Wrap(errBoom, errFailedToTrackUsage), "failed to resolve provider config"),
 			},
 		},
 		"FailedToGetProvider": {
@@ -195,11 +218,11 @@ func Test_connector_Connect(t *testing.T) {
 						return nil
 					},
 				},
-				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return nil }),
+				usage: helmClient.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error { return nil }),
 				mg:    helmRelease(),
 			},
 			want: want{
-				err: errors.Wrap(errBoom, errGetProviderConfig),
+				err: errors.Wrap(errors.Wrap(errBoom, errGetProviderConfig), "failed to resolve provider config"),
 			},
 		},
 		"FailedToCreateNewHelmClient": {
@@ -220,7 +243,7 @@ func Test_connector_Connect(t *testing.T) {
 				newHelmClientFn: func(log logging.Logger, restConfig *rest.Config, helmArgs ...helmClient.ArgsApplier) (helmClient.Client, error) {
 					return nil, errBoom
 				},
-				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return nil }),
+				usage: helmClient.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error { return nil }),
 				mg:    helmRelease(),
 			},
 			want: want{
@@ -247,7 +270,7 @@ func Test_connector_Connect(t *testing.T) {
 				newHelmClientFn: func(log logging.Logger, restConfig *rest.Config, helmArgs ...helmClient.ArgsApplier) (h helmClient.Client, err error) {
 					return &MockHelmClient{}, nil
 				},
-				usage: resource.TrackerFn(func(ctx context.Context, mg resource.Managed) error { return nil }),
+				usage: helmClient.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error { return nil }),
 				mg:    helmRelease(),
 			},
 			want: want{
@@ -577,7 +600,7 @@ func Test_helmExternal_Create(t *testing.T) {
 					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
 						return &release.Release{}, nil
 					},
-					MockPullAndLoadChart: func(spec *v1beta1.ChartSpec, creds *helmClient.RepoCreds) (*chart.Chart, error) {
+					MockPullAndLoadChart: func(mg resource.Managed, creds *helmClient.RepoCreds) (*chart.Chart, error) {
 						return &chart.Chart{
 							Metadata: &chart.Metadata{
 								Version: testVersion,

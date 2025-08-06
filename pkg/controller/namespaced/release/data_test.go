@@ -261,8 +261,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 				source: v1beta1.ValueFromSource{
 					SecretKeyRef: &v1beta1.DataKeySelector{
 						NamespacedName: v1beta1.NamespacedName{
-							Namespace: testNamespace,
-							Name:      testSecretName,
+							Name: testSecretName,
 						},
 						Key:      "test",
 						Optional: false,
@@ -287,8 +286,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 				source: v1beta1.ValueFromSource{
 					ConfigMapKeyRef: &v1beta1.DataKeySelector{
 						NamespacedName: v1beta1.NamespacedName{
-							Namespace: testNamespace,
-							Name:      testCMName,
+							Name: testCMName,
 						},
 						Key:      "test",
 						Optional: false,
@@ -313,8 +311,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 				source: v1beta1.ValueFromSource{
 					SecretKeyRef: &v1beta1.DataKeySelector{
 						NamespacedName: v1beta1.NamespacedName{
-							Namespace: testNamespace,
-							Name:      testSecretName,
+							Name: testSecretName,
 						},
 						Key:      "test",
 						Optional: true,
@@ -339,8 +336,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 				source: v1beta1.ValueFromSource{
 					SecretKeyRef: &v1beta1.DataKeySelector{
 						NamespacedName: v1beta1.NamespacedName{
-							Namespace: testNamespace,
-							Name:      testSecretName,
+							Name: testSecretName,
 						},
 						Key:      "test",
 						Optional: false,
@@ -365,8 +361,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 				source: v1beta1.ValueFromSource{
 					ConfigMapKeyRef: &v1beta1.DataKeySelector{
 						NamespacedName: v1beta1.NamespacedName{
-							Namespace: testNamespace,
-							Name:      testCMName,
+							Name: testCMName,
 						},
 						Key:      "test",
 						Optional: true,
@@ -391,8 +386,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 				source: v1beta1.ValueFromSource{
 					ConfigMapKeyRef: &v1beta1.DataKeySelector{
 						NamespacedName: v1beta1.NamespacedName{
-							Namespace: testNamespace,
-							Name:      testCMName,
+							Name: testCMName,
 						},
 						Key:      "test",
 						Optional: false,
@@ -421,8 +415,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 				source: v1beta1.ValueFromSource{
 					SecretKeyRef: &v1beta1.DataKeySelector{
 						NamespacedName: v1beta1.NamespacedName{
-							Namespace: testNamespace,
-							Name:      testSecretName,
+							Name: testSecretName,
 						},
 						Key:      "nonexistingkey",
 						Optional: true,
@@ -451,8 +444,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 				source: v1beta1.ValueFromSource{
 					SecretKeyRef: &v1beta1.DataKeySelector{
 						NamespacedName: v1beta1.NamespacedName{
-							Namespace: testNamespace,
-							Name:      testSecretName,
+							Name: testSecretName,
 						},
 						Key:      "nonexistingkey",
 						Optional: false,
@@ -481,8 +473,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 				source: v1beta1.ValueFromSource{
 					ConfigMapKeyRef: &v1beta1.DataKeySelector{
 						NamespacedName: v1beta1.NamespacedName{
-							Namespace: testNamespace,
-							Name:      testCMName,
+							Name: testCMName,
 						},
 						Key:      "nonexistingkey",
 						Optional: true,
@@ -511,8 +502,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 				source: v1beta1.ValueFromSource{
 					ConfigMapKeyRef: &v1beta1.DataKeySelector{
 						NamespacedName: v1beta1.NamespacedName{
-							Namespace: testNamespace,
-							Name:      testCMName,
+							Name: testCMName,
 						},
 						Key:      "nonexistingkey",
 						Optional: false,
@@ -541,8 +531,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 				source: v1beta1.ValueFromSource{
 					SecretKeyRef: &v1beta1.DataKeySelector{
 						NamespacedName: v1beta1.NamespacedName{
-							Namespace: testNamespace,
-							Name:      testSecretName,
+							Name: testSecretName,
 						},
 						Key:      "test",
 						Optional: false,
@@ -571,8 +560,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 				source: v1beta1.ValueFromSource{
 					SecretKeyRef: &v1beta1.DataKeySelector{
 						NamespacedName: v1beta1.NamespacedName{
-							Namespace: testNamespace,
-							Name:      testSecretName,
+							Name: testSecretName,
 						},
 						Optional: false,
 					},
@@ -601,8 +589,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 				source: v1beta1.ValueFromSource{
 					ConfigMapKeyRef: &v1beta1.DataKeySelector{
 						NamespacedName: v1beta1.NamespacedName{
-							Namespace: testNamespace,
-							Name:      testCMName,
+							Name: testCMName,
 						},
 						Key:      "test",
 						Optional: false,
@@ -631,8 +618,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 				source: v1beta1.ValueFromSource{
 					ConfigMapKeyRef: &v1beta1.DataKeySelector{
 						NamespacedName: v1beta1.NamespacedName{
-							Namespace: testNamespace,
-							Name:      testCMName,
+							Name: testCMName,
 						},
 						Optional: false,
 					},
@@ -647,7 +633,7 @@ func Test_getDataValueFromSource(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got, gotErr := getDataValueFromSource(context.Background(), tc.args.kube, tc.args.source, tc.args.defaultKey)
+			got, gotErr := getDataValueFromSource(context.Background(), tc.args.kube, tc.args.source, tc.args.defaultKey, testNamespace)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
 				t.Fatalf("getDataValueFromSource(...): -want error, +got error: %s", diff)
 			}

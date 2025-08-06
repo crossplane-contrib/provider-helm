@@ -87,8 +87,7 @@ func Test_composeValuesFromSpec(t *testing.T) {
 						{
 							ConfigMapKeyRef: &v1beta1.DataKeySelector{
 								NamespacedName: v1beta1.NamespacedName{
-									Name:      testCMName,
-									Namespace: testNamespace,
+									Name: testCMName,
 								},
 								Key:      "values.yaml",
 								Optional: false,
@@ -118,8 +117,7 @@ func Test_composeValuesFromSpec(t *testing.T) {
 						{
 							ConfigMapKeyRef: &v1beta1.DataKeySelector{
 								NamespacedName: v1beta1.NamespacedName{
-									Name:      testCMName,
-									Namespace: testNamespace,
+									Name: testCMName,
 								},
 								Key:      "values.yaml",
 								Optional: false,
@@ -156,8 +154,7 @@ func Test_composeValuesFromSpec(t *testing.T) {
 						{
 							ConfigMapKeyRef: &v1beta1.DataKeySelector{
 								NamespacedName: v1beta1.NamespacedName{
-									Name:      testCMName,
-									Namespace: testNamespace,
+									Name: testCMName,
 								},
 								Key:      "values.yaml",
 								Optional: false,
@@ -254,8 +251,7 @@ keyB:
 							ValueFrom: &v1beta1.ValueFromSource{
 								SecretKeyRef: &v1beta1.DataKeySelector{
 									NamespacedName: v1beta1.NamespacedName{
-										Name:      testSecretName,
-										Namespace: testNamespace,
+										Name: testSecretName,
 									},
 									Key:      "keyA",
 									Optional: false,
@@ -300,8 +296,7 @@ keyB:
 							ValueFrom: &v1beta1.ValueFromSource{
 								SecretKeyRef: &v1beta1.DataKeySelector{
 									NamespacedName: v1beta1.NamespacedName{
-										Name:      testSecretName,
-										Namespace: testNamespace,
+										Name: testSecretName,
 									},
 									Key:      "keyA",
 									Optional: false,
@@ -320,7 +315,7 @@ keyB:
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got, gotErr := composeValuesFromSpec(context.Background(), tc.args.kube, tc.args.spec)
+			got, gotErr := composeValuesFromSpec(context.Background(), tc.args.kube, tc.args.spec, testNamespace)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
 				t.Fatalf("composeValuesFromSpec(...): -want error, +got error: %s", diff)
 			}
