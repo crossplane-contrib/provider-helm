@@ -1,8 +1,8 @@
 ## check provider-incluster.yaml for grant access
 apiVersion: helm.m.crossplane.io/v1beta1
-kind: ProviderConfig
+kind: ClusterProviderConfig
 metadata:
-  name: helm-provider
+  name: helm-provider-cluster
   namespace: crossplane-system
 spec:
   credentials:

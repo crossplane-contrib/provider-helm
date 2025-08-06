@@ -24,13 +24,13 @@ apiVersion: helm.crossplane.io/v1beta1
 kind: Release
 metadata:
   name: wordpress-example-patched
+  namespace: crossplane-system
 spec:
   forProvider:
     chart:
       name: wordpress
       repository: https://charts.bitnami.com/bitnami
       version: 15.2.5
-    namespace: wordpress
     values:
       param1: value1
       param2: 1
@@ -41,8 +41,8 @@ spec:
       - configMapKeyRef:
           key: patch.yaml
           name: wp-patch
-          namespace: wordpress
           optional: false
-  providerRef:
-    name: helm-provider
+  providerConfigRef:
+    name: helm-provider-cluster
+    kind: ClusterProviderConfig
 

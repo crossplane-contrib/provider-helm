@@ -86,9 +86,7 @@ func Test_composeValuesFromSpec(t *testing.T) {
 					ValuesFrom: []v1beta1.ValueFromSource{
 						{
 							ConfigMapKeyRef: &v1beta1.DataKeySelector{
-								NamespacedName: v1beta1.NamespacedName{
-									Name: testCMName,
-								},
+								Name:     testCMName,
 								Key:      "values.yaml",
 								Optional: false,
 							},
@@ -116,9 +114,7 @@ func Test_composeValuesFromSpec(t *testing.T) {
 					ValuesFrom: []v1beta1.ValueFromSource{
 						{
 							ConfigMapKeyRef: &v1beta1.DataKeySelector{
-								NamespacedName: v1beta1.NamespacedName{
-									Name: testCMName,
-								},
+								Name:     testCMName,
 								Key:      "values.yaml",
 								Optional: false,
 							},
@@ -153,9 +149,7 @@ func Test_composeValuesFromSpec(t *testing.T) {
 					ValuesFrom: []v1beta1.ValueFromSource{
 						{
 							ConfigMapKeyRef: &v1beta1.DataKeySelector{
-								NamespacedName: v1beta1.NamespacedName{
-									Name: testCMName,
-								},
+								Name:     testCMName,
 								Key:      "values.yaml",
 								Optional: false,
 							},
@@ -250,9 +244,7 @@ keyB:
 							Name: "keyA",
 							ValueFrom: &v1beta1.ValueFromSource{
 								SecretKeyRef: &v1beta1.DataKeySelector{
-									NamespacedName: v1beta1.NamespacedName{
-										Name: testSecretName,
-									},
+									Name:     testSecretName,
 									Key:      "keyA",
 									Optional: false,
 								},
@@ -295,9 +287,7 @@ keyB:
 							Name: "keyA",
 							ValueFrom: &v1beta1.ValueFromSource{
 								SecretKeyRef: &v1beta1.DataKeySelector{
-									NamespacedName: v1beta1.NamespacedName{
-										Name: testSecretName,
-									},
+									Name:     testSecretName,
 									Key:      "keyA",
 									Optional: false,
 								},

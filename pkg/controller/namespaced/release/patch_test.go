@@ -266,9 +266,7 @@ func Test_getPatchesFromSpec(t *testing.T) {
 				spec: []v1beta1.ValueFromSource{
 					{
 						ConfigMapKeyRef: &v1beta1.DataKeySelector{
-							NamespacedName: v1beta1.NamespacedName{
-								Name: testCMName,
-							},
+							Name:     testCMName,
 							Key:      keyDefaultPatchFrom,
 							Optional: false,
 						},
@@ -305,27 +303,21 @@ func Test_getPatchesFromSpec(t *testing.T) {
 				spec: []v1beta1.ValueFromSource{
 					{
 						ConfigMapKeyRef: &v1beta1.DataKeySelector{
-							NamespacedName: v1beta1.NamespacedName{
-								Name: "1",
-							},
+							Name:     "1",
 							Key:      keyDefaultPatchFrom,
 							Optional: false,
 						},
 					},
 					{
 						ConfigMapKeyRef: &v1beta1.DataKeySelector{
-							NamespacedName: v1beta1.NamespacedName{
-								Name: "2",
-							},
+							Name:     "2",
 							Key:      keyDefaultPatchFrom,
 							Optional: false,
 						},
 					},
 					{
 						ConfigMapKeyRef: &v1beta1.DataKeySelector{
-							NamespacedName: v1beta1.NamespacedName{
-								Name: "3",
-							},
+							Name:     "3",
 							Key:      keyDefaultPatchFrom,
 							Optional: false,
 						},
@@ -372,9 +364,7 @@ func Test_getPatchesFromSpec(t *testing.T) {
 				spec: []v1beta1.ValueFromSource{
 					{
 						ConfigMapKeyRef: &v1beta1.DataKeySelector{
-							NamespacedName: v1beta1.NamespacedName{
-								Name: "1",
-							},
+							Name:     "1",
 							Key:      keyDefaultPatchFrom,
 							Optional: true,
 						},

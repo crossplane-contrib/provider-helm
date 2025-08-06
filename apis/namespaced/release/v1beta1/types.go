@@ -40,16 +40,11 @@ type ChartSpec struct {
 	PullSecretRef xpv1.LocalSecretReference `json:"pullSecretRef,omitempty"`
 }
 
-// NamespacedName represents a namespaced object name
-type NamespacedName struct {
-	Name string `json:"name"`
-}
-
 // DataKeySelector defines required spec to access a key of a configmap or secret
 type DataKeySelector struct {
-	NamespacedName `json:",inline"`
-	Key            string `json:"key,omitempty"`
-	Optional       bool   `json:"optional,omitempty"`
+	Name     string `json:"name"`
+	Key      string `json:"key,omitempty"`
+	Optional bool   `json:"optional,omitempty"`
 }
 
 // ValueFromSource represents source of a value
