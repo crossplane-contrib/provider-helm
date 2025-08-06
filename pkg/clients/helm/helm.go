@@ -23,11 +23,12 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	clusterv1beta1 "github.com/crossplane-contrib/provider-helm/apis/cluster/v1beta1"
-	namespacedv1beta1 "github.com/crossplane-contrib/provider-helm/apis/namespaced/v1beta1"
 	kconfig "github.com/crossplane-contrib/provider-kubernetes/pkg/kube/config"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	"k8s.io/apimachinery/pkg/types"
+
+	clusterv1beta1 "github.com/crossplane-contrib/provider-helm/apis/cluster/v1beta1"
+	namespacedv1beta1 "github.com/crossplane-contrib/provider-helm/apis/namespaced/v1beta1"
 )
 
 const (

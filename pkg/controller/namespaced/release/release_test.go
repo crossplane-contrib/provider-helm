@@ -4,8 +4,6 @@ import (
 	"context"
 	"testing"
 
-	clusterapis "github.com/crossplane-contrib/provider-helm/apis/cluster"
-	namespacedapis "github.com/crossplane-contrib/provider-helm/apis/namespaced"
 	kubeclient "github.com/crossplane-contrib/provider-kubernetes/pkg/kube/client"
 	kconfig "github.com/crossplane-contrib/provider-kubernetes/pkg/kube/config"
 	"github.com/crossplane/crossplane-runtime/v2/apis/common"
@@ -30,6 +28,8 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
 
+	clusterapis "github.com/crossplane-contrib/provider-helm/apis/cluster"
+	namespacedapis "github.com/crossplane-contrib/provider-helm/apis/namespaced"
 	"github.com/crossplane-contrib/provider-helm/apis/namespaced/release/v1beta1"
 	helmv1beta1 "github.com/crossplane-contrib/provider-helm/apis/namespaced/v1beta1"
 	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
@@ -193,13 +193,13 @@ func Test_connector_Connect(t *testing.T) {
 			args: args{
 				client: &test.MockClient{
 					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
-						switch obj.(type) {
+						switch o := obj.(type) {
 						case *helmv1beta1.ProviderConfig:
-							*obj.(*helmv1beta1.ProviderConfig) = providerConfig
+							*o = providerConfig
 						case *helmv1beta1.ClusterProviderConfig:
-							*obj.(*helmv1beta1.ClusterProviderConfig) = clusterProviderConfig
+							*o = clusterProviderConfig
 						case *helmv1beta1.ProviderConfigUsage:
-							*obj.(*helmv1beta1.ProviderConfigUsage) = providerConfigUsage
+							*o = providerConfigUsage
 						default:
 							return errBoom
 						}
@@ -255,11 +255,11 @@ func Test_connector_Connect(t *testing.T) {
 			args: args{
 				client: &test.MockClient{
 					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
-						switch obj.(type) {
+						switch o := obj.(type) {
 						case *helmv1beta1.ProviderConfig:
-							*obj.(*helmv1beta1.ProviderConfig) = providerConfig
+							*o = providerConfig
 						case *helmv1beta1.ClusterProviderConfig:
-							*obj.(*helmv1beta1.ClusterProviderConfig) = clusterProviderConfig
+							*o = clusterProviderConfig
 						default:
 							return errBoom
 						}

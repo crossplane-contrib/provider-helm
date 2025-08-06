@@ -7,6 +7,7 @@ toolchain go1.24.5
 require (
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/crossplane-contrib/provider-kubernetes v0.18.0
+	github.com/crossplane/crossplane-runtime v1.19.0
 	github.com/crossplane/crossplane-runtime/v2 v2.0.0-20250730220209-c306b1c8b181
 	github.com/crossplane/crossplane-tools v0.0.0-20250731192036-00d407d8b7ec
 	github.com/google/go-cmp v0.7.0
@@ -57,7 +58,6 @@ require (
 	github.com/containerd/errdefs v0.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/platforms v0.2.1 // indirect
-	github.com/crossplane/crossplane-runtime v1.19.0 // indirect
 	github.com/cyphar/filepath-securejoin v0.3.6 // indirect
 	github.com/dave/jennifer v1.7.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect

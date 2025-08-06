@@ -256,21 +256,21 @@ func (hc *client) login(chartUrl, chartRepo string, creds *RepoCreds, insecure b
 	return errors.Wrap(err, errFailedToLogin)
 }
 
-func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*chart.Chart, error) {
+func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*chart.Chart, error) { //nolint:gocyclo
 	var chartFilePath, chartUrl, chartName, chartVersion, chartRepo string
 	var err error
 
-	switch mg.(type) {
+	switch r := mg.(type) {
 	case *clusterv1beta1.Release:
-		chartUrl = mg.(*clusterv1beta1.Release).Spec.ForProvider.Chart.URL
-		chartVersion = mg.(*clusterv1beta1.Release).Spec.ForProvider.Chart.Version
-		chartName = mg.(*clusterv1beta1.Release).Spec.ForProvider.Chart.Name
-		chartRepo = mg.(*clusterv1beta1.Release).Spec.ForProvider.Chart.Repository
+		chartUrl = r.Spec.ForProvider.Chart.URL
+		chartVersion = r.Spec.ForProvider.Chart.Version
+		chartName = r.Spec.ForProvider.Chart.Name
+		chartRepo = r.Spec.ForProvider.Chart.Repository
 	case *namespacedv1beta1.Release:
-		chartUrl = mg.(*namespacedv1beta1.Release).Spec.ForProvider.Chart.URL
-		chartVersion = mg.(*namespacedv1beta1.Release).Spec.ForProvider.Chart.Version
-		chartName = mg.(*namespacedv1beta1.Release).Spec.ForProvider.Chart.Name
-		chartRepo = mg.(*namespacedv1beta1.Release).Spec.ForProvider.Chart.Repository
+		chartUrl = r.Spec.ForProvider.Chart.URL
+		chartVersion = r.Spec.ForProvider.Chart.Version
+		chartName = r.Spec.ForProvider.Chart.Name
+		chartRepo = r.Spec.ForProvider.Chart.Repository
 	default:
 		return nil, errors.New("This object must be *clusterv1beta1.Release or *namespacedv1beta1.Release")
 	}

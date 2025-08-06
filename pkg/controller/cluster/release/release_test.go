@@ -184,11 +184,11 @@ func Test_connector_Connect(t *testing.T) {
 			args: args{
 				client: &test.MockClient{
 					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
-						switch obj.(type) {
+						switch o := obj.(type) {
 						case *helmv1beta1.ProviderConfig:
-							*obj.(*helmv1beta1.ProviderConfig) = providerConfig
+							*o = providerConfig
 						case *helmv1beta1.ProviderConfigUsage:
-							*obj.(*helmv1beta1.ProviderConfigUsage) = providerConfigUsage
+							*o = providerConfigUsage
 						default:
 							return errBoom
 						}
