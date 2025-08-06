@@ -156,9 +156,6 @@ spec:
                     description: InsecureSkipTLSVerify skips tls certificate checks
                       for the chart download
                     type: boolean
-                  namespace:
-                    description: Namespace to install the release into.
-                    type: string
                   patchesFrom:
                     description: PatchesFrom describe patches to be applied to the
                       rendered manifests.
@@ -173,13 +170,10 @@ spec:
                               type: string
                             name:
                               type: string
-                            namespace:
-                              type: string
                             optional:
                               type: boolean
                           required:
                           - name
-                          - namespace
                           type: object
                         secretKeyRef:
                           description: DataKeySelector defines required spec to access
@@ -189,13 +183,10 @@ spec:
                               type: string
                             name:
                               type: string
-                            namespace:
-                              type: string
                             optional:
                               type: boolean
                           required:
                           - name
-                          - namespace
                           type: object
                       type: object
                     type: array
@@ -218,13 +209,10 @@ spec:
                                   type: string
                                 name:
                                   type: string
-                                namespace:
-                                  type: string
                                 optional:
                                   type: boolean
                               required:
                               - name
-                              - namespace
                               type: object
                             secretKeyRef:
                               description: DataKeySelector defines required spec to
@@ -234,13 +222,10 @@ spec:
                                   type: string
                                 name:
                                   type: string
-                                namespace:
-                                  type: string
                                 optional:
                                   type: boolean
                               required:
                               - name
-                              - namespace
                               type: object
                           type: object
                       required:
@@ -249,10 +234,6 @@ spec:
                     type: array
                   skipCRDs:
                     description: SkipCRDs skips installation of CRDs for the release.
-                    type: boolean
-                  skipCreateNamespace:
-                    description: SkipCreateNamespace won't create the namespace for
-                      the release. This requires the namespace to already exist.
                     type: boolean
                   values:
                     type: object
@@ -269,13 +250,10 @@ spec:
                               type: string
                             name:
                               type: string
-                            namespace:
-                              type: string
                             optional:
                               type: boolean
                           required:
                           - name
-                          - namespace
                           type: object
                         secretKeyRef:
                           description: DataKeySelector defines required spec to access
@@ -285,13 +263,10 @@ spec:
                               type: string
                             name:
                               type: string
-                            namespace:
-                              type: string
                             optional:
                               type: boolean
                           required:
                           - name
-                          - namespace
                           type: object
                       type: object
                     type: array
@@ -305,7 +280,6 @@ spec:
                     type: string
                 required:
                 - chart
-                - namespace
                 type: object
               managementPolicies:
                 default:

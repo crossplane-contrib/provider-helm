@@ -25,7 +25,6 @@ import (
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/storage/driver"
 	corev1 "k8s.io/api/core/v1"
-	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -147,7 +146,7 @@ type connector struct {
 
 func withRelease(cr *v1beta1.Release) helmClient.ArgsApplier {
 	return func(config *helmClient.Args) {
-		config.Namespace = cr.Spec.ForProvider.Namespace
+		config.Namespace = cr.Namespace
 		config.Wait = cr.Spec.ForProvider.Wait
 		config.Timeout = waitTimeout(cr)
 		config.SkipCRDs = cr.Spec.ForProvider.SkipCRDs
@@ -233,7 +232,7 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 		return managed.ExternalObservation{ResourceExists: true}, nil
 	}
 
-	s, err := isUpToDate(ctx, e.localKube, &cr.Spec, rel, cr.Status)
+	s, err := isUpToDate(ctx, e.localKube, &cr.Spec, rel, cr.Status, cr.Namespace)
 	if err != nil {
 		return managed.ExternalObservation{}, errors.Wrap(err, errFailedToCheckIfUpToDate)
 	}
@@ -261,7 +260,7 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 type deployAction func(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error)
 
 func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action deployAction) error {
-	cv, err := composeValuesFromSpec(ctx, e.localKube, cr.Spec.ForProvider.ValuesSpec)
+	cv, err := composeValuesFromSpec(ctx, e.localKube, cr.Spec.ForProvider.ValuesSpec, cr.Namespace)
 	if err != nil {
 		return errors.Wrap(err, errFailedToComposeValues)
 	}
@@ -271,7 +270,7 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action d
 		return errors.Wrap(err, errFailedToGetRepoCreds)
 	}
 
-	p, err := e.patch.getFromSpec(ctx, e.localKube, cr.Spec.ForProvider.PatchesFrom)
+	p, err := e.patch.getFromSpec(ctx, e.localKube, cr.Spec.ForProvider.PatchesFrom, cr.Namespace)
 	if err != nil {
 		return errors.Wrap(err, errFailedToLoadPatches)
 	}
@@ -320,14 +319,6 @@ func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed
 	}
 
 	e.logger.Debug("Creating")
-
-	if !cr.Spec.ForProvider.SkipCreateNamespace {
-		if err := e.createNamespace(ctx, cr.Spec.ForProvider.Namespace); err != nil {
-			if !kerrors.IsAlreadyExists(err) {
-				return managed.ExternalCreation{}, errors.Wrap(err, errFailedToCreateNamespace)
-			}
-		}
-	}
 
 	return managed.ExternalCreation{}, errors.Wrap(e.deploy(ctx, cr, e.helm.Install), errFailedToInstall)
 }

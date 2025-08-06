@@ -22,13 +22,13 @@ const (
 
 // Patcher interface for managing Kustomize patches and detecting updates
 type Patcher interface {
-	hasUpdates(ctx context.Context, kube client.Client, in []v1beta1.ValueFromSource, s v1beta1.ReleaseStatus) (bool, error)
+	hasUpdates(ctx context.Context, kube client.Client, in []v1beta1.ValueFromSource, s v1beta1.ReleaseStatus, namespace string) (bool, error)
 	patchGetter
 	patchHasher
 }
 
 type patchGetter interface {
-	getFromSpec(ctx context.Context, kube client.Client, vals []v1beta1.ValueFromSource) ([]ktypes.Patch, error)
+	getFromSpec(ctx context.Context, kube client.Client, vals []v1beta1.ValueFromSource, namespace string) ([]ktypes.Patch, error)
 }
 
 type patchHasher interface {
@@ -47,8 +47,8 @@ type patch struct {
 	patchGetter
 }
 
-func (p patch) hasUpdates(ctx context.Context, kube client.Client, in []v1beta1.ValueFromSource, s v1beta1.ReleaseStatus) (bool, error) {
-	patches, err := p.getFromSpec(ctx, kube, in)
+func (p patch) hasUpdates(ctx context.Context, kube client.Client, in []v1beta1.ValueFromSource, s v1beta1.ReleaseStatus, namespace string) (bool, error) {
+	patches, err := p.getFromSpec(ctx, kube, in, namespace)
 	if err != nil {
 		return false, err
 	}
@@ -78,11 +78,11 @@ func (patchSha) shaOf(patches []ktypes.Patch) (string, error) {
 
 type patchGet struct{}
 
-func (patchGet) getFromSpec(ctx context.Context, kube client.Client, vals []v1beta1.ValueFromSource) ([]ktypes.Patch, error) {
+func (patchGet) getFromSpec(ctx context.Context, kube client.Client, vals []v1beta1.ValueFromSource, namespace string) ([]ktypes.Patch, error) {
 	var base []ktypes.Patch // nolint:prealloc
 
 	for _, vf := range vals {
-		s, err := getDataValueFromSource(ctx, kube, vf, keyDefaultPatchFrom)
+		s, err := getDataValueFromSource(ctx, kube, vf, keyDefaultPatchFrom, namespace)
 		if err != nil {
 			return nil, errors.Wrap(err, errFailedToGetValueFromSource)
 		}

@@ -14,7 +14,6 @@ spec:
 #       name: museum-creds
 #       namespace: default
 #     url: "https://charts.bitnami.com/bitnami/wordpress-9.3.19.tgz"
-    namespace: wordpress
 #   insecureSkipTLSVerify: true
 #   skipCreateNamespace: true
 #   wait: true

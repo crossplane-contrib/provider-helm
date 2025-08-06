@@ -40,11 +40,11 @@ const (
 	errMissingValueForSet             = "missing value for --set"
 )
 
-func composeValuesFromSpec(ctx context.Context, kube client.Client, spec v1beta1.ValuesSpec) (map[string]interface{}, error) {
+func composeValuesFromSpec(ctx context.Context, kube client.Client, spec v1beta1.ValuesSpec, namespace string) (map[string]interface{}, error) {
 	base := map[string]interface{}{}
 
 	for _, vf := range spec.ValuesFrom {
-		s, err := getDataValueFromSource(ctx, kube, vf, keyDefaultValuesFrom)
+		s, err := getDataValueFromSource(ctx, kube, vf, keyDefaultValuesFrom, namespace)
 		if err != nil {
 			return nil, errors.Wrap(err, errFailedToGetValueFromSource)
 		}
@@ -70,7 +70,7 @@ func composeValuesFromSpec(ctx context.Context, kube client.Client, spec v1beta1
 			v = s.Value
 		}
 		if s.ValueFrom != nil {
-			v, err = getDataValueFromSource(ctx, kube, *s.ValueFrom, keyDefaultSet)
+			v, err = getDataValueFromSource(ctx, kube, *s.ValueFrom, keyDefaultSet, namespace)
 			if err != nil {
 				return nil, errors.Wrap(err, errFailedToGetValueFromSource)
 			}

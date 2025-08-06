@@ -42,8 +42,7 @@ type ChartSpec struct {
 
 // NamespacedName represents a namespaced object name
 type NamespacedName struct {
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
+	Name string `json:"name"`
 }
 
 // DataKeySelector defines required spec to access a key of a configmap or secret
@@ -77,10 +76,6 @@ type ValuesSpec struct {
 // ReleaseParameters are the configurable fields of a Release.
 type ReleaseParameters struct {
 	Chart ChartSpec `json:"chart"`
-	// Namespace to install the release into.
-	Namespace string `json:"namespace"`
-	// SkipCreateNamespace won't create the namespace for the release. This requires the namespace to already exist.
-	SkipCreateNamespace bool `json:"skipCreateNamespace,omitempty"`
 	// Wait for the release to become ready.
 	Wait bool `json:"wait,omitempty"`
 	// WaitTimeout is the duration Helm will wait for the release to become

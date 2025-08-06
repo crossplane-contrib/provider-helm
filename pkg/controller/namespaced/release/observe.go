@@ -61,7 +61,7 @@ func generateObservation(in *release.Release) v1beta1.ReleaseObservation {
 }
 
 // isUpToDate checks whether desired spec up to date with the observed state for a given release
-func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSpec, observed *release.Release, s v1beta1.ReleaseStatus) (bool, error) { // nolint:gocyclo
+func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSpec, observed *release.Release, s v1beta1.ReleaseStatus, namespace string) (bool, error) { // nolint:gocyclo
 	if observed.Info == nil {
 		return false, errors.New(errReleaseInfoNilInObservedRelease)
 	}
@@ -96,7 +96,7 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 	if in.Chart.Version != ocm.Version && in.Chart.Version != devel {
 		return false, nil
 	}
-	desiredConfig, err := composeValuesFromSpec(ctx, kube, in.ValuesSpec)
+	desiredConfig, err := composeValuesFromSpec(ctx, kube, in.ValuesSpec, namespace)
 	if err != nil {
 		return false, errors.Wrap(err, errFailedToComposeValues)
 	}
@@ -122,7 +122,7 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 		return false, nil
 	}
 
-	changed, err := newPatcher().hasUpdates(ctx, kube, in.PatchesFrom, s)
+	changed, err := newPatcher().hasUpdates(ctx, kube, in.PatchesFrom, s, namespace)
 	if err != nil {
 		return false, errors.Wrap(err, errFailedToLoadPatches)
 	}
@@ -143,7 +143,7 @@ func connectionDetails(ctx context.Context, kube client.Client, connDetails []v1
 
 	for _, cd := range connDetails {
 		ro := unstructuredFromObjectRef(cd.ObjectReference)
-		if err := kube.Get(ctx, types.NamespacedName{Name: ro.GetName(), Namespace: ro.GetNamespace()}, &ro); err != nil {
+		if err := kube.Get(ctx, types.NamespacedName{Name: ro.GetName(), Namespace: relNamespace}, &ro); err != nil {
 			return mcd, errors.Wrap(err, "cannot get object")
 		}
 
