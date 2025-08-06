@@ -23,7 +23,8 @@ cat <<EOF | ${KUBECTL} apply -f -
 apiVersion: helm.m.crossplane.io/v1beta1
 kind: ClusterProviderConfig
 metadata:
-  name: default
+  name: helm-provider-cluster
+  namespace: crossplane-system
 spec:
   credentials:
     source: InjectedIdentity
