@@ -94,7 +94,7 @@ CROSSPLANE_NAMESPACE = crossplane-system
 -include build/makelib/local.xpkg.mk
 -include build/makelib/controlplane.mk
 
-UPTEST_EXAMPLE_LIST ?= "examples/cluster/sample/release.yaml"
+UPTEST_EXAMPLE_LIST ?= "examples/cluster/sample/release.yaml,examples/namespaced/sample/release.yaml"
 uptest: $(UPTEST) $(KUBECTL) $(KUTTL)
 	@$(INFO) running automated tests
 	@KUBECTL=$(KUBECTL) KUTTL=$(KUTTL) CROSSPLANE_NAMESPACE=$(CROSSPLANE_NAMESPACE) $(UPTEST) e2e "$(UPTEST_EXAMPLE_LIST)" --setup-script=cluster/test/setup.sh || $(FAIL)

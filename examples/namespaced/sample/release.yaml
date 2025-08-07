@@ -1,7 +1,7 @@
 apiVersion: helm.m.crossplane.io/v1beta1
 kind: Release
 metadata:
-  name: wordpress-example
+  name: wordpress-example-crossplane
   namespace: crossplane-system
 spec:
 # rollbackLimit: 3

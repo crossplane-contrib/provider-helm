@@ -19,7 +19,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/api/types"
 
-	xpv1v1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
@@ -119,12 +118,12 @@ func Test_connector_Connect(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: providerName},
 		Spec: kconfig.ProviderConfigSpec{
 			Credentials: kconfig.ProviderCredentials{
-				Source: xpv1v1.CredentialsSourceNone,
+				Source: xpv1.CredentialsSourceNone,
 			},
 			Identity: &kconfig.Identity{
 				Type: kconfig.IdentityTypeGoogleApplicationCredentials,
 				ProviderCredentials: kconfig.ProviderCredentials{
-					Source: xpv1v1.CredentialsSourceNone,
+					Source: xpv1.CredentialsSourceNone,
 				},
 			},
 		},
@@ -135,25 +134,25 @@ func Test_connector_Connect(t *testing.T) {
 	}
 
 	providerConfigGoogleInjectedIdentity := *providerConfig.DeepCopy()
-	providerConfigGoogleInjectedIdentity.Spec.Identity.Source = xpv1v1.CredentialsSourceInjectedIdentity
+	providerConfigGoogleInjectedIdentity.Spec.Identity.Source = xpv1.CredentialsSourceInjectedIdentity
 
 	providerConfigAzure := helmv1beta1.ProviderConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: providerName},
 		Spec: kconfig.ProviderConfigSpec{
 			Credentials: kconfig.ProviderCredentials{
-				Source: xpv1v1.CredentialsSourceNone,
+				Source: xpv1.CredentialsSourceNone,
 			},
 			Identity: &kconfig.Identity{
 				Type: kconfig.IdentityTypeAzureServicePrincipalCredentials,
 				ProviderCredentials: kconfig.ProviderCredentials{
-					Source: xpv1v1.CredentialsSourceNone,
+					Source: xpv1.CredentialsSourceNone,
 				},
 			},
 		},
 	}
 
 	providerConfigAzureInjectedIdentity := *providerConfigAzure.DeepCopy()
-	providerConfigAzureInjectedIdentity.Spec.Identity.Source = xpv1v1.CredentialsSourceInjectedIdentity
+	providerConfigAzureInjectedIdentity.Spec.Identity.Source = xpv1.CredentialsSourceInjectedIdentity
 
 	providerConfigUnknownIdentitySource := *providerConfigAzure.DeepCopy()
 	providerConfigUnknownIdentitySource.Spec.Identity.Type = "foo"
