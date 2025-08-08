@@ -24,7 +24,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/crossplane/crossplane-runtime/pkg/logging"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
@@ -35,7 +36,8 @@ import (
 	"k8s.io/client-go/rest"
 	ktype "sigs.k8s.io/kustomize/api/types"
 
-	"github.com/crossplane-contrib/provider-helm/apis/release/v1beta1"
+	clusterv1beta1 "github.com/crossplane-contrib/provider-helm/apis/cluster/release/v1beta1"
+	namespacedv1beta1 "github.com/crossplane-contrib/provider-helm/apis/namespaced/release/v1beta1"
 )
 
 const (
@@ -62,7 +64,7 @@ type Client interface {
 	Upgrade(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error)
 	Rollback(release string) error
 	Uninstall(release string) error
-	PullAndLoadChart(spec *v1beta1.ChartSpec, creds *RepoCreds) (*chart.Chart, error)
+	PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*chart.Chart, error)
 }
 
 type client struct {
@@ -169,7 +171,7 @@ func getChartFileName(dir string) (string, error) {
 }
 
 // Pulls latest chart version. Returns absolute chartFilePath or error.
-func (hc *client) pullLatestChartVersion(spec *v1beta1.ChartSpec, creds *RepoCreds) (string, error) {
+func (hc *client) pullLatestChartVersion(chartUrl, chartName, chartVersion, chartRepo string, creds *RepoCreds) (string, error) {
 	tmpDir, err := os.MkdirTemp(chartCache, "")
 	if err != nil {
 		return "", err
@@ -180,7 +182,7 @@ func (hc *client) pullLatestChartVersion(spec *v1beta1.ChartSpec, creds *RepoCre
 		}
 	}()
 
-	if err := hc.pullChart(spec, creds, tmpDir); err != nil {
+	if err := hc.pullChart(chartUrl, chartName, chartVersion, chartRepo, creds, tmpDir); err != nil {
 		return "", err
 	}
 
@@ -196,20 +198,20 @@ func (hc *client) pullLatestChartVersion(spec *v1beta1.ChartSpec, creds *RepoCre
 	return chartFilePath, nil
 }
 
-func (hc *client) pullChart(spec *v1beta1.ChartSpec, creds *RepoCreds, chartDir string) error {
+func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo string, creds *RepoCreds, chartDir string) error {
 	pc := hc.pullClient
 
-	chartRef := spec.URL
-	if spec.URL == "" {
-		if registry.IsOCI(spec.Repository) {
-			chartRef = resolveOCIChartRef(spec.Repository, spec.Name)
+	chartRef := chartUrl
+	if chartUrl == "" {
+		if registry.IsOCI(chartRepo) {
+			chartRef = resolveOCIChartRef(chartRepo, chartName)
 		} else {
-			chartRef = spec.Name
-			pc.RepoURL = spec.Repository
+			chartRef = chartName
+			pc.RepoURL = chartRepo
 		}
-		pc.Version = spec.Version
-	} else if registry.IsOCI(spec.URL) {
-		ociURL, version, err := resolveOCIChartVersion(spec.URL)
+		pc.Version = chartVersion
+	} else if registry.IsOCI(chartUrl) {
+		ociURL, version, err := resolveOCIChartVersion(chartUrl)
 		if err != nil {
 			return err
 		}
@@ -222,7 +224,7 @@ func (hc *client) pullChart(spec *v1beta1.ChartSpec, creds *RepoCreds, chartDir 
 	pc.DestDir = chartDir
 
 	if creds.Username != "" && creds.Password != "" {
-		err := hc.login(spec, creds, pc.InsecureSkipTLSverify)
+		err := hc.login(chartUrl, chartRepo, creds, pc.InsecureSkipTLSverify)
 		if err != nil {
 			return err
 		}
@@ -236,10 +238,10 @@ func (hc *client) pullChart(spec *v1beta1.ChartSpec, creds *RepoCreds, chartDir 
 	return nil
 }
 
-func (hc *client) login(spec *v1beta1.ChartSpec, creds *RepoCreds, insecure bool) error {
-	ociURL := spec.URL
-	if spec.URL == "" {
-		ociURL = spec.Repository
+func (hc *client) login(chartUrl, chartRepo string, creds *RepoCreds, insecure bool) error {
+	ociURL := chartUrl
+	if chartUrl == "" {
+		ociURL = chartRepo
 	}
 	if !registry.IsOCI(ociURL) {
 		return nil
@@ -254,41 +256,57 @@ func (hc *client) login(spec *v1beta1.ChartSpec, creds *RepoCreds, insecure bool
 	return errors.Wrap(err, errFailedToLogin)
 }
 
-func (hc *client) PullAndLoadChart(spec *v1beta1.ChartSpec, creds *RepoCreds) (*chart.Chart, error) {
-	var chartFilePath string
+func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*chart.Chart, error) { //nolint:gocyclo
+	var chartFilePath, chartUrl, chartName, chartVersion, chartRepo string
 	var err error
+
+	switch r := mg.(type) {
+	case *clusterv1beta1.Release:
+		chartUrl = r.Spec.ForProvider.Chart.URL
+		chartVersion = r.Spec.ForProvider.Chart.Version
+		chartName = r.Spec.ForProvider.Chart.Name
+		chartRepo = r.Spec.ForProvider.Chart.Repository
+	case *namespacedv1beta1.Release:
+		chartUrl = r.Spec.ForProvider.Chart.URL
+		chartVersion = r.Spec.ForProvider.Chart.Version
+		chartName = r.Spec.ForProvider.Chart.Name
+		chartRepo = r.Spec.ForProvider.Chart.Repository
+	default:
+		return nil, errors.New("This object must be *clusterv1beta1.Release or *namespacedv1beta1.Release")
+	}
+
 	switch {
-	case spec.URL == "" && (spec.Version == "" || spec.Version == devel):
-		chartFilePath, err = hc.pullLatestChartVersion(spec, creds)
+	case chartUrl == "" && (chartVersion == "" || chartVersion == devel):
+		chartFilePath, err = hc.pullLatestChartVersion(chartUrl, chartName, chartVersion, chartRepo, creds)
 		if err != nil {
 			return nil, err
 		}
-	case registry.IsOCI(spec.URL):
-		u, v, err := resolveOCIChartVersion(spec.URL)
+	case registry.IsOCI(chartUrl):
+		u, v, err := resolveOCIChartVersion(chartUrl)
 		if err != nil {
 			return nil, err
 		}
 
 		if v == "" {
-			chartFilePath, err = hc.pullLatestChartVersion(spec, creds)
+			chartFilePath, err = hc.pullLatestChartVersion(chartUrl, chartName, chartVersion, chartRepo, creds)
 			if err != nil {
 				return nil, err
 			}
 		} else {
 			chartFilePath = resolveChartFilePath(path.Base(u.Path), v)
 		}
-	case spec.URL != "":
-		u, err := url.Parse(spec.URL)
+	case chartUrl != "":
+		u, err := url.Parse(chartUrl)
 		if err != nil {
 			return nil, errors.Wrap(err, errFailedToParseURL)
 		}
 		chartFilePath = filepath.Join(chartCache, path.Base(u.Path))
 	default:
-		chartFilePath = resolveChartFilePath(spec.Name, spec.Version)
+		chartFilePath = resolveChartFilePath(chartName, chartVersion)
 	}
 
 	if _, err := os.Stat(chartFilePath); os.IsNotExist(err) {
-		if err = hc.pullChart(spec, creds, chartCache); err != nil {
+		if err = hc.pullChart(chartUrl, chartName, chartVersion, chartRepo, creds, chartCache); err != nil {
 			return nil, err
 		}
 	} else if err != nil {

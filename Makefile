@@ -24,7 +24,7 @@ GO_TEST_PARALLEL := $(shell echo $$(( $(NPROCS) / 2 )))
 
 GO_STATIC_PACKAGES = $(GO_PROJECT)/cmd/provider
 GO_LDFLAGS += -X $(GO_PROJECT)/pkg/version.Version=$(VERSION)
-GO_SUBDIRS += cmd pkg apis
+GO_SUBDIRS += cmd pkg apis generate
 GO111MODULE = on
 GOLANGCILINT_VERSION = 2.1.2
 
@@ -33,7 +33,9 @@ GOLANGCILINT_VERSION = 2.1.2
 # ====================================================================================
 # Setup Kubernetes tools
 
-UP_CHANNEL = stable
+KIND_VERSION = v0.29.0
+UP_VERSION = v0.40.0-0.rc.3
+UP_CHANNEL = alpha
 KIND_NODE_IMAGE_TAG ?= v1.24.0
 USE_HELM3 = true
 -include build/makelib/k8s_tools.mk
@@ -87,12 +89,12 @@ cobertura:
 
 # ====================================================================================
 # End to End Testing
-CROSSPLANE_VERSION = 1.17.2
+CROSSPLANE_VERSION = 1.20.0
 CROSSPLANE_NAMESPACE = crossplane-system
 -include build/makelib/local.xpkg.mk
 -include build/makelib/controlplane.mk
 
-UPTEST_EXAMPLE_LIST ?= "examples/sample/release.yaml"
+UPTEST_EXAMPLE_LIST ?= "examples/cluster/sample/release.yaml,examples/namespaced/sample/release.yaml"
 uptest: $(UPTEST) $(KUBECTL) $(KUTTL)
 	@$(INFO) running automated tests
 	@KUBECTL=$(KUBECTL) KUTTL=$(KUTTL) CROSSPLANE_NAMESPACE=$(CROSSPLANE_NAMESPACE) $(UPTEST) e2e "$(UPTEST_EXAMPLE_LIST)" --setup-script=cluster/test/setup.sh || $(FAIL)
