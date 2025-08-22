@@ -651,6 +651,24 @@ func Test_helmExternal_Create(t *testing.T) {
 				err: nil,
 			},
 		},
+		"ReleaseNamespaceSpecified": {
+			args: args{
+				helm: &MockHelmClient{
+					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (*release.Release, error) {
+						return &release.Release{}, nil
+					},
+				},
+				kube: &test.MockClient{
+					MockCreate: test.NewMockCreateFn(nil),
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					r.Spec.ForProvider.Namespace = "remote-namespace"
+				}),
+			},
+			want: want{
+				err: nil,
+			},
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

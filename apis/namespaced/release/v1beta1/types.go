@@ -71,6 +71,9 @@ type ValuesSpec struct {
 // ReleaseParameters are the configurable fields of a Release.
 type ReleaseParameters struct {
 	Chart ChartSpec `json:"chart"`
+	// Namespace to install the release into.
+	// The Release Managed Resource's namespace will be used if nothing is set.
+	Namespace string `json:"namespace,omitempty"`
 	// Wait for the release to become ready.
 	Wait bool `json:"wait,omitempty"`
 	// WaitTimeout is the duration Helm will wait for the release to become

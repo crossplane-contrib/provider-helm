@@ -144,7 +144,13 @@ type connector struct {
 
 func withRelease(cr *v1beta1.Release) helmClient.ArgsApplier {
 	return func(config *helmClient.Args) {
+		// Default to the Managed Release's own namespace.
 		config.Namespace = cr.Namespace
+		if cr.Spec.ForProvider.Namespace != "" {
+			// Use the namespace specified in the Managed Release spec, if set.
+			config.Namespace = cr.Spec.ForProvider.Namespace
+		}
+
 		config.Wait = cr.Spec.ForProvider.Wait
 		config.Timeout = waitTimeout(cr)
 		config.SkipCRDs = cr.Spec.ForProvider.SkipCRDs
