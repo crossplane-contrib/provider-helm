@@ -159,7 +159,7 @@ spec:
                   namespace:
                     description: |-
                       Namespace to install the release into.
-                      The Release Managed Resource will be used if nothing is set.
+                      The Release Managed Resource's namespace will be used if nothing is set.
                     type: string
                   patchesFrom:
                     description: PatchesFrom describe patches to be applied to the
