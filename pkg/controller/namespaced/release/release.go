@@ -24,6 +24,8 @@ import (
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/storage/driver"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -324,6 +326,12 @@ func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed
 
 	e.logger.Debug("Creating")
 
+	if !cr.Spec.ForProvider.SkipCreateNamespace {
+		if err := e.createNamespace(ctx, cr.Spec.ForProvider.Namespace); err != nil {
+			return managed.ExternalCreation{}, errors.Wrap(err, errFailedToCreateNamespace)
+		}
+	}
+
 	return managed.ExternalCreation{}, errors.Wrap(e.deploy(ctx, cr, e.helm.Install), errFailedToInstall)
 }
 
@@ -379,6 +387,19 @@ func rollBackEnabled(cr *v1beta1.Release) bool {
 }
 func rollBackLimitReached(cr *v1beta1.Release) bool {
 	return cr.Status.Failed >= *cr.Spec.RollbackRetriesLimit
+}
+
+func (e *helmExternal) createNamespace(ctx context.Context, name string) error {
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+			Labels: map[string]string{
+				helmNamespaceLabel: helmProviderName,
+			},
+		},
+	}
+
+	return client.IgnoreAlreadyExists(e.kube.Create(ctx, ns))
 }
 
 func waitTimeout(cr *v1beta1.Release) time.Duration {

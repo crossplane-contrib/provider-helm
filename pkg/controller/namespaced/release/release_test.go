@@ -56,6 +56,7 @@ func helmRelease(rm ...helmReleaseModifier) *v1beta1.Release {
 				},
 			},
 			ForProvider: v1beta1.ReleaseParameters{
+				SkipCreateNamespace: true,
 				Chart: v1beta1.ChartSpec{
 					Name:    testChart,
 					Version: testVersion,
@@ -663,6 +664,58 @@ func Test_helmExternal_Create(t *testing.T) {
 				},
 				mg: helmRelease(func(r *v1beta1.Release) {
 					r.Spec.ForProvider.Namespace = "remote-namespace"
+				}),
+			},
+			want: want{
+				err: nil,
+			},
+		},
+		"CreateNamespaceFailed": {
+			args: args{
+				kube: &test.MockClient{
+					MockCreate: test.NewMockCreateFn(errBoom),
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					r.Spec.ForProvider.Namespace = "myNamespace"
+					r.Spec.ForProvider.SkipCreateNamespace = false
+				}),
+			},
+			want: want{
+				err: errors.Wrap(errBoom, errFailedToCreateNamespace),
+			},
+		},
+		"CreateNamespaceAlreadyExists": {
+			args: args{
+				kube: &test.MockClient{
+					MockCreate: test.NewMockCreateFn(kerrors.NewAlreadyExists(corev1.Resource("namespaces"), "myNamespace")),
+				},
+				helm: &MockHelmClient{
+					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (*release.Release, error) {
+						return &release.Release{}, nil
+					},
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					r.Spec.ForProvider.Namespace = "myNamespace"
+					r.Spec.ForProvider.SkipCreateNamespace = false
+				}),
+			},
+			want: want{
+				err: nil,
+			},
+		},
+		"CreateNamespaceSuccess": {
+			args: args{
+				kube: &test.MockClient{
+					MockCreate: test.NewMockCreateFn(nil),
+				},
+				helm: &MockHelmClient{
+					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (*release.Release, error) {
+						return &release.Release{}, nil
+					},
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					r.Spec.ForProvider.Namespace = "myNamespace"
+					r.Spec.ForProvider.SkipCreateNamespace = false
 				}),
 			},
 			want: want{

@@ -1,4 +1,4 @@
-apiVersion: helm.crossplane.io/v1beta1
+apiVersion: helm.m.crossplane.io/v1beta1
 kind: Release
 metadata:
   name: wordpress-example

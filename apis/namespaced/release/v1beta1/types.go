@@ -74,6 +74,8 @@ type ReleaseParameters struct {
 	// Namespace to install the release into.
 	// The Release Managed Resource's namespace will be used if nothing is set.
 	Namespace string `json:"namespace,omitempty"`
+	// SkipCreateNamespace won't create the namespace for the release. This requires the namespace to already exist.
+	SkipCreateNamespace bool `json:"skipCreateNamespace,omitempty"`
 	// Wait for the release to become ready.
 	Wait bool `json:"wait,omitempty"`
 	// WaitTimeout is the duration Helm will wait for the release to become
