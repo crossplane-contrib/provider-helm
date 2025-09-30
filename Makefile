@@ -38,6 +38,8 @@ UP_VERSION = v0.40.0-0.rc.3
 UP_CHANNEL = alpha
 KIND_NODE_IMAGE_TAG ?= v1.24.0
 USE_HELM3 = true
+UPTEST_VERSION = v2.0.1
+
 -include build/makelib/k8s_tools.mk
 
 # ====================================================================================
@@ -95,9 +97,9 @@ CROSSPLANE_NAMESPACE = crossplane-system
 -include build/makelib/controlplane.mk
 
 UPTEST_EXAMPLE_LIST ?= "examples/cluster/sample/release.yaml,examples/namespaced/sample/release.yaml"
-uptest: $(UPTEST) $(KUBECTL) $(KUTTL)
+uptest: $(UPTEST) $(KUBECTL) $(CHAINSAW) $(CROSSPLANE_CLI)
 	@$(INFO) running automated tests
-	@KUBECTL=$(KUBECTL) KUTTL=$(KUTTL) CROSSPLANE_NAMESPACE=$(CROSSPLANE_NAMESPACE) $(UPTEST) e2e "$(UPTEST_EXAMPLE_LIST)" --setup-script=cluster/test/setup.sh || $(FAIL)
+	@KUBECTL=$(KUBECTL) CHAINSAW=$(CHAINSAW) CROSSPLANE_CLI=$(CROSSPLANE_CLI) CROSSPLANE_NAMESPACE=$(CROSSPLANE_NAMESPACE) $(UPTEST) e2e "$(UPTEST_EXAMPLE_LIST)" --setup-script=cluster/test/setup.sh || $(FAIL)
 	@$(OK) running automated tests
 
 local-dev: controlplane.up
