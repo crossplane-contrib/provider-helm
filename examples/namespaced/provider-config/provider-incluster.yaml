@@ -3,7 +3,7 @@ kind: Provider
 metadata:
   name: provider-helm
 spec:
-  package: xpkg.upbound.io/upbound/provider-helm:v0.20.0
+  package: xpkg.crossplane.io/crossplane-contrib/provider-helm:v1.0.0
   runtimeConfigRef:
     apiVersion: pkg.crossplane.io/v1beta1
     kind: DeploymentRuntimeConfig

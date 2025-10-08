@@ -19,7 +19,7 @@ so using the Crossplane CLI in a Kubernetes cluster where Crossplane is
 installed:
 
 ```console
-crossplane xpkg install provider xpkg.upbound.io/upbound/provider-helm:v0.20.0
+crossplane xpkg install provider xpkg.crossplane.io/crossplane-contrib/provider-helm:v0.20.0
 ```
 
 Then you will need to create a `ProviderConfig` that specifies the credentials
