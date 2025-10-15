@@ -14,5 +14,5 @@ maintainers.
 * Hasan Turken <hasan@upbound.io> ([turkenh](https://github.com/turkenh))
 * Lovro Sviben <lovro.sviben@upbound.io> ([lsviben](https://github.com/lsviben)) 
 * Erhan Cagirici <erhan@upbound.io> ([erhancagirici](https://github.com/erhancagirici))
-* Sergen Yalcin <sergen@upbound.com> ([sergenyalcin](https://github.com/sergenyalcin))
+* Sergen Yalcin <sergen@upbound.io> ([sergenyalcin](https://github.com/sergenyalcin))
 * Fatih Turken <fatih@upbound.io> ([turkenf](https://github.com/turkenf)))
