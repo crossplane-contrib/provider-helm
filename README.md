@@ -19,7 +19,7 @@ so using the Crossplane CLI in a Kubernetes cluster where Crossplane is
 installed:
 
 ```console
-crossplane xpkg install provider xpkg.crossplane.io/crossplane-contrib/provider-helm:v0.20.0
+crossplane xpkg install provider xpkg.crossplane.io/crossplane-contrib/provider-helm:v1.2.0
 ```
 
 Then you will need to create a `ProviderConfig` that specifies the credentials
@@ -73,7 +73,7 @@ simply run:
 make run
 ```
 
-Since the controller is running outside of the local cluster, you need to make
+Since the controller is running outside the local cluster, you need to make
 the API server accessible (on a separate terminal):
 
 ```console
