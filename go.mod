@@ -1,6 +1,6 @@
 module github.com/crossplane-contrib/provider-helm
 
-go 1.24.10
+go 1.24.11
 
 tool golang.org/x/tools/cmd/goimports
 
