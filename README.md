@@ -19,7 +19,7 @@ so using the Crossplane CLI in a Kubernetes cluster where Crossplane is
 installed:
 
 ```console
-crossplane xpkg install provider xpkg.crossplane.io/crossplane-contrib/provider-helm:v0.20.0
+crossplane xpkg install provider xpkg.crossplane.io/crossplane-contrib/provider-helm:v1.0.4
 ```
 
 Then you will need to create a `ProviderConfig` that specifies the credentials
@@ -34,27 +34,27 @@ An alternative, that will get you started quickly, is to reuse existing
 credentials from within the control plane.
 
 First install `provider-helm` with [additional
-configuration](./examples/provider-config/provider-incluster.yaml) to bind its
+configuration](./examples/cluster/provider-config/provider-incluster.yaml) to bind its
 service account to an existing role in the cluster:
 
 ```console 
-kubectl apply -f ./examples/provider-config/provider-incluster.yaml
+kubectl apply -f ./examples/cluster/provider-config/provider-incluster.yaml
 ```
 
 Then simply create a
-[`ProviderConfig`](./examples/provider-config/provider-config-incluster.yaml)
+[`ProviderConfig`](./examples/cluster/provider-config/provider-config-incluster.yaml)
 that uses an `InjectedIdentity` source:
   
 ```console 
-kubectl apply -f ./examples/provider-config/provider-config-incluster.yaml
+kubectl apply -f ./examples/cluster/provider-config/provider-config-incluster.yaml
 ```
 
 `provider-helm` will then be installed and ready to use within the cluster. You
 can now create `Release` resources, such as [sample
-release.yaml](examples/sample/release.yaml).
+release.yaml](examples/cluster/sample/release.yaml).
 
 ```console
-kubectl create -f examples/sample/release.yaml
+kubectl create -f examples/cluster/sample/release.yaml
 ```
 
 ## Design 
@@ -86,12 +86,12 @@ using `kind` for local development):
 ```console
 KUBECONFIG=$(kind get kubeconfig | sed -e 's|server:\s*.*$|server: http://localhost:8081|g')
 kubectl -n crossplane-system create secret generic cluster-config --from-literal=kubeconfig="${KUBECONFIG}" 
-kubectl apply -f examples/provider-config/provider-config-with-secret.yaml
+kubectl apply -f examples/cluster/provider-config/provider-config-with-secret.yaml
 ```
 
 Now you can create `Release` resources with this `ProviderConfig`, for example
-[sample release.yaml](examples/sample/release.yaml).
+[sample release.yaml](examples/cluster/sample/release.yaml).
 
 ```console
-kubectl create -f examples/sample/release.yaml
+kubectl create -f examples/cluster/sample/release.yaml
 ```
