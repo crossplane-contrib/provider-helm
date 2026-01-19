@@ -19,6 +19,9 @@ spec:
   scope: Cluster
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .spec.forProvider.namespace
+      name: NAMESPACE
+      type: string
     - jsonPath: .spec.forProvider.chart.name
       name: CHART
       type: string
@@ -422,6 +425,9 @@ spec:
     subresources:
       status: {}
   - additionalPrinterColumns:
+    - jsonPath: .spec.forProvider.namespace
+      name: NAMESPACE
+      type: string
     - jsonPath: .spec.forProvider.chart.name
       name: CHART
       type: string
