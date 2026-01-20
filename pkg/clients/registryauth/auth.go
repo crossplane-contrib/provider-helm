@@ -153,17 +153,14 @@ func (r *Resolver) resolveKeychainAuth(registryURL string) (*helmClient.RepoCred
 		return nil, err
 	}
 
-	keychain, err := r.createKeychain()
-	if err != nil {
-		return nil, err
-	}
+	keychain := r.createKeychain()
 
 	return r.resolveCredentialsFromKeychain(keychain, ref.Context())
 }
 
 // createKeychain creates a keychain that supports cloud provider authentication.
 // Uses credential helpers (AWS ECR, GCP, Azure).
-func (r *Resolver) createKeychain() (authn.Keychain, error) {
+func (r *Resolver) createKeychain() authn.Keychain {
 	// Create a custom MultiKeychain with cloud providers first, then fallbacks.
 	//
 	// Priority:
@@ -179,7 +176,7 @@ func (r *Resolver) createKeychain() (authn.Keychain, error) {
 		authn.DefaultKeychain,
 	}
 
-	return authn.NewMultiKeychain(keychains...), nil
+	return authn.NewMultiKeychain(keychains...)
 }
 
 // parseRegistryReference converts a Helm OCI URL to a container registry reference
@@ -201,12 +198,14 @@ func (r *Resolver) resolveCredentialsFromKeychain(keychain authn.Keychain, resou
 	authenticator, err := keychain.Resolve(resource)
 	if err != nil {
 		// If keychain resolution fails, return empty credentials for public/anonymous access
+		//nolint:nilerr
 		return &helmClient.RepoCreds{}, nil
 	}
 
 	authConfig, err := authenticator.Authorization()
 	if err != nil {
 		// If authorization fails, return empty credentials for public/anonymous access
+		//nolint:nilerr
 		return &helmClient.RepoCreds{}, nil
 	}
 
