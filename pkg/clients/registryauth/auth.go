@@ -95,7 +95,7 @@ func (r *Resolver) ResolveNamespaced(ctx context.Context, release *namespacedv1b
 	}
 
 	// Otherwise, use default credential chain (AWS IRSA, Azure/GCP Workload Identity, etc.)
-	return r.resolveKeychainAuth(fullRepoURL)
+	return r.resolveKeychainAuth(ctx, fullRepoURL)
 }
 
 // ResolveCluster resolves registry credentials for a cluster-scoped Release
@@ -122,7 +122,7 @@ func (r *Resolver) ResolveCluster(ctx context.Context, release *clusterv1beta1.R
 	}
 
 	// Otherwise, use default credential chain (AWS IRSA, Azure/GCP Workload Identity, etc.)
-	return r.resolveKeychainAuth(fullRepoURL)
+	return r.resolveKeychainAuth(ctx, fullRepoURL)
 }
 
 func (r *Resolver) resolveSecretCredentials(ctx context.Context, namespace, name string) (*helmClient.RepoCreds, error) {
@@ -147,7 +147,7 @@ func (r *Resolver) resolveSecretCredentials(ctx context.Context, namespace, name
 // resolveKeychainAuth uses cloud provider credential helpers for authentication
 // including AWS ECR (IRSA), GCP GAR/GCR (Workload Identity), Azure ACR (Workload Identity).
 // For public registries, it returns empty credentials.
-func (r *Resolver) resolveKeychainAuth(registryURL string) (*helmClient.RepoCreds, error) {
+func (r *Resolver) resolveKeychainAuth(ctx context.Context, registryURL string) (*helmClient.RepoCreds, error) {
 	ref, err := parseRegistryReference(registryURL)
 	if err != nil {
 		return nil, err
@@ -155,7 +155,7 @@ func (r *Resolver) resolveKeychainAuth(registryURL string) (*helmClient.RepoCred
 
 	keychain := r.createKeychain()
 
-	return r.resolveCredentialsFromKeychain(keychain, ref.Context())
+	return r.resolveCredentialsFromKeychain(ctx, keychain, ref.Context())
 }
 
 // createKeychain creates a keychain that supports cloud provider authentication.
@@ -194,15 +194,15 @@ func parseRegistryReference(registryURL string) (name.Reference, error) {
 
 // resolveCredentialsFromKeychain resolves credentials from a keychain for a given resource.
 // Returns empty credentials if authentication is not available (for public registries or anonymous access).
-func (r *Resolver) resolveCredentialsFromKeychain(keychain authn.Keychain, resource authn.Resource) (*helmClient.RepoCreds, error) {
-	authenticator, err := keychain.Resolve(resource)
+func (r *Resolver) resolveCredentialsFromKeychain(ctx context.Context, keychain authn.Keychain, resource authn.Resource) (*helmClient.RepoCreds, error) {
+	authenticator, err := authn.Resolve(ctx, keychain, resource)
 	if err != nil {
 		// If keychain resolution fails, return empty credentials for public/anonymous access
 		//nolint:nilerr
 		return &helmClient.RepoCreds{}, nil
 	}
 
-	authConfig, err := authenticator.Authorization()
+	authConfig, err := authn.Authorization(ctx, authenticator)
 	if err != nil {
 		// If authorization fails, return empty credentials for public/anonymous access
 		//nolint:nilerr
