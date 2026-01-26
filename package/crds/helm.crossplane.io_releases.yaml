@@ -553,8 +553,10 @@ spec:
                           not set
                         type: string
                       pullSecretRef:
-                        description: PullSecretRef is reference to the secret containing
-                          credentials to helm repository
+                        description: |-
+                          PullSecretRef is reference to the secret containing credentials to helm repository.
+                          The secret must contain 'username' and 'password' keys. Optional - if not provided,
+                          the default credential chain is used (AWS IRSA, Azure/GCP Workload Identity, etc.).
                         properties:
                           name:
                             description: Name of the secret.

@@ -46,6 +46,7 @@ import (
 	"github.com/crossplane-contrib/provider-helm/apis/namespaced/release/v1beta1"
 	namespacedv1beta1 "github.com/crossplane-contrib/provider-helm/apis/namespaced/v1beta1"
 	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
+	"github.com/crossplane-contrib/provider-helm/pkg/clients/registryauth"
 )
 
 const (
@@ -59,7 +60,6 @@ const (
 
 const (
 	errNotRelease                 = "managed resource is not a Release custom resource"
-	errProviderConfigNotSet       = "provider config is not set"
 	errGetProviderConfig          = "cannot get provider config"
 	errNewHelmClient              = "cannot create new Helm client"
 	errFailedToGetLastRelease     = "failed to get last helm release"
@@ -272,7 +272,8 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action d
 		return errors.Wrap(err, errFailedToComposeValues)
 	}
 
-	creds, err := repoCredsFromSecret(ctx, e.localKube, cr.Namespace, cr.Spec.ForProvider.Chart.PullSecretRef)
+	resolver := registryauth.NewResolver(e.localKube)
+	creds, err := resolver.ResolveNamespaced(ctx, cr)
 	if err != nil {
 		return errors.Wrap(err, errFailedToGetRepoCreds)
 	}

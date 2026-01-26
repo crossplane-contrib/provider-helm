@@ -36,7 +36,9 @@ type ChartSpec struct {
 	Version string `json:"version,omitempty"`
 	// URL to chart package (typically .tgz), optional and overrides others fields in the spec
 	URL string `json:"url,omitempty"`
-	// PullSecretRef is reference to the secret containing credentials to helm repository
+	// PullSecretRef is reference to the secret containing credentials to helm repository.
+	// The secret must contain 'username' and 'password' keys. Optional - if not provided,
+	// the default credential chain is used (AWS IRSA, Azure/GCP Workload Identity, etc.).
 	PullSecretRef xpv1.LocalSecretReference `json:"pullSecretRef,omitempty"`
 }
 
