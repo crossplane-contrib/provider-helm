@@ -12,7 +12,7 @@ on:
 
 jobs:
   create-tag:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -24,3 +24,4 @@ jobs:
           version: ${{ github.event.inputs.version }}
           message: ${{ github.event.inputs.message }}
           token: ${{ secrets.GITHUB_TOKEN }}
+
