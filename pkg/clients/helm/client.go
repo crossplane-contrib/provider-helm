@@ -290,13 +290,13 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 			return nil, err
 		}
 
-		if v == "" {
+		if v == "" || strings.Contains(u.Path, "@") {
 			chartFilePath, err = hc.pullLatestChartVersion(chartUrl, chartName, chartVersion, chartRepo, creds)
 			if err != nil {
 				return nil, err
 			}
 		} else {
-			chartFilePath = resolveChartFilePath(path.Base(u.Path), v)
+			chartFilePath = resolveChartFilePath(ociChartNameFromPath(u.Path), v)
 		}
 	case chartUrl != "":
 		u, err := url.Parse(chartUrl)
@@ -372,12 +372,10 @@ func resolveOCIChartVersion(chartURL string) (*url.URL, string, error) {
 	if err != nil {
 		return nil, "", errors.Wrap(err, errFailedToParseURL)
 	}
-	parts := strings.Split(ociURL.Path, ":")
-	if len(parts) > 1 {
-		ociURL.Path = parts[0]
-		return ociURL, parts[1], nil
-	}
-	return ociURL, "", nil
+
+	chartPath, version := splitOCIChartPathVersion(ociURL.Path)
+	ociURL.Path = chartPath
+	return ociURL, version, nil
 }
 
 func resolveChartFilePath(name string, version string) string {
@@ -387,4 +385,28 @@ func resolveChartFilePath(name string, version string) string {
 
 func resolveOCIChartRef(repository string, name string) string {
 	return strings.Join([]string{strings.TrimSuffix(repository, "/"), name}, "/")
+}
+
+func splitOCIChartPathVersion(chartPath string) (string, string) {
+	refPath := chartPath
+	digest := ""
+	if digestStart := strings.Index(chartPath, "@"); digestStart >= 0 {
+		refPath = chartPath[:digestStart]
+		digest = chartPath[digestStart:]
+	}
+
+	tagStart := strings.LastIndex(refPath, ":")
+	if tagStart > strings.LastIndex(refPath, "/") {
+		return refPath[:tagStart] + digest, refPath[tagStart+1:]
+	}
+
+	return refPath + digest, ""
+}
+
+func ociChartNameFromPath(chartPath string) string {
+	chartName := path.Base(chartPath)
+	if name, _, found := strings.Cut(chartName, "@"); found {
+		return name
+	}
+	return chartName
 }

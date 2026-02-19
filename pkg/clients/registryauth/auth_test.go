@@ -341,3 +341,56 @@ func TestResolveCluster(t *testing.T) {
 		})
 	}
 }
+
+func TestParseRegistryReference(t *testing.T) {
+	tests := map[string]struct {
+		url     string
+		wantRef string
+		wantErr bool
+	}{
+		"RepositoryOnly": {
+			url:     "oci://registry.example.com/charts/my-chart",
+			wantRef: "registry.example.com/charts/my-chart:latest",
+		},
+		"RepositoryWithPort": {
+			url:     "oci://localhost:5000/helm-charts/my-chart",
+			wantRef: "localhost:5000/helm-charts/my-chart:latest",
+		},
+		"TaggedRef": {
+			url:     "oci://registry.example.com/charts/my-chart:1.2.3",
+			wantRef: "registry.example.com/charts/my-chart:latest",
+		},
+		"DigestRef": {
+			url:     "oci://registry.example.com/charts/my-chart@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			wantRef: "registry.example.com/charts/my-chart:latest",
+		},
+		"TagAndDigestRef": {
+			url:     "oci://registry.example.com/charts/my-chart:1.2.3@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			wantRef: "registry.example.com/charts/my-chart:latest",
+		},
+		"InvalidRef": {
+			url:     "oci://",
+			wantErr: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := parseRegistryReference(tc.url)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseRegistryReference(%q): expected error", tc.url)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("parseRegistryReference(%q): %v", tc.url, err)
+			}
+
+			if diff := cmp.Diff(tc.wantRef, got.String()); diff != "" {
+				t.Fatalf("parseRegistryReference(%q) mismatch (-want +got):\n%s", tc.url, diff)
+			}
+		})
+	}
+}

@@ -54,6 +54,16 @@ func normalizeRegistryURL(registryURL string) string {
 	switch {
 	case strings.HasPrefix(ref, "oci://"):
 		ref = strings.TrimPrefix(ref, "oci://")
+		// Strip digest suffix if present.
+		if digestStart := strings.Index(ref, "@"); digestStart >= 0 {
+			ref = ref[:digestStart]
+		}
+
+		// Strip tag suffix from the repository path if present.
+		// Keep host ports intact by only considering colons after the last slash.
+		if tagStart := strings.LastIndex(ref, ":"); tagStart > strings.LastIndex(ref, "/") {
+			ref = ref[:tagStart]
+		}
 	case strings.HasPrefix(ref, "https://"):
 		ref = strings.TrimPrefix(ref, "https://")
 	case strings.HasPrefix(ref, "http://"):

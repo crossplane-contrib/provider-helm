@@ -1,0 +1,17 @@
+apiVersion: helm.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: wordpress-example-oci-digest
+spec:
+  forProvider:
+    chart:
+      url: "oci://registry-1.docker.io/bitnamicharts/wordpress:22.2.6@sha256:375abc2660581ddd8dab611396d11784def78932af792eaa6ac224bd6d35f5a1"
+    namespace: wordpress
+    values:
+      service:
+        type: ClusterIP
+    set:
+      - name: param1
+        value: value2
+  providerConfigRef:
+    name: helm-provider
