@@ -1,0 +1,21 @@
+apiVersion: helm.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: wordpress-digest-example
+spec:
+  forProvider:
+    chart:
+      name: wordpress
+      repository: "oci://localhost:5000/helm-charts"
+      version: 15.2.5
+      # Digest provides immutable chart pinning for enhanced supply chain security
+      # Only supported for OCI registries
+      # When digest is specified, the provider validates cached charts against the digest
+      # and only re-downloads if the digest doesn't match, reducing network traffic
+      digest: "sha256:d1c2884a2ac2d2f80fb1bf384e45b4cc72669498ccd237843dcc63bfcac810a3"
+    namespace: wordpress
+    values:
+      service:
+        type: ClusterIP
+  providerConfigRef:
+    name: helm-provider

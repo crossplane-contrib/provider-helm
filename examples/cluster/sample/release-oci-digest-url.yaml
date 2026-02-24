@@ -1,0 +1,17 @@
+apiVersion: helm.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: wordpress-digest-url-example
+spec:
+  forProvider:
+    chart:
+      # Using digest directly in the URL (OCI format)
+      # This ensures the exact chart is pulled regardless of tags
+      # The provider validates cached charts against the digest and reuses them when possible
+      url: "oci://localhost:5000/helm-charts/wordpress@sha256:d1c2884a2ac2d2f80fb1bf384e45b4cc72669498ccd237843dcc63bfcac810a3"
+    namespace: wordpress
+    values:
+      service:
+        type: ClusterIP
+  providerConfigRef:
+    name: helm-provider

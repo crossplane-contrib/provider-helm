@@ -1,0 +1,21 @@
+apiVersion: helm.m.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: podinfo-digest-example
+  namespace: crossplane-system
+spec:
+  forProvider:
+    chart:
+      # Pull repository + name + digest
+      name: podinfo
+      # Digest provides immutable chart pinning for enhanced supply chain security
+      # Only supported for OCI registries
+      # When digest is specified, the provider validates cached charts against the digest
+      # and only re-downloads if the digest doesn't match, reducing network traffic
+      digest: sha256:c56f4d760bc9da702f231f37fcec89c66b0993f0cb91446f86d014b133c6693f
+      repository: oci://ghcr.io/stefanprodan/charts
+      version: 6.10.2
+    namespace: crossplane-system
+  providerConfigRef:
+    kind: ProviderConfig
+    name: helm-provider

@@ -35,6 +35,12 @@ type ChartSpec struct {
 	Version string `json:"version,omitempty"`
 	// URL to chart package (typically .tgz), optional and overrides others fields in the spec
 	URL string `json:"url,omitempty"`
+	// Digest is the OCI image digest in the format "sha256:abc123..."
+	// Only supported for OCI registries. When specified, the chart will be pulled by digest.
+	// Can be used alone or in combination with Version. Optional.
+	// +kubebuilder:validation:Pattern=`^sha256:[a-f0-9]{64}$`
+	// +optional
+	Digest string `json:"digest,omitempty"`
 	// PullSecretRef is reference to the secret containing credentials to helm repository.
 	// The secret must contain 'username' and 'password' keys. Optional - if not provided,
 	// the default credential chain is used (AWS IRSA, Azure/GCP Workload Identity, etc.).

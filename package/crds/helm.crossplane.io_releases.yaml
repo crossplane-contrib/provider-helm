@@ -548,6 +548,13 @@ spec:
                   chart:
                     description: A ChartSpec defines the chart spec for a Release
                     properties:
+                      digest:
+                        description: |-
+                          Digest is the OCI image digest in the format "sha256:abc123..."
+                          Only supported for OCI registries. When specified, the chart will be pulled by digest.
+                          Can be used alone or in combination with Version. Optional.
+                        pattern: ^sha256:[a-f0-9]{64}$
+                        type: string
                       name:
                         description: Name of Helm chart, required if ChartSpec.URL
                           not set

@@ -60,6 +60,19 @@ func normalizeRegistryURL(registryURL string) string {
 		ref = strings.TrimPrefix(ref, "http://")
 	}
 
+	// Strip digest (@sha256:...) if present
+	if idx := strings.Index(ref, "@"); idx != -1 {
+		ref = ref[:idx]
+	}
+
+	// Strip version/tag (:tag) if present, but be careful not to strip port numbers
+	// Only strip if there's a / before the :, indicating it's a tag not a port
+	if idx := strings.LastIndex(ref, ":"); idx != -1 {
+		if lastSlash := strings.LastIndex(ref, "/"); lastSlash > 0 && idx > lastSlash {
+			ref = ref[:idx]
+		}
+	}
+
 	return strings.TrimSuffix(ref, "/")
 }
 

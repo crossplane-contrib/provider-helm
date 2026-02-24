@@ -75,8 +75,7 @@ const (
 	errFailedToTrackUsage         = "cannot track provider config usage"
 	errFailedToLoadPatches        = "failed to load patches"
 	errFailedToUpdatePatchSha     = "failed to update patch sha"
-	errFailedToSetName            = "failed to update chart spec with the name from URL"
-	errFailedToSetVersion         = "failed to update chart spec with the latest version"
+	errFailedToLateInitialize     = "failed to update chart spec with late-initialized values"
 	errFailedToCreateNamespace    = "failed to create namespace for release"
 )
 
@@ -283,16 +282,24 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action d
 	if err != nil {
 		return err
 	}
+	needsUpdate := false
+
 	if cr.Spec.ForProvider.Chart.Name == "" {
 		cr.Spec.ForProvider.Chart.Name = chart.Metadata.Name
-		if err := e.localKube.Update(ctx, cr); err != nil {
-			return errors.Wrap(err, errFailedToSetName)
-		}
+		needsUpdate = true
 	}
 	if cr.Spec.ForProvider.Chart.Version == "" {
 		cr.Spec.ForProvider.Chart.Version = chart.Metadata.Version
+		needsUpdate = true
+	}
+	// Note: Digest is NOT late-initialized because:
+	// 1. Chart metadata doesn't contain OCI digest
+	// 2. Digest is user-specified for immutability
+	// 3. Helm verifies digest during pull
+
+	if needsUpdate {
 		if err := e.localKube.Update(ctx, cr); err != nil {
-			return errors.Wrap(err, errFailedToSetVersion)
+			return errors.Wrap(err, errFailedToLateInitialize)
 		}
 	}
 
