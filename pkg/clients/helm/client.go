@@ -44,10 +44,15 @@ import (
 )
 
 const (
-	helmDriverSecret  = "secret"
-	chartCache        = "/tmp/charts"
+	helmDriverSecret = "secret"
+	// releaseMaxHistory is the maximum number of entries Helm will keep in
+	// release history. We just set a reasonable default for our use case.
 	releaseMaxHistory = 20
 )
+
+// chartCache is the directory where pulled chart tarballs are stored. It is
+// mutable in tests so that they can override it with a temporary location.
+var chartCache = "/tmp/charts"
 
 const (
 	errFailedToCheckIfLocalChartExists = "failed to check if cached chart file exists"
@@ -275,6 +280,67 @@ func (hc *client) login(chartUrl, chartRepo string, creds *RepoCreds, insecure b
 	return errors.Wrap(err, errFailedToLogin)
 }
 
+// ensureChartCached verifies a chart exists in the cache and pulls it if missing.
+// It uses os.OpenRoot for secure file access with kernel-level path traversal protection.
+// Returns the final absolute path to the cached chart file or an error.
+func (hc *client) ensureChartCached(chartFilePath, chartUrl, chartName, chartVersion, chartRepo string, creds *RepoCreds) (string, error) {
+	// Open root directory for secure file access (prevents path traversal at kernel level)
+	root, err := os.OpenRoot(chartCache)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to open chart cache directory")
+	}
+	defer func() {
+		if cerr := root.Close(); cerr != nil {
+			hc.log.WithValues("chartCache", chartCache, "error", cerr).Info("failed to close root directory")
+		}
+	}()
+
+	// filepath.Base() strips directory components, neutralizing path traversal in chartFilePath
+	chartFileName := filepath.Base(chartFilePath)
+
+	// Check if chart exists in cache
+	// os.Root provides kernel-level protection against path traversal
+	fileInfo, err := root.Stat(chartFileName)
+	switch {
+	case os.IsNotExist(err):
+		// Normal cache miss: pull chart into temp dir then atomically move into cache
+		tmpDir, err := os.MkdirTemp(chartCache, "")
+		if err != nil {
+			return "", err
+		}
+		defer func() {
+			if err := os.RemoveAll(tmpDir); err != nil {
+				hc.log.WithValues("tmpDir", tmpDir).Info("failed to remove temporary directory")
+			}
+		}()
+
+		if err = hc.pullChart(chartUrl, chartName, chartVersion, chartRepo, creds, tmpDir); err != nil {
+			return "", err
+		}
+
+		// Determine the pulled file name
+		pulledName, err := getChartFileName(tmpDir)
+		if err != nil {
+			return "", err
+		}
+
+		// Atomically move pulled artifact into cache using safe path construction
+		dstPath := safePath(chartCache, chartFileName)
+		srcPath := safePath(tmpDir, pulledName)
+		// G703: safePath() sanitizes with filepath.Base() preventing traversal
+		if err := os.Rename(srcPath, dstPath); err != nil { //nolint:gosec
+			return "", err
+		}
+	case err != nil:
+		return "", errors.Wrap(err, errFailedToCheckIfLocalChartExists)
+	case fileInfo.IsDir():
+		return "", errors.New("expected chart file, got directory")
+	}
+
+	// Return final absolute path
+	return filepath.Join(chartCache, chartFileName), nil
+}
+
 func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*chart.Chart, error) { //nolint:gocyclo
 	var chartFilePath, chartUrl, chartName, chartVersion, chartDigest, chartRepo string
 	var err error
@@ -321,23 +387,7 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 		switch {
 		case d != "":
 			// Digest in URL: check if cached version matches digest
-			if v != "" {
-				cachedPath := resolveChartFilePath(path.Base(u.Path), v)
-				if match, cachedDigest, err := cacheDigestMatches(cachedPath, d); err != nil {
-					// can't read cached file: treat as miss
-					hc.log.Debug("failed to verify cached digest, will pull fresh", "path", cachedPath, "err", err)
-					chartFilePath = ""
-				} else if match {
-					hc.log.Debug("Cache hit: digest matches", "path", cachedPath, "digest", d)
-					chartFilePath = cachedPath
-				} else {
-					hc.log.Debug("Cache digest mismatch, will pull fresh", "path", cachedPath, "requestedDigest", d, "cachedDigest", cachedDigest)
-					chartFilePath = ""
-				}
-			} else {
-				// No version to construct cache path, must pull
-				chartFilePath = ""
-			}
+			chartFilePath = resolveCachedChartPathWithDigest(path.Base(u.Path), v, d, hc.log)
 		case v == "":
 			// No version in URL: pull latest
 			chartFilePath, err = hc.pullLatestChartVersion(chartUrl, chartName, chartVersion, chartRepo, creds)
@@ -359,22 +409,7 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 		// Repository + Name + Version + (optionally Digest)
 		if chartDigest != "" {
 			// Check if cached version matches digest
-			if chartName != "" && chartVersion != "" {
-				cachedPath := resolveChartFilePath(chartName, chartVersion)
-				if match, cachedDigest, err := cacheDigestMatches(cachedPath, chartDigest); err != nil {
-					hc.log.Debug("failed to verify cached digest, will pull fresh", "path", cachedPath, "err", err)
-					chartFilePath = ""
-				} else if match {
-					hc.log.Debug("Cache hit: digest matches", "path", cachedPath, "digest", chartDigest)
-					chartFilePath = cachedPath
-				} else {
-					hc.log.Debug("Cache digest mismatch, will pull fresh", "path", cachedPath, "requestedDigest", chartDigest, "cachedDigest", cachedDigest)
-					chartFilePath = ""
-				}
-			} else {
-				// No name/version to construct cache path, must pull
-				chartFilePath = ""
-			}
+			chartFilePath = resolveCachedChartPathWithDigest(chartName, chartVersion, chartDigest, hc.log)
 		} else {
 			chartFilePath = resolveChartFilePath(chartName, chartVersion)
 		}
@@ -415,61 +450,10 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 			return nil, err
 		}
 	} else {
-		// Open root directory for secure file access (prevents path traversal at kernel level)
-		root, err := os.OpenRoot(chartCache)
+		chartFilePath, err = hc.ensureChartCached(chartFilePath, chartUrl, chartName, chartVersion, chartRepo, creds)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to open chart cache directory")
+			return nil, err
 		}
-		defer func() {
-			if cerr := root.Close(); cerr != nil {
-				hc.log.WithValues("chartCache", chartCache, "error", cerr).Info("failed to close root directory")
-			}
-		}()
-
-		// filepath.Base() strips directory components, neutralizing path traversal in chartFilePath
-		chartFileName := filepath.Base(chartFilePath)
-
-		// Check if chart exists in cache
-		// os.Root provides kernel-level protection against path traversal
-		fileInfo, err := root.Stat(chartFileName)
-		switch {
-		case os.IsNotExist(err):
-			// Normal cache miss: pull chart into temp dir then atomically move into cache
-			tmpDir, err := os.MkdirTemp(chartCache, "")
-			if err != nil {
-				return nil, err
-			}
-			defer func() {
-				if err := os.RemoveAll(tmpDir); err != nil {
-					hc.log.WithValues("tmpDir", tmpDir).Info("failed to remove temporary directory")
-				}
-			}()
-
-			if err = hc.pullChart(chartUrl, chartName, chartVersion, chartRepo, creds, tmpDir); err != nil {
-				return nil, err
-			}
-
-			// Determine the pulled file name
-			pulledName, err := getChartFileName(tmpDir)
-			if err != nil {
-				return nil, err
-			}
-
-			// Atomically move pulled artifact into cache using safe path construction
-			dstPath := safePath(chartCache, chartFileName)
-			srcPath := safePath(tmpDir, pulledName)
-			// G703: safePath() sanitizes with filepath.Base() preventing traversal
-			if err := os.Rename(srcPath, dstPath); err != nil { //nolint:gosec
-				return nil, err
-			}
-		case err != nil:
-			return nil, errors.Wrap(err, errFailedToCheckIfLocalChartExists)
-		case fileInfo.IsDir():
-			return nil, errors.New("expected chart file, got directory")
-		}
-
-		// Update chartFilePath for final load
-		chartFilePath = filepath.Join(chartCache, chartFileName)
 	}
 
 	// Load chart from cache using safe path construction
@@ -562,9 +546,20 @@ func resolveOCIChartVersion(chartURL string) (*url.URL, string, error) {
 	return u, v, err
 }
 
+// resolveChartFilePath returns the expected location of a chart tarball in the
+// cache given the chart name and version. It is equivalent to
+// filepath.Join(base, fmt.Sprintf("%s-%s.tgz", name, version)) where base is
+// the directory used by the client for its cache.
 func resolveChartFilePath(name string, version string) string {
+	return resolveChartFilePathWithBase(chartCache, name, version)
+}
+
+// resolveChartFilePathWithBase is a helper that mirrors resolveChartFilePath but
+// allows callers (most importantly tests) to supply an arbitrary base directory
+// instead of the package-wide chartCache variable.
+func resolveChartFilePathWithBase(base, name, version string) string {
 	filename := fmt.Sprintf("%s-%s.tgz", name, version)
-	return filepath.Join(chartCache, filename)
+	return filepath.Join(base, filename)
 }
 
 func resolveOCIChartRef(repository string, name string) string {
@@ -614,4 +609,41 @@ func cacheDigestMatches(cachedPath, expected string) (bool, string, error) {
 		return false, "", err
 	}
 	return digest == expected, digest, nil
+}
+
+// resolveCachedChartPathWithDigest validates that a cached chart's digest matches
+// the expected digest. Returns the cached path if the digest matches, or an empty
+// string if there's a mismatch or error.
+//
+// Parameters:
+//   - chartName: name of the chart
+//   - chartVersion: version of the chart
+//   - expectedDigest: the digest to validate against (e.g., "sha256:abc...")
+//   - log: logger for debug messages
+//
+// Returns empty string if:
+//   - chartName or chartVersion is empty (cannot construct cache path)
+//   - digest verification fails (file read error)
+//   - digest doesn't match the expected value
+func resolveCachedChartPathWithDigest(chartName, chartVersion, expectedDigest string, log logging.Logger) string {
+	// Cannot construct cache path without name and version
+	if chartName == "" || chartVersion == "" {
+		return ""
+	}
+
+	cachedPath := resolveChartFilePath(chartName, chartVersion)
+	match, cachedDigest, err := cacheDigestMatches(cachedPath, expectedDigest)
+
+	if err != nil {
+		log.Debug("failed to verify cached digest, will pull fresh", "path", cachedPath, "err", err)
+		return ""
+	}
+
+	if match {
+		log.Debug("Cache hit: digest matches", "path", cachedPath, "digest", expectedDigest)
+		return cachedPath
+	}
+
+	log.Debug("Cache digest mismatch, will pull fresh", "path", cachedPath, "requestedDigest", expectedDigest, "cachedDigest", cachedDigest)
+	return ""
 }
