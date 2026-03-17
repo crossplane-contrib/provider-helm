@@ -260,6 +260,11 @@ spec:
                     description: SkipCreateNamespace won't create the namespace for
                       the release. This requires the namespace to already exist.
                     type: boolean
+                  takeOwnership:
+                    description: |-
+                      TakeOwnership ignore the check for helm annotations and take ownership
+                      of the existing resources.
+                    type: boolean
                   values:
                     type: object
                     x-kubernetes-preserve-unknown-fields: true

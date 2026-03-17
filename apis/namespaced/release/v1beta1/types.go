@@ -102,6 +102,9 @@ type ReleaseParameters struct {
 	InsecureSkipTLSVerify bool `json:"insecureSkipTLSVerify,omitempty"`
 	// PlainHTTP uses insecure HTTP connections for the chart download
 	PlainHTTP bool `json:"plainHTTP,omitempty"`
+	// TakeOwnership ignore the check for helm annotations and take ownership
+	// of the existing resources.
+	TakeOwnership bool `json:"takeOwnership,omitempty"`
 }
 
 // ReleaseObservation are the observable fields of a Release.

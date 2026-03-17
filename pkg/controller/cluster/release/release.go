@@ -154,6 +154,7 @@ func withRelease(cr *v1beta1.Release) helmClient.ArgsApplier {
 		config.SkipCRDs = cr.Spec.ForProvider.SkipCRDs
 		config.InsecureSkipTLSVerify = cr.Spec.ForProvider.InsecureSkipTLSVerify
 		config.PlainHTTP = cr.Spec.ForProvider.PlainHTTP
+		config.TakeOwnership = cr.Spec.ForProvider.TakeOwnership
 	}
 }
 

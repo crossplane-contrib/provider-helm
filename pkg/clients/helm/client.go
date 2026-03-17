@@ -137,6 +137,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	ic.SkipCRDs = args.SkipCRDs
 	ic.InsecureSkipTLSverify = args.InsecureSkipTLSVerify
 	ic.PlainHTTP = args.PlainHTTP
+	ic.TakeOwnership = args.TakeOwnership
 
 	uc := action.NewUpgrade(actionConfig)
 	uc.Wait = args.Wait
@@ -144,6 +145,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	uc.SkipCRDs = args.SkipCRDs
 	uc.InsecureSkipTLSverify = args.InsecureSkipTLSVerify
 	uc.PlainHTTP = args.PlainHTTP
+	uc.TakeOwnership = args.TakeOwnership
 
 	uic := action.NewUninstall(actionConfig)
 	uic.Wait = args.Wait
