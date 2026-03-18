@@ -29,11 +29,39 @@ var (
 keyA: valA
 keyB:
   subKeyA: subValA
+  0e088d42-9039-4d86-bc8b-1a7d71768276: foobar
+  2ce9c043-a5a1-48d7-8a99-55ad9aa4a441: foobar
+  47463905-d483-4630-98d5-1844e08a16dc: foobar
+  4c2ebfd6-6f70-494a-805e-e74d01a0c326: foobar
+  4e6b8a03-2ab4-4f6e-b568-43af8ecf9487: foobar
+  58bfb404-3b64-465e-8b43-395b36ffe9fd: foobar
+  5d6e183f-be3c-4395-bebd-cce276955edd: foobar
+  7bfc17a9-20ca-44a5-b18a-89112d7e13d2: foobar
+  30cb9570-046d-4a81-9799-234327ae02d0: foobar
+  57b66a6d-1d67-4047-8b97-bd5561c369a0: foobar
+  57d22cbf-c3d3-4eac-8880-fba531cc9012: foobar
+  638c6340-6796-4fea-9c6a-35274c2c10ec: foobar
+  877d702d-2e56-49c4-827f-00fb8eba3898: foobar
+  9463f2cc-df3b-4642-8a67-dba133fbf7d0: foobar
 `
 	testReleaseConfig = map[string]interface{}{
 		"keyA": "valA",
 		"keyB": map[string]interface{}{
-			"subKeyA": "subValA",
+			"subKeyA":                              "subValA",
+			"0e088d42-9039-4d86-bc8b-1a7d71768276": "foobar",
+			"2ce9c043-a5a1-48d7-8a99-55ad9aa4a441": "foobar",
+			"47463905-d483-4630-98d5-1844e08a16dc": "foobar",
+			"4c2ebfd6-6f70-494a-805e-e74d01a0c326": "foobar",
+			"4e6b8a03-2ab4-4f6e-b568-43af8ecf9487": "foobar",
+			"58bfb404-3b64-465e-8b43-395b36ffe9fd": "foobar",
+			"5d6e183f-be3c-4395-bebd-cce276955edd": "foobar",
+			"7bfc17a9-20ca-44a5-b18a-89112d7e13d2": "foobar",
+			"30cb9570-046d-4a81-9799-234327ae02d0": "foobar",
+			"57b66a6d-1d67-4047-8b97-bd5561c369a0": "foobar",
+			"57d22cbf-c3d3-4eac-8880-fba531cc9012": "foobar",
+			"638c6340-6796-4fea-9c6a-35274c2c10ec": "foobar",
+			"877d702d-2e56-49c4-827f-00fb8eba3898": "foobar",
+			"9463f2cc-df3b-4642-8a67-dba133fbf7d0": "foobar",
 		},
 	}
 )
