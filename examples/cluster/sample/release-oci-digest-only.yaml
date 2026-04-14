@@ -1,0 +1,19 @@
+apiVersion: helm.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: podinfo-digest-only-example
+spec:
+  forProvider:
+    chart:
+      # Pull repository + name + digest (version is optional and not late-initialized)
+      name: podinfo
+      # When digest is specified:
+      # 1. Chart is pulled using the digest for immutable, secure deployment
+      # 2. Version in spec is optional and NOT late-initialized to avoid GitOps drift
+      # 3. Actual deployed version is available in status.atProvider.version for observability
+      # This is ideal for GitOps workflows that manage only digests
+      digest: sha256:c56f4d760bc9da702f231f37fcec89c66b0993f0cb91446f86d014b133c6693f
+      repository: oci://ghcr.io/stefanprodan/charts
+    namespace: crossplane-system
+  providerConfigRef:
+    name: helm-provider

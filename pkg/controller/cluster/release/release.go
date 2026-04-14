@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -224,6 +225,8 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 	}
 
 	cr.Status.AtProvider = generateObservation(rel)
+	// Store the digest in status for drift detection
+	cr.Status.AtProvider.Digest = cr.Spec.ForProvider.Chart.Digest
 
 	// Determining whether the release is up to date may involve reading values
 	// from secrets, configmaps, etc. This will fail if said dependencies have
@@ -282,20 +285,27 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action d
 	if err != nil {
 		return err
 	}
-	needsUpdate := false
 
-	if cr.Spec.ForProvider.Chart.Name == "" {
-		cr.Spec.ForProvider.Chart.Name = chart.Metadata.Name
-		needsUpdate = true
+	// Check if LateInitialize is allowed by management policies
+	mp := sets.New[xpv1.ManagementAction](cr.Spec.ManagementPolicies...)
+	shouldLateInit := len(mp) == 0 || mp.HasAny(xpv1.ManagementActionLateInitialize, xpv1.ManagementActionAll)
+
+	needsUpdate := false
+	if shouldLateInit {
+		if cr.Spec.ForProvider.Chart.Name == "" {
+			cr.Spec.ForProvider.Chart.Name = chart.Metadata.Name
+			needsUpdate = true
+		}
+		// Late-initialize version only when digest is NOT specified
+		// When digest is specified, it's the source of truth and version becomes optional metadata
+		// This prevents spec pollution and GitOps drift in digest-only workflows
+		if cr.Spec.ForProvider.Chart.Version == "" && cr.Spec.ForProvider.Chart.Digest == "" {
+			cr.Spec.ForProvider.Chart.Version = chart.Metadata.Version
+			needsUpdate = true
+		}
+		// Note: When digest is used, the actual deployed version is stored in status.atProvider.version
+		// for observability, but the spec is not modified to avoid drift in GitOps workflows
 	}
-	if cr.Spec.ForProvider.Chart.Version == "" {
-		cr.Spec.ForProvider.Chart.Version = chart.Metadata.Version
-		needsUpdate = true
-	}
-	// Note: Digest is NOT late-initialized because:
-	// 1. Chart metadata doesn't contain OCI digest
-	// 2. Digest is user-specified for immutability
-	// 3. Helm verifies digest during pull
 
 	if needsUpdate {
 		if err := e.localKube.Update(ctx, cr); err != nil {
@@ -319,6 +329,8 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action d
 	}
 	cr.Status.PatchesSha = sha
 	cr.Status.AtProvider = generateObservation(rel)
+	// Store the digest in status for drift detection
+	cr.Status.AtProvider.Digest = cr.Spec.ForProvider.Chart.Digest
 
 	return nil
 }

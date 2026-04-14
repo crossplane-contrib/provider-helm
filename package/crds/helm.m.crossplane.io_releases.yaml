@@ -157,8 +157,11 @@ spec:
                           and overrides others fields in the spec
                         type: string
                       version:
-                        description: Version of Helm chart, late initialized with
-                          latest version if not set
+                        description: |-
+                          Version of Helm chart. Optional when Digest is specified.
+                          If not set and Digest is not specified, gets late initialized with the latest available version.
+                          If not set and Digest is specified, version is NOT late initialized to avoid spec drift.
+                          The actual deployed version is always available in status.atProvider.version for observability.
                         type: string
                     type: object
                   insecureSkipTLSVerify:
@@ -372,12 +375,19 @@ spec:
               atProvider:
                 description: ReleaseObservation are the observable fields of a Release.
                 properties:
+                  digest:
+                    description: Digest is the last successfully deployed chart digest
+                      (for OCI charts only).
+                    type: string
                   releaseDescription:
                     type: string
                   revision:
                     type: integer
                   state:
                     description: Status is the status of a release
+                    type: string
+                  version:
+                    description: Version is the actual deployed chart version.
                     type: string
                 type: object
               conditions:

@@ -32,7 +32,10 @@ type ChartSpec struct {
 	Repository string `json:"repository,omitempty"`
 	// Name of Helm chart, required if ChartSpec.URL not set
 	Name string `json:"name,omitempty"`
-	// Version of Helm chart, late initialized with latest version if not set
+	// Version of Helm chart. Optional when Digest is specified.
+	// If not set and Digest is not specified, gets late initialized with the latest available version.
+	// If not set and Digest is specified, version is NOT late initialized to avoid spec drift.
+	// The actual deployed version is always available in status.atProvider.version for observability.
 	Version string `json:"version,omitempty"`
 	// URL to chart package (typically .tgz), optional and overrides others fields in the spec
 	URL string `json:"url,omitempty"`
@@ -106,6 +109,10 @@ type ReleaseObservation struct {
 	State              release.Status `json:"state,omitempty"`
 	ReleaseDescription string         `json:"releaseDescription,omitempty"`
 	Revision           int            `json:"revision,omitempty"`
+	// Digest is the last successfully deployed chart digest (for OCI charts only).
+	Digest string `json:"digest,omitempty"`
+	// Version is the actual deployed chart version.
+	Version string `json:"version,omitempty"`
 }
 
 // A ReleaseSpec defines the desired state of a Release.
