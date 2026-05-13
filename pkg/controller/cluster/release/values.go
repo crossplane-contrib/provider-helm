@@ -21,7 +21,7 @@ import (
 	"fmt"
 
 	"github.com/pkg/errors"
-	"helm.sh/helm/v3/pkg/strvals"
+	"helm.sh/helm/v4/pkg/strvals"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 

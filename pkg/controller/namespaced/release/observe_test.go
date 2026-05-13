@@ -10,8 +10,9 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/release"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
+	"helm.sh/helm/v4/pkg/release/common"
+	release "helm.sh/helm/v4/pkg/release/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -69,13 +70,13 @@ func Test_generateObservation(t *testing.T) {
 					Name: "",
 					Info: &release.Info{
 						Description: testDescription,
-						Status:      release.StatusDeployed,
+						Status:      common.StatusDeployed,
 					},
 				},
 			},
 			want: want{
 				out: v1beta1.ReleaseObservation{
-					State:              release.StatusDeployed,
+					State:              common.StatusDeployed,
 					ReleaseDescription: testDescription,
 				},
 			},
@@ -120,7 +121,7 @@ func Test_isUpToDate(t *testing.T) {
 			args: args{
 				observed: &release.Release{
 					Info: &release.Info{
-						Status: release.StatusPendingUpgrade,
+						Status: common.StatusPendingUpgrade,
 					},
 					Chart:  nil,
 					Config: testReleaseConfig,

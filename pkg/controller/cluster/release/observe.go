@@ -32,7 +32,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/pkg/errors"
-	"helm.sh/helm/v3/pkg/release"
+	release "helm.sh/helm/v4/pkg/release/v1"
+
+	"helm.sh/helm/v4/pkg/release/common"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
@@ -134,8 +136,8 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 	return true, nil
 }
 
-func isPending(s release.Status) bool {
-	return s == release.StatusPendingInstall || s == release.StatusPendingUpgrade || s == release.StatusPendingRollback
+func isPending(s common.Status) bool {
+	return s == common.StatusPendingInstall || s == common.StatusPendingUpgrade || s == common.StatusPendingRollback
 }
 
 func connectionDetails(ctx context.Context, kube client.Client, connDetails []v1beta1.ConnectionDetail, relName, relNamespace string) (managed.ConnectionDetails, error) {

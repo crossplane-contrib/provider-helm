@@ -49,7 +49,7 @@ func setupNamespacedProviderConfig(mgr ctrl.Manager, o controller.Options) error
 
 	r := providerconfig.NewReconciler(mgr, of,
 		providerconfig.WithLogger(o.Logger.WithValues("controller", name)),
-		providerconfig.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))))
+		providerconfig.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name)))) //nolint:staticcheck // TODO(jonasz-lasut) Update after crossplane-runtime is updated to the new events API. - https://github.com/crossplane/crossplane/issues/7152
 
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).
@@ -76,7 +76,7 @@ func setupClusterProviderConfig(mgr ctrl.Manager, o controller.Options) error {
 		Watches(&v1beta1.ProviderConfigUsage{}, &resource.EnqueueRequestForProviderConfig{}).
 		Complete(providerconfig.NewReconciler(mgr, of,
 			providerconfig.WithLogger(o.Logger.WithValues("controller", name)),
-			providerconfig.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name)))))
+			providerconfig.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))))) //nolint:staticcheck // TODO(jonasz-lasut) Update after crossplane-runtime is updated to the new events API. - https://github.com/crossplane/crossplane/issues/7152
 }
 
 // SetupGated adds a controller that reconciles ProviderConfigs by accounting for

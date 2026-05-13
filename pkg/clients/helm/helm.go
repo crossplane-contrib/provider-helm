@@ -37,9 +37,9 @@ const (
 	errFailedToTrackUsage   = "cannot track provider config usage"
 )
 
-func ResolveProviderConfig(ctx context.Context, crClient kclient.Client, lt LegacyTracker, mt ModernTracker, mg resource.Managed) (*kconfig.ProviderConfigSpec, error) {
+func ResolveProviderConfig(ctx context.Context, crClient kclient.Client, lt resource.LegacyTracker, mt resource.ModernTracker, mg resource.Managed) (*kconfig.ProviderConfigSpec, error) {
 	switch m := mg.(type) {
-	case resource.LegacyManaged:
+	case resource.LegacyManaged: //nolint:staticcheck // still need to support LegacyManaged resources
 		return resolveProviderConfigLegacy(ctx, crClient, m, lt)
 	case resource.ModernManaged:
 		return resolveProviderConfigModern(ctx, crClient, m, mt)
@@ -48,7 +48,7 @@ func ResolveProviderConfig(ctx context.Context, crClient kclient.Client, lt Lega
 	}
 }
 
-func resolveProviderConfigLegacy(ctx context.Context, client kclient.Client, mg resource.LegacyManaged, lt LegacyTracker) (*kconfig.ProviderConfigSpec, error) {
+func resolveProviderConfigLegacy(ctx context.Context, client kclient.Client, mg resource.LegacyManaged, lt resource.LegacyTracker) (*kconfig.ProviderConfigSpec, error) { //nolint:staticcheck // still need to support LegacyManaged resources
 	configRef := mg.GetProviderConfigReference()
 	if configRef == nil {
 		return nil, errors.New(errProviderConfigNotSet)
@@ -65,7 +65,7 @@ func resolveProviderConfigLegacy(ctx context.Context, client kclient.Client, mg 
 	return legacyToModernProviderConfigSpec(pc)
 }
 
-func resolveProviderConfigModern(ctx context.Context, crClient kclient.Client, mg resource.ModernManaged, mt ModernTracker) (*kconfig.ProviderConfigSpec, error) {
+func resolveProviderConfigModern(ctx context.Context, crClient kclient.Client, mg resource.ModernManaged, mt resource.ModernTracker) (*kconfig.ProviderConfigSpec, error) {
 	configRef := mg.GetProviderConfigReference()
 	if configRef == nil {
 		return nil, errors.New(errProviderConfigNotSet)
