@@ -6,8 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v4/pkg/action"
+	"helm.sh/helm/v4/pkg/chart/common"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
 )
 
 func TestInstallSupportsHTTPReferencedValuesSchema(t *testing.T) {
@@ -47,7 +48,7 @@ func TestInstallSupportsHTTPReferencedValuesSchema(t *testing.T) {
 				}
 			}
 		}`, schemaServer.URL)),
-		Templates: []*chart.File{
+		Templates: []*common.File{
 			{
 				Name: "templates/configmap.yaml",
 				Data: []byte(`apiVersion: v1
@@ -61,14 +62,9 @@ data:
 		},
 	}
 
-	cfg := &action.Configuration{
-		Log: func(format string, v ...interface{}) {
-			t.Logf(format, v...)
-		},
-	}
+	cfg := &action.Configuration{}
 	install := action.NewInstall(cfg)
-	install.ClientOnly = true
-	install.DryRun = true
+	install.DryRunStrategy = action.DryRunClient
 	install.Namespace = "default"
 
 	hc := &client{

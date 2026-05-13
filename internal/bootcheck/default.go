@@ -1,5 +1,4 @@
 //go:build !custombootcheck
-// +build !custombootcheck
 
 package bootcheck
 
