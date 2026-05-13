@@ -17,7 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v4/pkg/release/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 
@@ -77,9 +77,9 @@ type ReleaseParameters struct {
 
 // ReleaseObservation are the observable fields of a Release.
 type ReleaseObservation struct {
-	State              release.Status `json:"state,omitempty"`
-	ReleaseDescription string         `json:"releaseDescription,omitempty"`
-	Revision           int            `json:"revision,omitempty"`
+	State              common.Status `json:"state,omitempty"`
+	ReleaseDescription string        `json:"releaseDescription,omitempty"`
+	Revision           int           `json:"revision,omitempty"`
 }
 
 // A ReleaseSpec defines the desired state of a Release.

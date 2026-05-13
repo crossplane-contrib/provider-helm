@@ -21,9 +21,10 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/release"
-	"helm.sh/helm/v3/pkg/storage/driver"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
+	"helm.sh/helm/v4/pkg/release/common"
+	release "helm.sh/helm/v4/pkg/release/v1"
+	"helm.sh/helm/v4/pkg/storage/driver"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
@@ -93,7 +94,7 @@ func Setup(mgr ctrl.Manager, o controller.Options, timeout time.Duration) error 
 		}),
 		managed.WithPollInterval(o.PollInterval),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
-		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
+		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))), //nolint:staticcheck // TODO(jonasz-lasut) Update after crossplane-runtime is updated to the new events API. - https://github.com/crossplane/crossplane/issues/7152
 		managed.WithTimeout(timeout),
 		managed.WithMetricRecorder(o.MetricOptions.MRMetrics),
 		managed.WithDeterministicExternalName(true),
@@ -139,7 +140,7 @@ func SetupGated(mgr ctrl.Manager, o controller.Options, timeout time.Duration) e
 type connector struct {
 	logger logging.Logger
 	client client.Client
-	usage  helmClient.ModernTracker
+	usage  resource.ModernTracker
 
 	clientBuilder   kubeclient.Builder
 	newHelmClientFn func(log logging.Logger, config *rest.Config, helmArgs ...helmClient.ArgsApplier) (helmClient.Client, error)
@@ -246,7 +247,7 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 	}
 	cr.Status.Synced = s
 	cd := managed.ConnectionDetails{}
-	if cr.Status.AtProvider.State == release.StatusDeployed && s {
+	if cr.Status.AtProvider.State == common.StatusDeployed && s {
 		cr.Status.Failed = 0
 
 		cd, err = connectionDetails(ctx, e.kube, cr.Spec.ConnectionDetails, rel.Name, rel.Namespace)
@@ -380,9 +381,9 @@ func (e *helmExternal) Delete(_ context.Context, mg resource.Managed) (managed.E
 
 func shouldRollBack(cr *v1beta1.Release) bool {
 	return rollBackEnabled(cr) &&
-		((cr.Status.Synced && cr.Status.AtProvider.State == release.StatusFailed) ||
-			(cr.Status.AtProvider.State == release.StatusPendingInstall) ||
-			(cr.Status.AtProvider.State == release.StatusPendingUpgrade))
+		((cr.Status.Synced && cr.Status.AtProvider.State == common.StatusFailed) ||
+			(cr.Status.AtProvider.State == common.StatusPendingInstall) ||
+			(cr.Status.AtProvider.State == common.StatusPendingUpgrade))
 }
 
 func rollBackEnabled(cr *v1beta1.Release) bool {
