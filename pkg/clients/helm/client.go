@@ -17,7 +17,9 @@ limitations under the License.
 package helm
 
 import (
+	"crypto/tls"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -34,6 +36,7 @@ import (
 	"helm.sh/helm/v3/pkg/registry"
 	"helm.sh/helm/v3/pkg/release"
 	"k8s.io/client-go/rest"
+	registryAuth "oras.land/oras-go/v2/registry/remote/auth"
 	ktype "sigs.k8s.io/kustomize/api/types"
 
 	clusterv1beta1 "github.com/crossplane-contrib/provider-helm/apis/cluster/release/v1beta1"
@@ -76,6 +79,9 @@ type client struct {
 	rollbackClient  *action.Rollback
 	uninstallClient *action.Uninstall
 	loginClient     *action.RegistryLogin
+	// registryClient is the default registry client. pullChart resets to this
+	// before each pull so an identity-token-scoped client does not leak.
+	registryClient *registry.Client
 }
 
 // ArgsApplier defines helm client arguments helper
@@ -155,6 +161,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 		rollbackClient:  rb,
 		uninstallClient: uic,
 		loginClient:     lc,
+		registryClient:  rc,
 	}, nil
 }
 
@@ -221,12 +228,15 @@ func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo string,
 		pc.Version = version
 		chartRef = ociURL.String()
 	}
-	pc.Username = creds.Username
-	pc.Password = creds.Password
+	configurePullCredentials(pc, chartUrl, chartRepo, creds)
 
 	pc.DestDir = chartDir
 
-	if creds.Username != "" && creds.Password != "" {
+	if err := hc.configureRegistryClient(chartUrl, chartRepo, creds); err != nil {
+		return err
+	}
+
+	if creds.hasBasicAuth() && !usesIdentityToken(chartUrl, chartRepo, creds) {
 		err := hc.login(chartUrl, chartRepo, creds, pc.InsecureSkipTLSverify)
 		if err != nil {
 			return err
@@ -239,6 +249,87 @@ func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo string,
 		return errors.Wrap(err, errFailedToPullChart)
 	}
 	return nil
+}
+
+func (hc *client) configureRegistryClient(chartUrl, chartRepo string, creds *RepoCreds) error {
+	hc.pullClient.SetRegistryClient(hc.registryClient)
+
+	if !usesIdentityToken(chartUrl, chartRepo, creds) {
+		return nil
+	}
+
+	parsedURL, err := url.Parse(ociURL(chartUrl, chartRepo))
+	if err != nil {
+		return errors.Wrap(err, errFailedToParseURL)
+	}
+
+	rc, err := identityTokenRegistryClient(parsedURL.Host, creds, hc.pullClient.InsecureSkipTLSverify, hc.pullClient.PlainHTTP)
+	if err != nil {
+		return err
+	}
+	hc.pullClient.SetRegistryClient(rc)
+	return nil
+}
+
+func usesIdentityToken(chartUrl, chartRepo string, creds *RepoCreds) bool {
+	return creds.hasIdentityToken() && registry.IsOCI(ociURL(chartUrl, chartRepo))
+}
+
+func configurePullCredentials(pc *action.Pull, chartUrl, chartRepo string, creds *RepoCreds) {
+	pc.Username = ""
+	pc.Password = ""
+	if creds.hasBasicAuth() && !usesIdentityToken(chartUrl, chartRepo, creds) {
+		pc.Username = creds.Username
+		pc.Password = creds.Password
+	}
+}
+
+func ociURL(chartUrl, chartRepo string) string {
+	if chartUrl != "" {
+		return chartUrl
+	}
+	return chartRepo
+}
+
+func identityTokenRegistryClient(host string, creds *RepoCreds, insecureSkipTLSVerify, plainHTTP bool) (*registry.Client, error) {
+	httpClient := registryHTTPClient(insecureSkipTLSVerify)
+	authorizer := registryAuth.Client{
+		Client:     httpClient,
+		Credential: registryAuth.StaticCredential(host, creds.registryCredential()),
+	}
+
+	opts := []registry.ClientOption{
+		registry.ClientOptHTTPClient(httpClient),
+		registry.ClientOptAuthorizer(authorizer),
+	}
+	if plainHTTP {
+		opts = append(opts, registry.ClientOptPlainHTTP())
+	}
+
+	return registry.NewClient(opts...)
+}
+
+func registryHTTPClient(insecureSkipTLSVerify bool) *http.Client {
+	transport := registry.NewTransport(false)
+	if !insecureSkipTLSVerify {
+		return &http.Client{Transport: transport}
+	}
+
+	base, ok := transport.Base.(*http.Transport)
+	if !ok {
+		return &http.Client{Transport: transport}
+	}
+
+	base = base.Clone()
+	if base.TLSClientConfig == nil {
+		base.TLSClientConfig = &tls.Config{} //nolint:gosec // This honors the Release's explicit insecureSkipTLSVerify setting.
+	} else {
+		base.TLSClientConfig = base.TLSClientConfig.Clone()
+	}
+	base.TLSClientConfig.InsecureSkipVerify = true //nolint:gosec // This honors the Release's explicit insecureSkipTLSVerify setting.
+	transport.Base = base
+
+	return &http.Client{Transport: transport}
 }
 
 func (hc *client) login(chartUrl, chartRepo string, creds *RepoCreds, insecure bool) error {

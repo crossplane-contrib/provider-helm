@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -340,4 +341,104 @@ func TestResolveCluster(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestResolveCredentialsFromKeychain(t *testing.T) {
+	type args struct {
+		keychain authn.Keychain
+	}
+	type want struct {
+		creds *helmClient.RepoCreds
+		err   error
+	}
+
+	cases := map[string]struct {
+		args args
+		want want
+	}{
+		"UsernamePassword": {
+			args: args{
+				keychain: staticKeychain{
+					authenticator: authn.FromConfig(authn.AuthConfig{
+						Username: testUsername,
+						Password: testPassword,
+					}),
+				},
+			},
+			want: want{
+				creds: &helmClient.RepoCreds{
+					Username: testUsername,
+					Password: testPassword,
+				},
+			},
+		},
+		"IdentityToken": {
+			args: args{
+				keychain: staticKeychain{
+					authenticator: authn.FromConfig(authn.AuthConfig{
+						Username:      "<token>",
+						IdentityToken: "refresh-token",
+					}),
+				},
+			},
+			want: want{
+				creds: &helmClient.RepoCreds{
+					Username:      "<token>",
+					IdentityToken: "refresh-token",
+				},
+			},
+		},
+		"ResolveErrorReturnsEmptyCredentials": {
+			args: args{
+				keychain: staticKeychain{
+					err: errBoom,
+				},
+			},
+			want: want{
+				creds: &helmClient.RepoCreds{},
+			},
+		},
+		"AuthorizationErrorReturnsEmptyCredentials": {
+			args: args{
+				keychain: staticKeychain{
+					authenticator: errorAuthenticator{err: errBoom},
+				},
+			},
+			want: want{
+				creds: &helmClient.RepoCreds{},
+			},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			resolver := NewResolver(&test.MockClient{})
+			got, err := resolver.resolveCredentialsFromKeychain(context.Background(), tc.args.keychain, nil)
+
+			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
+				t.Errorf("resolveCredentialsFromKeychain() error: -want, +got:\n%s", diff)
+			}
+
+			if diff := cmp.Diff(tc.want.creds, got); diff != "" {
+				t.Errorf("resolveCredentialsFromKeychain() creds: -want, +got:\n%s", diff)
+			}
+		})
+	}
+}
+
+type staticKeychain struct {
+	authenticator authn.Authenticator
+	err           error
+}
+
+func (s staticKeychain) Resolve(authn.Resource) (authn.Authenticator, error) {
+	return s.authenticator, s.err
+}
+
+type errorAuthenticator struct {
+	err error
+}
+
+func (e errorAuthenticator) Authorization() (*authn.AuthConfig, error) {
+	return nil, e.err
 }

@@ -210,7 +210,8 @@ func (r *Resolver) resolveCredentialsFromKeychain(ctx context.Context, keychain 
 	}
 
 	return &helmClient.RepoCreds{
-		Username: authConfig.Username,
-		Password: authConfig.Password,
+		Username:      authConfig.Username,
+		Password:      authConfig.Password,
+		IdentityToken: authConfig.IdentityToken,
 	}, nil
 }
