@@ -18,6 +18,7 @@ package helm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -34,14 +35,7 @@ import (
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/registry"
 	orasauth "oras.land/oras-go/v2/registry/remote/auth"
-	orasretry "oras.land/oras-go/v2/registry/remote/retry"
 )
-
-type roundTripperFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return f(req)
-}
 
 func TestRepoCredsRegistryCredential(t *testing.T) {
 	type want struct {
@@ -154,20 +148,6 @@ func TestRegistryHTTPClientInsecureSkipTLSVerify(t *testing.T) {
 	}
 }
 
-func TestRegistryHTTPClientInsecureSkipTLSVerifyRequiresHTTPTransport(t *testing.T) {
-	transport := orasretry.NewTransport(roundTripperFunc(func(_ *http.Request) (*http.Response, error) {
-		return nil, nil
-	}))
-
-	_, err := registryHTTPClientForTransport(transport, true)
-	if err == nil {
-		t.Fatal("registryHTTPClientForTransport() error: want error, got nil")
-	}
-	if !strings.Contains(err.Error(), "expected Helm registry transport base") {
-		t.Fatalf("registryHTTPClientForTransport() error = %q, want transport type context", err)
-	}
-}
-
 func TestResetPullState(t *testing.T) {
 	pc := action.NewPull()
 	pc.Username = "stale-user"
@@ -197,12 +177,9 @@ func TestConfigureIdentityTokenRegistryClientRequiresOCIHost(t *testing.T) {
 		t.Fatalf("registry.NewClient() error: %v", err)
 	}
 	actionConfig := &action.Configuration{RegistryClient: defaultClient}
-	hc := &client{
-		pullClient:     action.NewPullWithOpts(action.WithConfig(actionConfig)),
-		registryClient: defaultClient,
-	}
+	pc := action.NewPullWithOpts(action.WithConfig(actionConfig))
 
-	err = hc.configureIdentityTokenRegistryClient("oci://", &RepoCreds{
+	err = configureIdentityTokenRegistryClient(pc, "oci://", &RepoCreds{
 		Username:      "<token>",
 		IdentityToken: "refresh-token",
 	})
@@ -223,12 +200,9 @@ func TestConfigureIdentityTokenRegistryClientInstallsClient(t *testing.T) {
 		t.Fatalf("registry.NewClient() error: %v", err)
 	}
 	actionConfig := &action.Configuration{RegistryClient: defaultClient}
-	hc := &client{
-		pullClient:     action.NewPullWithOpts(action.WithConfig(actionConfig)),
-		registryClient: defaultClient,
-	}
+	pc := action.NewPullWithOpts(action.WithConfig(actionConfig))
 
-	if err := hc.configureIdentityTokenRegistryClient("oci://registry.example.com/charts", &RepoCreds{
+	if err := configureIdentityTokenRegistryClient(pc, "oci://registry.example.com/charts", &RepoCreds{
 		Username:      "<token>",
 		IdentityToken: "refresh-token",
 	}); err != nil {
@@ -354,7 +328,9 @@ func TestIdentityTokenRegistryClientUsesRefreshToken(t *testing.T) {
 				t.Errorf("scope = %q, want %q", got, scope)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, `{"access_token":%q}`, accessToken)
+			if err := json.NewEncoder(w).Encode(map[string]string{"access_token": accessToken}); err != nil {
+				t.Errorf("Encode() error: %v", err)
+			}
 		default:
 			t.Errorf("unexpected request path: %s", r.URL.Path)
 			http.NotFound(w, r)

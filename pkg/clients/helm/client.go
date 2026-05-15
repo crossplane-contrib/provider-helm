@@ -37,7 +37,6 @@ import (
 	"helm.sh/helm/v3/pkg/release"
 	"k8s.io/client-go/rest"
 	orasauth "oras.land/oras-go/v2/registry/remote/auth"
-	orasretry "oras.land/oras-go/v2/registry/remote/retry"
 	ktype "sigs.k8s.io/kustomize/api/types"
 
 	clusterv1beta1 "github.com/crossplane-contrib/provider-helm/apis/cluster/release/v1beta1"
@@ -246,10 +245,9 @@ func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo string,
 
 	pc.DestDir = chartDir
 
-	hc.pullClient.SetRegistryClient(hc.registryClient)
-	defer hc.pullClient.SetRegistryClient(hc.registryClient)
+	defer pc.SetRegistryClient(hc.registryClient)
 	if useIdentityToken {
-		if err := hc.configureIdentityTokenRegistryClient(registryURL, creds); err != nil {
+		if err := configureIdentityTokenRegistryClient(pc, registryURL, creds); err != nil {
 			return err
 		}
 	}
@@ -269,7 +267,7 @@ func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo string,
 	return nil
 }
 
-func (hc *client) configureIdentityTokenRegistryClient(registryURL string, creds *RepoCreds) error {
+func configureIdentityTokenRegistryClient(pc *action.Pull, registryURL string, creds *RepoCreds) error {
 	parsedURL, err := url.Parse(registryURL)
 	if err != nil {
 		return errors.Wrap(err, errFailedToParseURL)
@@ -278,11 +276,11 @@ func (hc *client) configureIdentityTokenRegistryClient(registryURL string, creds
 		return errors.Errorf(errMissingOCIRegistryHostTmpl, registryURL)
 	}
 
-	rc, err := identityTokenRegistryClient(parsedURL.Host, creds, hc.pullClient.InsecureSkipTLSverify, hc.pullClient.PlainHTTP)
+	rc, err := identityTokenRegistryClient(parsedURL.Host, creds, pc.InsecureSkipTLSverify, pc.PlainHTTP)
 	if err != nil {
 		return err
 	}
-	hc.pullClient.SetRegistryClient(rc)
+	pc.SetRegistryClient(rc)
 	return nil
 }
 
@@ -313,16 +311,16 @@ func identityTokenRegistryClient(host string, creds *RepoCreds, insecureSkipTLSV
 	}
 
 	rc, err := registry.NewClient(opts...)
-	return rc, errors.Wrap(err, errFailedToCreateRegistryClient)
+	if err != nil {
+		return nil, errors.Wrap(err, errFailedToCreateRegistryClient)
+	}
+	return rc, nil
 }
 
 func registryHTTPClient(insecureSkipTLSVerify bool) (*http.Client, error) {
 	// Keep Helm's normal retry transport. The flag disables Helm registry
 	// debug logging; it is unrelated to TLS verification.
-	return registryHTTPClientForTransport(registry.NewTransport(false), insecureSkipTLSVerify)
-}
-
-func registryHTTPClientForTransport(transport *orasretry.Transport, insecureSkipTLSVerify bool) (*http.Client, error) {
+	transport := registry.NewTransport(false)
 	if !insecureSkipTLSVerify {
 		return &http.Client{Transport: transport}, nil
 	}
