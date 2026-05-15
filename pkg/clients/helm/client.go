@@ -51,17 +51,18 @@ const (
 )
 
 const (
-	errFailedToCheckIfLocalChartExists = "failed to check if cached chart file exists"
-	errFailedToPullChart               = "failed to pull chart"
-	errFailedToLoadChart               = "failed to load chart"
-	errUnexpectedDirContentTmpl        = "expected 1 .tgz chart file, got [%s]"
-	errFailedToParseURL                = "failed to parse URL"
-	errMissingOCIRegistryHostTmpl      = "missing OCI registry host in url [%s]"
-	errFailedToCreateRegistryClient    = "failed to create identity-token registry client"
-	errUnexpectedRegistryTransportTmpl = "expected Helm registry transport base to be *http.Transport, got [%T]"
-	errFailedToLogin                   = "failed to login to registry"
-	errUnexpectedOCIUrlTmpl            = "url not prefixed with oci://, got [%s]"
-	devel                              = ">0.0.0-0"
+	errFailedToCheckIfLocalChartExists  = "failed to check if cached chart file exists"
+	errFailedToPullChart                = "failed to pull chart"
+	errFailedToLoadChart                = "failed to load chart"
+	errUnexpectedDirContentTmpl         = "expected 1 .tgz chart file, got [%s]"
+	errFailedToParseURL                 = "failed to parse URL"
+	errMissingOCIRegistryHostTmpl       = "missing OCI registry host in url [%s]"
+	errFailedToCreateRegistryHTTPClient = "failed to create identity-token registry HTTP client"
+	errFailedToCreateRegistryClient     = "failed to create identity-token registry client"
+	errUnexpectedRegistryTransportTmpl  = "expected Helm registry transport base to be *http.Transport, got [%T]"
+	errFailedToLogin                    = "failed to login to registry"
+	errUnexpectedOCIUrlTmpl             = "url not prefixed with oci://, got [%s]"
+	devel                               = ">0.0.0-0"
 )
 
 // Client is the interface to interact with Helm
@@ -215,6 +216,11 @@ func (hc *client) pullLatestChartVersion(chartUrl, chartName, chartVersion, char
 func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo string, creds *RepoCreds, chartDir string) error {
 	pc := hc.pullClient
 	resetPullState(pc)
+	registryURL := chartUrl
+	if registryURL == "" {
+		registryURL = chartRepo
+	}
+	useIdentityToken := creds.hasIdentityToken() && registry.IsOCI(registryURL)
 
 	chartRef := chartUrl
 	if chartUrl == "" {
@@ -226,24 +232,30 @@ func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo string,
 		}
 		pc.Version = chartVersion
 	} else if registry.IsOCI(chartUrl) {
-		ociURL, version, err := resolveOCIChartVersion(chartUrl)
+		parsedURL, version, err := resolveOCIChartVersion(chartUrl)
 		if err != nil {
 			return err
 		}
 		pc.Version = version
-		chartRef = ociURL.String()
+		chartRef = parsedURL.String()
 	}
-	configurePullCredentials(pc, chartUrl, chartRepo, creds)
+	if creds.hasBasicAuth() && !useIdentityToken {
+		pc.Username = creds.Username
+		pc.Password = creds.Password
+	}
 
 	pc.DestDir = chartDir
 
+	hc.pullClient.SetRegistryClient(hc.registryClient)
 	defer hc.pullClient.SetRegistryClient(hc.registryClient)
-	if err := hc.configureRegistryClient(chartUrl, chartRepo, creds); err != nil {
-		return err
+	if useIdentityToken {
+		if err := hc.configureIdentityTokenRegistryClient(registryURL, creds); err != nil {
+			return err
+		}
 	}
 
-	if creds.hasBasicAuth() && !usesIdentityToken(chartUrl, chartRepo, creds) {
-		err := hc.login(chartUrl, chartRepo, creds, pc.InsecureSkipTLSverify)
+	if creds.hasBasicAuth() && !useIdentityToken {
+		err := hc.login(registryURL, creds, pc.InsecureSkipTLSverify)
 		if err != nil {
 			return err
 		}
@@ -257,19 +269,13 @@ func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo string,
 	return nil
 }
 
-func (hc *client) configureRegistryClient(chartUrl, chartRepo string, creds *RepoCreds) error {
-	hc.pullClient.SetRegistryClient(hc.registryClient)
-
-	if !usesIdentityToken(chartUrl, chartRepo, creds) {
-		return nil
-	}
-
-	parsedURL, err := url.Parse(ociURL(chartUrl, chartRepo))
+func (hc *client) configureIdentityTokenRegistryClient(registryURL string, creds *RepoCreds) error {
+	parsedURL, err := url.Parse(registryURL)
 	if err != nil {
 		return errors.Wrap(err, errFailedToParseURL)
 	}
 	if parsedURL.Host == "" {
-		return errors.Errorf(errMissingOCIRegistryHostTmpl, ociURL(chartUrl, chartRepo))
+		return errors.Errorf(errMissingOCIRegistryHostTmpl, registryURL)
 	}
 
 	rc, err := identityTokenRegistryClient(parsedURL.Host, creds, hc.pullClient.InsecureSkipTLSverify, hc.pullClient.PlainHTTP)
@@ -280,10 +286,6 @@ func (hc *client) configureRegistryClient(chartUrl, chartRepo string, creds *Rep
 	return nil
 }
 
-func usesIdentityToken(chartUrl, chartRepo string, creds *RepoCreds) bool {
-	return creds.hasIdentityToken() && registry.IsOCI(ociURL(chartUrl, chartRepo))
-}
-
 func resetPullState(pc *action.Pull) {
 	pc.Username = ""
 	pc.Password = ""
@@ -291,26 +293,10 @@ func resetPullState(pc *action.Pull) {
 	pc.RepoURL = ""
 }
 
-func configurePullCredentials(pc *action.Pull, chartUrl, chartRepo string, creds *RepoCreds) {
-	pc.Username = ""
-	pc.Password = ""
-	if creds.hasBasicAuth() && !usesIdentityToken(chartUrl, chartRepo, creds) {
-		pc.Username = creds.Username
-		pc.Password = creds.Password
-	}
-}
-
-func ociURL(chartUrl, chartRepo string) string {
-	if chartUrl != "" {
-		return chartUrl
-	}
-	return chartRepo
-}
-
 func identityTokenRegistryClient(host string, creds *RepoCreds, insecureSkipTLSVerify, plainHTTP bool) (*registry.Client, error) {
 	httpClient, err := registryHTTPClient(insecureSkipTLSVerify)
 	if err != nil {
-		return nil, errors.Wrap(err, errFailedToCreateRegistryClient)
+		return nil, errors.Wrap(err, errFailedToCreateRegistryHTTPClient)
 	}
 
 	authorizer := orasauth.Client{
@@ -358,8 +344,7 @@ func registryHTTPClientForTransport(transport *orasretry.Transport, insecureSkip
 	return &http.Client{Transport: transport}, nil
 }
 
-func (hc *client) login(chartUrl, chartRepo string, creds *RepoCreds, insecure bool) error {
-	registryURL := ociURL(chartUrl, chartRepo)
+func (hc *client) login(registryURL string, creds *RepoCreds, insecure bool) error {
 	if !registry.IsOCI(registryURL) {
 		return nil
 	}

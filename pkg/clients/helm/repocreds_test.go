@@ -191,69 +191,7 @@ func TestResetPullState(t *testing.T) {
 	}
 }
 
-func TestConfigurePullCredentials(t *testing.T) {
-	cases := map[string]struct {
-		chartURL  string
-		chartRepo string
-		creds     *RepoCreds
-		wantUser  string
-		wantPass  string
-	}{
-		"Nil": {},
-		"UsernamePassword": {
-			creds: &RepoCreds{
-				Username: "testuser",
-				Password: "testpass",
-			},
-			wantUser: "testuser",
-			wantPass: "testpass",
-		},
-		"IdentityTokenOCI": {
-			chartRepo: "oci://registry.example.com/charts",
-			creds: &RepoCreds{
-				Username:      "<token>",
-				IdentityToken: "refresh-token",
-			},
-		},
-		"IdentityTokenWithBasicAuthOCI": {
-			chartURL: "oci://registry.example.com/charts/my-chart:1.0.0",
-			creds: &RepoCreds{
-				Username:      "testuser",
-				Password:      "testpass",
-				IdentityToken: "refresh-token",
-			},
-		},
-		"IdentityTokenWithBasicAuthNonOCI": {
-			chartRepo: "https://charts.example.com",
-			creds: &RepoCreds{
-				Username:      "testuser",
-				Password:      "testpass",
-				IdentityToken: "refresh-token",
-			},
-			wantUser: "testuser",
-			wantPass: "testpass",
-		},
-	}
-
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			pc := action.NewPull()
-			pc.Username = "stale-user"
-			pc.Password = "stale-pass"
-
-			configurePullCredentials(pc, tc.chartURL, tc.chartRepo, tc.creds)
-
-			if pc.Username != tc.wantUser {
-				t.Errorf("Username = %q, want %q", pc.Username, tc.wantUser)
-			}
-			if pc.Password != tc.wantPass {
-				t.Errorf("Password = %q, want %q", pc.Password, tc.wantPass)
-			}
-		})
-	}
-}
-
-func TestConfigureRegistryClientRequiresOCIHost(t *testing.T) {
+func TestConfigureIdentityTokenRegistryClientRequiresOCIHost(t *testing.T) {
 	defaultClient, err := registry.NewClient()
 	if err != nil {
 		t.Fatalf("registry.NewClient() error: %v", err)
@@ -264,22 +202,22 @@ func TestConfigureRegistryClientRequiresOCIHost(t *testing.T) {
 		registryClient: defaultClient,
 	}
 
-	err = hc.configureRegistryClient("oci://", "", &RepoCreds{
+	err = hc.configureIdentityTokenRegistryClient("oci://", &RepoCreds{
 		Username:      "<token>",
 		IdentityToken: "refresh-token",
 	})
 	if err == nil {
-		t.Fatal("configureRegistryClient() error: want error, got nil")
+		t.Fatal("configureIdentityTokenRegistryClient() error: want error, got nil")
 	}
 	if !strings.Contains(err.Error(), "missing OCI registry host") {
-		t.Fatalf("configureRegistryClient() error = %q, want missing host context", err)
+		t.Fatalf("configureIdentityTokenRegistryClient() error = %q, want missing host context", err)
 	}
 	if actionConfig.RegistryClient != defaultClient {
-		t.Fatal("configureRegistryClient() did not leave default registry client installed")
+		t.Fatal("configureIdentityTokenRegistryClient() did not leave default registry client installed")
 	}
 }
 
-func TestConfigureRegistryClientResetsDefault(t *testing.T) {
+func TestConfigureIdentityTokenRegistryClientInstallsClient(t *testing.T) {
 	defaultClient, err := registry.NewClient()
 	if err != nil {
 		t.Fatalf("registry.NewClient() error: %v", err)
@@ -290,25 +228,14 @@ func TestConfigureRegistryClientResetsDefault(t *testing.T) {
 		registryClient: defaultClient,
 	}
 
-	if err := hc.configureRegistryClient("oci://registry.example.com/charts", "", &RepoCreds{
+	if err := hc.configureIdentityTokenRegistryClient("oci://registry.example.com/charts", &RepoCreds{
 		Username:      "<token>",
 		IdentityToken: "refresh-token",
 	}); err != nil {
-		t.Fatalf("configureRegistryClient() identity token error: %v", err)
+		t.Fatalf("configureIdentityTokenRegistryClient() error: %v", err)
 	}
-	identityTokenClient := actionConfig.RegistryClient
-	if identityTokenClient == defaultClient {
-		t.Fatal("configureRegistryClient() did not install identity-token registry client")
-	}
-
-	if err := hc.configureRegistryClient("oci://registry.example.com/charts", "", &RepoCreds{
-		Username: "testuser",
-		Password: "testpass",
-	}); err != nil {
-		t.Fatalf("configureRegistryClient() basic auth error: %v", err)
-	}
-	if actionConfig.RegistryClient != defaultClient {
-		t.Fatal("configureRegistryClient() did not reset to default registry client")
+	if actionConfig.RegistryClient == defaultClient {
+		t.Fatal("configureIdentityTokenRegistryClient() did not install identity-token registry client")
 	}
 }
 
