@@ -21,21 +21,33 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
 	"github.com/google/go-cmp/cmp"
 	"helm.sh/helm/v3/pkg/action"
+	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/chartutil"
+	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/registry"
-	registryAuth "oras.land/oras-go/v2/registry/remote/auth"
+	orasauth "oras.land/oras-go/v2/registry/remote/auth"
+	orasretry "oras.land/oras-go/v2/registry/remote/retry"
 )
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 func TestRepoCredsRegistryCredential(t *testing.T) {
 	type want struct {
 		basicAuth     bool
 		identityToken bool
-		registryCreds registryAuth.Credential
+		registryCreds orasauth.Credential
 	}
 
 	cases := map[string]struct {
@@ -45,7 +57,7 @@ func TestRepoCredsRegistryCredential(t *testing.T) {
 		"Nil": {
 			creds: nil,
 			want: want{
-				registryCreds: registryAuth.EmptyCredential,
+				registryCreds: orasauth.EmptyCredential,
 			},
 		},
 		"UsernamePassword": {
@@ -55,7 +67,7 @@ func TestRepoCredsRegistryCredential(t *testing.T) {
 			},
 			want: want{
 				basicAuth: true,
-				registryCreds: registryAuth.Credential{
+				registryCreds: orasauth.Credential{
 					Username: "testuser",
 					Password: "testpass",
 				},
@@ -68,7 +80,7 @@ func TestRepoCredsRegistryCredential(t *testing.T) {
 			},
 			want: want{
 				identityToken: true,
-				registryCreds: registryAuth.Credential{
+				registryCreds: orasauth.Credential{
 					Username:     "<token>",
 					RefreshToken: "refresh-token",
 				},
@@ -118,7 +130,12 @@ func TestRegistryHTTPClientInsecureSkipTLSVerify(t *testing.T) {
 				t.Fatalf("http.NewRequestWithContext() error: %v", err)
 			}
 
-			resp, err := registryHTTPClient(tc.insecureSkipTLSVerify).Do(req)
+			httpClient, err := registryHTTPClient(tc.insecureSkipTLSVerify)
+			if err != nil {
+				t.Fatalf("registryHTTPClient() error: %v", err)
+			}
+
+			resp, err := httpClient.Do(req)
 			if resp != nil {
 				defer resp.Body.Close()
 			}
@@ -134,6 +151,43 @@ func TestRegistryHTTPClientInsecureSkipTLSVerify(t *testing.T) {
 				t.Fatalf("registryHTTPClient().Do() error: %v", err)
 			}
 		})
+	}
+}
+
+func TestRegistryHTTPClientInsecureSkipTLSVerifyRequiresHTTPTransport(t *testing.T) {
+	transport := orasretry.NewTransport(roundTripperFunc(func(_ *http.Request) (*http.Response, error) {
+		return nil, nil
+	}))
+
+	_, err := registryHTTPClientForTransport(transport, true)
+	if err == nil {
+		t.Fatal("registryHTTPClientForTransport() error: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "expected Helm registry transport base") {
+		t.Fatalf("registryHTTPClientForTransport() error = %q, want transport type context", err)
+	}
+}
+
+func TestResetPullState(t *testing.T) {
+	pc := action.NewPull()
+	pc.Username = "stale-user"
+	pc.Password = "stale-pass"
+	pc.Version = "1.0.0"
+	pc.RepoURL = "https://charts.example.com"
+
+	resetPullState(pc)
+
+	if pc.Username != "" {
+		t.Errorf("Username = %q, want empty", pc.Username)
+	}
+	if pc.Password != "" {
+		t.Errorf("Password = %q, want empty", pc.Password)
+	}
+	if pc.Version != "" {
+		t.Errorf("Version = %q, want empty", pc.Version)
+	}
+	if pc.RepoURL != "" {
+		t.Errorf("RepoURL = %q, want empty", pc.RepoURL)
 	}
 }
 
@@ -199,6 +253,32 @@ func TestConfigurePullCredentials(t *testing.T) {
 	}
 }
 
+func TestConfigureRegistryClientRequiresOCIHost(t *testing.T) {
+	defaultClient, err := registry.NewClient()
+	if err != nil {
+		t.Fatalf("registry.NewClient() error: %v", err)
+	}
+	actionConfig := &action.Configuration{RegistryClient: defaultClient}
+	hc := &client{
+		pullClient:     action.NewPullWithOpts(action.WithConfig(actionConfig)),
+		registryClient: defaultClient,
+	}
+
+	err = hc.configureRegistryClient("oci://", "", &RepoCreds{
+		Username:      "<token>",
+		IdentityToken: "refresh-token",
+	})
+	if err == nil {
+		t.Fatal("configureRegistryClient() error: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "missing OCI registry host") {
+		t.Fatalf("configureRegistryClient() error = %q, want missing host context", err)
+	}
+	if actionConfig.RegistryClient != defaultClient {
+		t.Fatal("configureRegistryClient() did not leave default registry client installed")
+	}
+}
+
 func TestConfigureRegistryClientResetsDefault(t *testing.T) {
 	defaultClient, err := registry.NewClient()
 	if err != nil {
@@ -229,6 +309,76 @@ func TestConfigureRegistryClientResetsDefault(t *testing.T) {
 	}
 	if actionConfig.RegistryClient != defaultClient {
 		t.Fatal("configureRegistryClient() did not reset to default registry client")
+	}
+}
+
+func TestPullChartWithDirectURLClearsStalePullState(t *testing.T) {
+	archiveDir := t.TempDir()
+	archivePath, err := chartutil.Save(&chart.Chart{
+		Metadata: &chart.Metadata{
+			APIVersion: "v2",
+			Name:       "test-chart",
+			Version:    "1.0.0",
+		},
+	}, archiveDir)
+	if err != nil {
+		t.Fatalf("chartutil.Save() error: %v", err)
+	}
+	archive, err := os.ReadFile(archivePath)
+	if err != nil {
+		t.Fatalf("os.ReadFile() error: %v", err)
+	}
+
+	var requested atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/test-chart-1.0.0.tgz" {
+			t.Errorf("request path = %s, want /test-chart-1.0.0.tgz", r.URL.Path)
+		}
+		requested.Store(true)
+		w.Header().Set("Content-Type", "application/gzip")
+		_, _ = w.Write(archive)
+	}))
+	defer server.Close()
+
+	defaultClient, err := registry.NewClient()
+	if err != nil {
+		t.Fatalf("registry.NewClient() error: %v", err)
+	}
+	actionConfig := &action.Configuration{RegistryClient: defaultClient}
+	pc := action.NewPullWithOpts(action.WithConfig(actionConfig))
+	pc.Settings = &cli.EnvSettings{}
+	pc.Username = "stale-user"
+	pc.Password = "stale-pass"
+	pc.Version = "9.9.9"
+	pc.RepoURL = "https://charts.example.com"
+
+	hc := &client{
+		log:            logging.NewNopLogger(),
+		pullClient:     pc,
+		registryClient: defaultClient,
+	}
+
+	if err := hc.pullChart(server.URL+"/test-chart-1.0.0.tgz", "", "", "", nil, t.TempDir()); err != nil {
+		t.Fatalf("pullChart() error: %v", err)
+	}
+
+	if !requested.Load() {
+		t.Fatal("chart archive was not requested")
+	}
+	if pc.Username != "" {
+		t.Errorf("Username = %q, want empty", pc.Username)
+	}
+	if pc.Password != "" {
+		t.Errorf("Password = %q, want empty", pc.Password)
+	}
+	if pc.Version != "" {
+		t.Errorf("Version = %q, want empty", pc.Version)
+	}
+	if pc.RepoURL != "" {
+		t.Errorf("RepoURL = %q, want empty", pc.RepoURL)
+	}
+	if actionConfig.RegistryClient != defaultClient {
+		t.Fatal("pullChart() did not leave default registry client installed")
 	}
 }
 

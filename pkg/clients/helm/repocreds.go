@@ -1,6 +1,6 @@
 package helm
 
-import registryAuth "oras.land/oras-go/v2/registry/remote/auth"
+import orasauth "oras.land/oras-go/v2/registry/remote/auth"
 
 // RepoCreds keeps auth information to access a Helm Chart
 type RepoCreds struct {
@@ -22,12 +22,12 @@ func (c *RepoCreds) hasIdentityToken() bool {
 	return c != nil && c.IdentityToken != ""
 }
 
-func (c *RepoCreds) registryCredential() registryAuth.Credential {
+func (c *RepoCreds) registryCredential() orasauth.Credential {
 	if c == nil {
-		return registryAuth.EmptyCredential
+		return orasauth.EmptyCredential
 	}
 
-	return registryAuth.Credential{
+	return orasauth.Credential{
 		Username:     c.Username,
 		Password:     c.Password,
 		RefreshToken: c.IdentityToken,
