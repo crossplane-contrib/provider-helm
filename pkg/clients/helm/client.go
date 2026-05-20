@@ -17,7 +17,9 @@ limitations under the License.
 package helm
 
 import (
+	"crypto/tls"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -34,6 +36,7 @@ import (
 	"helm.sh/helm/v3/pkg/registry"
 	"helm.sh/helm/v3/pkg/release"
 	"k8s.io/client-go/rest"
+	orasauth "oras.land/oras-go/v2/registry/remote/auth"
 	ktype "sigs.k8s.io/kustomize/api/types"
 
 	clusterv1beta1 "github.com/crossplane-contrib/provider-helm/apis/cluster/release/v1beta1"
@@ -47,14 +50,18 @@ const (
 )
 
 const (
-	errFailedToCheckIfLocalChartExists = "failed to check if cached chart file exists"
-	errFailedToPullChart               = "failed to pull chart"
-	errFailedToLoadChart               = "failed to load chart"
-	errUnexpectedDirContentTmpl        = "expected 1 .tgz chart file, got [%s]"
-	errFailedToParseURL                = "failed to parse URL"
-	errFailedToLogin                   = "failed to login to registry"
-	errUnexpectedOCIUrlTmpl            = "url not prefixed with oci://, got [%s]"
-	devel                              = ">0.0.0-0"
+	errFailedToCheckIfLocalChartExists  = "failed to check if cached chart file exists"
+	errFailedToPullChart                = "failed to pull chart"
+	errFailedToLoadChart                = "failed to load chart"
+	errUnexpectedDirContentTmpl         = "expected 1 .tgz chart file, got [%s]"
+	errFailedToParseURL                 = "failed to parse URL"
+	errMissingOCIRegistryHostTmpl       = "missing OCI registry host in url [%s]"
+	errFailedToCreateRegistryHTTPClient = "failed to create identity-token registry HTTP client"
+	errFailedToCreateRegistryClient     = "failed to create identity-token registry client"
+	errUnexpectedRegistryTransportTmpl  = "expected Helm registry transport base to be *http.Transport, got [%T]"
+	errFailedToLogin                    = "failed to login to registry"
+	errUnexpectedOCIUrlTmpl             = "url not prefixed with oci://, got [%s]"
+	devel                               = ">0.0.0-0"
 )
 
 // Client is the interface to interact with Helm
@@ -76,6 +83,9 @@ type client struct {
 	rollbackClient  *action.Rollback
 	uninstallClient *action.Uninstall
 	loginClient     *action.RegistryLogin
+	// registryClient is the default registry client. pullChart resets to this
+	// before and after each pull so an identity-token-scoped client does not leak.
+	registryClient *registry.Client
 }
 
 // ArgsApplier defines helm client arguments helper
@@ -155,6 +165,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 		rollbackClient:  rb,
 		uninstallClient: uic,
 		loginClient:     lc,
+		registryClient:  rc,
 	}, nil
 }
 
@@ -203,6 +214,12 @@ func (hc *client) pullLatestChartVersion(chartUrl, chartName, chartVersion, char
 
 func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo string, creds *RepoCreds, chartDir string) error {
 	pc := hc.pullClient
+	resetPullState(pc)
+	registryURL := chartUrl
+	if registryURL == "" {
+		registryURL = chartRepo
+	}
+	useIdentityToken := creds.hasIdentityToken() && registry.IsOCI(registryURL)
 
 	chartRef := chartUrl
 	if chartUrl == "" {
@@ -214,20 +231,29 @@ func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo string,
 		}
 		pc.Version = chartVersion
 	} else if registry.IsOCI(chartUrl) {
-		ociURL, version, err := resolveOCIChartVersion(chartUrl)
+		parsedURL, version, err := resolveOCIChartVersion(chartUrl)
 		if err != nil {
 			return err
 		}
 		pc.Version = version
-		chartRef = ociURL.String()
+		chartRef = parsedURL.String()
 	}
-	pc.Username = creds.Username
-	pc.Password = creds.Password
+	if creds.hasBasicAuth() && !useIdentityToken {
+		pc.Username = creds.Username
+		pc.Password = creds.Password
+	}
 
 	pc.DestDir = chartDir
 
-	if creds.Username != "" && creds.Password != "" {
-		err := hc.login(chartUrl, chartRepo, creds, pc.InsecureSkipTLSverify)
+	defer pc.SetRegistryClient(hc.registryClient)
+	if useIdentityToken {
+		if err := configureIdentityTokenRegistryClient(pc, registryURL, creds); err != nil {
+			return err
+		}
+	}
+
+	if creds.hasBasicAuth() && !useIdentityToken {
+		err := hc.login(registryURL, creds, pc.InsecureSkipTLSverify)
 		if err != nil {
 			return err
 		}
@@ -241,15 +267,86 @@ func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo string,
 	return nil
 }
 
-func (hc *client) login(chartUrl, chartRepo string, creds *RepoCreds, insecure bool) error {
-	ociURL := chartUrl
-	if chartUrl == "" {
-		ociURL = chartRepo
+func configureIdentityTokenRegistryClient(pc *action.Pull, registryURL string, creds *RepoCreds) error {
+	parsedURL, err := url.Parse(registryURL)
+	if err != nil {
+		return errors.Wrap(err, errFailedToParseURL)
 	}
-	if !registry.IsOCI(ociURL) {
+	if parsedURL.Host == "" {
+		return errors.Errorf(errMissingOCIRegistryHostTmpl, registryURL)
+	}
+
+	rc, err := identityTokenRegistryClient(parsedURL.Host, creds, pc.InsecureSkipTLSverify, pc.PlainHTTP)
+	if err != nil {
+		return err
+	}
+	pc.SetRegistryClient(rc)
+	return nil
+}
+
+func resetPullState(pc *action.Pull) {
+	pc.Username = ""
+	pc.Password = ""
+	pc.Version = ""
+	pc.RepoURL = ""
+}
+
+func identityTokenRegistryClient(host string, creds *RepoCreds, insecureSkipTLSVerify, plainHTTP bool) (*registry.Client, error) {
+	httpClient, err := registryHTTPClient(insecureSkipTLSVerify)
+	if err != nil {
+		return nil, errors.Wrap(err, errFailedToCreateRegistryHTTPClient)
+	}
+
+	authorizer := orasauth.Client{
+		Client:     httpClient,
+		Credential: orasauth.StaticCredential(host, creds.registryCredential()),
+	}
+
+	opts := []registry.ClientOption{
+		registry.ClientOptHTTPClient(httpClient),
+		registry.ClientOptAuthorizer(authorizer),
+	}
+	if plainHTTP {
+		opts = append(opts, registry.ClientOptPlainHTTP())
+	}
+
+	rc, err := registry.NewClient(opts...)
+	if err != nil {
+		return nil, errors.Wrap(err, errFailedToCreateRegistryClient)
+	}
+	return rc, nil
+}
+
+func registryHTTPClient(insecureSkipTLSVerify bool) (*http.Client, error) {
+	// Keep Helm's normal retry transport. The flag disables Helm registry
+	// debug logging; it is unrelated to TLS verification.
+	transport := registry.NewTransport(false)
+	if !insecureSkipTLSVerify {
+		return &http.Client{Transport: transport}, nil
+	}
+
+	base, ok := transport.Base.(*http.Transport)
+	if !ok {
+		return nil, errors.Errorf(errUnexpectedRegistryTransportTmpl, transport.Base)
+	}
+
+	base = base.Clone()
+	if base.TLSClientConfig == nil {
+		base.TLSClientConfig = &tls.Config{} //nolint:gosec // This honors the Release's explicit insecureSkipTLSVerify setting.
+	} else {
+		base.TLSClientConfig = base.TLSClientConfig.Clone()
+	}
+	base.TLSClientConfig.InsecureSkipVerify = true //nolint:gosec // This honors the Release's explicit insecureSkipTLSVerify setting.
+	transport.Base = base
+
+	return &http.Client{Transport: transport}, nil
+}
+
+func (hc *client) login(registryURL string, creds *RepoCreds, insecure bool) error {
+	if !registry.IsOCI(registryURL) {
 		return nil
 	}
-	parsedURL, err := url.Parse(ociURL)
+	parsedURL, err := url.Parse(registryURL)
 	if err != nil {
 		return errors.Wrap(err, errFailedToParseURL)
 	}
