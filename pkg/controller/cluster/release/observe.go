@@ -83,7 +83,7 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 	in := spec.ForProvider
 
 	if in.Chart.Name != ocm.Name {
-		return false, nil
+		return false, fmt.Errorf("expected chart name %s, got %s", in.Chart.Name, ocm.Name)
 	}
 
 	mp := sets.New[xpv1.ManagementAction](spec.ManagementPolicies...)
