@@ -1,0 +1,21 @@
+# Regression coverage for classic-repository charts whose published tarball
+# basename differs from <name>-<version>.tgz. node-feature-discovery 0.18.3 is
+# advertised in the repository index but hosted as the release asset
+# node-feature-discovery-chart-0.18.3.tgz (note the -chart- infix), so the
+# provider must load the chart from the path Helm actually saved it under
+# rather than reconstructing <name>-<version>.tgz.
+apiVersion: helm.m.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: node-feature-discovery
+  namespace: crossplane-system
+spec:
+  forProvider:
+    namespace: nfd
+    chart:
+      name: node-feature-discovery
+      repository: https://kubernetes-sigs.github.io/node-feature-discovery/charts
+      version: "0.18.3"
+  providerConfigRef:
+    name: helm-provider-cluster
+    kind: ClusterProviderConfig

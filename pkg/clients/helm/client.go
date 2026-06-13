@@ -173,8 +173,12 @@ func getChartFileName(dir string) (string, error) {
 	return files[0].Name(), nil
 }
 
-// Pulls latest chart version. Returns absolute chartFilePath or error.
-func (hc *client) pullLatestChartVersion(chartUrl, chartName, chartVersion, chartRepo string, creds *RepoCreds) (string, error) {
+// pullChartToCache pulls the chart into the cache directory and returns the
+// absolute path it was actually saved under. The chart is first pulled into a
+// temporary directory so its real tarball name can be discovered: Helm derives
+// the local filename from the artifact URL resolved via the repository
+// index.yaml urls field, which is not necessarily <name>-<version>.tgz.
+func (hc *client) pullChartToCache(chartUrl, chartName, chartVersion, chartRepo string, creds *RepoCreds) (string, error) {
 	tmpDir, err := os.MkdirTemp(chartCache, "")
 	if err != nil {
 		return "", err
@@ -280,7 +284,7 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 
 	switch {
 	case chartUrl == "" && (chartVersion == "" || chartVersion == devel):
-		chartFilePath, err = hc.pullLatestChartVersion(chartUrl, chartName, chartVersion, chartRepo, creds)
+		chartFilePath, err = hc.pullChartToCache(chartUrl, chartName, chartVersion, chartRepo, creds)
 		if err != nil {
 			return nil, err
 		}
@@ -291,7 +295,7 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 		}
 
 		if v == "" {
-			chartFilePath, err = hc.pullLatestChartVersion(chartUrl, chartName, chartVersion, chartRepo, creds)
+			chartFilePath, err = hc.pullChartToCache(chartUrl, chartName, chartVersion, chartRepo, creds)
 			if err != nil {
 				return nil, err
 			}
@@ -305,7 +309,14 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 		}
 		chartFilePath = filepath.Join(chartCache, path.Base(u.Path))
 	default:
-		chartFilePath = resolveChartFilePath(chartName, chartVersion)
+		// Classic repository mode. Reuse a conventionally-named cached chart
+		// when present; otherwise pull and load it from the path Helm actually
+		// saved it under, since a repository may advertise a tarball name that
+		// differs from <name>-<version>.tgz.
+		chartFilePath, err = hc.cachedOrPulledChartPath(chartName, chartVersion, chartRepo, creds)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if _, err := os.Stat(chartFilePath); os.IsNotExist(err) {
@@ -383,6 +394,20 @@ func resolveOCIChartVersion(chartURL string) (*url.URL, string, error) {
 func resolveChartFilePath(name string, version string) string {
 	filename := fmt.Sprintf("%s-%s.tgz", name, version)
 	return filepath.Join(chartCache, filename)
+}
+
+// cachedOrPulledChartPath returns the path to a conventionally-named cached
+// chart if it already exists, otherwise pulls the chart and returns the path it
+// was actually saved under. The saved name can differ from <name>-<version>.tgz
+// when a repository advertises a non-conventional tarball name in its index.
+func (hc *client) cachedOrPulledChartPath(chartName, chartVersion, chartRepo string, creds *RepoCreds) (string, error) {
+	chartFilePath := resolveChartFilePath(chartName, chartVersion)
+	if _, err := os.Stat(chartFilePath); err == nil {
+		return chartFilePath, nil
+	} else if !os.IsNotExist(err) {
+		return "", errors.Wrap(err, errFailedToCheckIfLocalChartExists)
+	}
+	return hc.pullChartToCache("", chartName, chartVersion, chartRepo, creds)
 }
 
 func resolveOCIChartRef(repository string, name string) string {
