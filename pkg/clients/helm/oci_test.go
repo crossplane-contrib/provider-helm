@@ -9,6 +9,8 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
+
+	clusterv1beta1 "github.com/crossplane-contrib/provider-helm/apis/cluster/release/v1beta1"
 )
 
 // mockLogger is a simple logger implementation for testing
@@ -167,10 +169,13 @@ func TestResolveOCIChartVersionAndDigest(t *testing.T) {
 }
 
 func TestResolveOCIChartRef(t *testing.T) {
+	const digest = "sha256:abc123def456"
+
 	tests := []struct {
 		name       string
 		repository string
 		chartName  string
+		digest     string
 		want       string
 	}{
 		{
@@ -191,11 +196,32 @@ func TestResolveOCIChartRef(t *testing.T) {
 			chartName:  "wordpress",
 			want:       "oci://ghcr.io/myorg/helm-charts/wordpress",
 		},
+		{
+			name:       "WithDigest",
+			repository: "oci://registry.example.com/charts",
+			chartName:  "mychart",
+			digest:     digest,
+			want:       "oci://registry.example.com/charts/mychart@" + digest,
+		},
+		{
+			name:       "WithDigestAndTrailingSlash",
+			repository: "oci://registry.example.com/charts/",
+			chartName:  "mychart",
+			digest:     digest,
+			want:       "oci://registry.example.com/charts/mychart@" + digest,
+		},
+		{
+			name:       "DigestWithSurroundingWhitespaceTrimmed",
+			repository: "oci://registry.example.com/charts",
+			chartName:  "mychart",
+			digest:     "  " + digest + "  ",
+			want:       "oci://registry.example.com/charts/mychart@" + digest,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := resolveOCIChartRef(tt.repository, tt.chartName)
+			got := resolveOCIChartRef(tt.repository, tt.chartName, tt.digest)
 			if got != tt.want {
 				t.Errorf("resolveOCIChartRef() = %q, want %q", got, tt.want)
 			}
@@ -345,23 +371,40 @@ func TestResolveCachedChartPathWithDigest(t *testing.T) {
 	defer func() { chartCache = origCache }()
 
 	testChartName := "test-chart-digest"
-	testChartVersion := "9.9.9"
 	testChartContent := "test chart content for digest validation"
 
-	// compute path using the (now-overridden) cache variable
-	testChartFile := resolveChartFilePath(testChartName, testChartVersion)
-
-	if err := os.WriteFile(testChartFile, []byte(testChartContent), 0600); err != nil {
-		t.Fatalf("Failed to create test chart file: %v", err)
-	}
-
-	// Compute the actual digest of the test file
-	correctDigest, err := computeFileDigest(testChartFile)
+	// The cache is content-addressed by digest. Compute the digest of the
+	// content, then ask the helper for the cache basename it expects for that
+	// digest (returned even on a miss) and write the chart there, so we never
+	// have to replicate the internal naming scheme in the test.
+	correctDigest, err := computeFileDigest(func() string {
+		f := filepath.Join(tempDir, "seed")
+		if err := os.WriteFile(f, []byte(testChartContent), 0600); err != nil {
+			t.Fatalf("Failed to seed content: %v", err)
+		}
+		return f
+	}())
 	if err != nil {
 		t.Fatalf("Failed to compute digest: %v", err)
 	}
 
-	wrongDigest := "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+	// matchingChartFile is where a cache hit is expected to resolve to.
+	_, matchingName := resolveCachedChartPathWithDigest(testChartName, correctDigest, &mockLogger{})
+	matchingChartFile := filepath.Join(localChartCache, matchingName)
+	if err := os.WriteFile(matchingChartFile, []byte(testChartContent), 0600); err != nil {
+		t.Fatalf("Failed to create test chart file: %v", err)
+	}
+
+	// tamperedDigest names a cache file whose stored content does NOT hash to
+	// the digest in its name, exercising the content-mismatch branch.
+	tamperedDigest := "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+	_, tamperedName := resolveCachedChartPathWithDigest(testChartName, tamperedDigest, &mockLogger{})
+	if err := os.WriteFile(filepath.Join(localChartCache, tamperedName), []byte("tampered"), 0600); err != nil {
+		t.Fatalf("Failed to create tampered chart file: %v", err)
+	}
+
+	// missingDigest names a cache file that does not exist on disk.
+	missingDigest := "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 
 	// Create a mock logger that captures debug messages
 	mockLog := &mockLogger{}
@@ -369,57 +412,43 @@ func TestResolveCachedChartPathWithDigest(t *testing.T) {
 	tests := []struct {
 		name           string
 		chartName      string
-		chartVersion   string
 		expectedDigest string
-		wantEmpty      bool // Whether we expect an empty path (cache miss)
-		wantLogCount   int  // Number of debug log calls expected
+		wantEmpty      bool   // Whether we expect an empty path (cache miss)
+		wantPath       string // expected path on cache hit
+		wantDestEmpty  bool   // Whether the returned dest filename is empty
+		wantLogCount   int    // Number of debug log calls expected
 	}{
 		{
 			name:           "DigestMatches",
 			chartName:      testChartName,
-			chartVersion:   testChartVersion,
 			expectedDigest: correctDigest,
 			wantEmpty:      false, // Cache hit
-			wantLogCount:   1,     // "Cache hit: digest matches"
+			wantPath:       matchingChartFile,
+			wantDestEmpty:  false,
+			wantLogCount:   1, // "Cache hit: digest matches"
 		},
 		{
-			name:           "DigestMismatch",
+			name:           "DigestMismatch_TamperedFile",
 			chartName:      testChartName,
-			chartVersion:   testChartVersion,
-			expectedDigest: wrongDigest,
-			wantEmpty:      true, // Cache miss
-			wantLogCount:   1,    // "Cache digest mismatch"
+			expectedDigest: tamperedDigest,
+			wantEmpty:      true, // Cache miss: stored content does not match digest
+			wantDestEmpty:  false,
+			wantLogCount:   1, // "Cache digest mismatch"
 		},
 		{
 			name:           "FileNotFound",
-			chartName:      "nonexistent-chart",
-			chartVersion:   "1.0.0",
-			expectedDigest: correctDigest,
-			wantEmpty:      true, // Cache miss
-			wantLogCount:   1,    // "failed to verify cached digest"
+			chartName:      testChartName,
+			expectedDigest: missingDigest,
+			wantEmpty:      true, // Cache miss: no file at digest-keyed path
+			wantDestEmpty:  false,
+			wantLogCount:   1, // "failed to verify cached digest"
 		},
 		{
 			name:           "EmptyChartName",
 			chartName:      "",
-			chartVersion:   testChartVersion,
 			expectedDigest: correctDigest,
 			wantEmpty:      true, // Cache miss
-			wantLogCount:   0,    // No logs, early return
-		},
-		{
-			name:           "EmptyChartVersion",
-			chartName:      testChartName,
-			chartVersion:   "",
-			expectedDigest: correctDigest,
-			wantEmpty:      true, // Cache miss
-			wantLogCount:   0,    // No logs, early return
-		},
-		{
-			name:           "EmptyNameAndVersion",
-			chartName:      "",
-			chartVersion:   "",
-			expectedDigest: correctDigest,
-			wantEmpty:      true, // Cache miss
+			wantDestEmpty:  true, // cannot construct a cache path
 			wantLogCount:   0,    // No logs, early return
 		},
 	}
@@ -430,7 +459,7 @@ func TestResolveCachedChartPathWithDigest(t *testing.T) {
 			mockLog = &mockLogger{}
 
 			// Call the function
-			gotPath := resolveCachedChartPathWithDigest(tt.chartName, tt.chartVersion, tt.expectedDigest, mockLog)
+			gotPath, gotDest := resolveCachedChartPathWithDigest(tt.chartName, tt.expectedDigest, mockLog)
 
 			// Check if the result matches expectations (empty vs non-empty)
 			gotEmpty := gotPath == ""
@@ -440,8 +469,18 @@ func TestResolveCachedChartPathWithDigest(t *testing.T) {
 			}
 
 			// For cache hits, verify the path is what we expect
-			if !tt.wantEmpty && gotPath != testChartFile {
-				t.Errorf("resolveCachedChartPathWithDigest() = %q, want %q", gotPath, testChartFile)
+			if !tt.wantEmpty && gotPath != tt.wantPath {
+				t.Errorf("resolveCachedChartPathWithDigest() = %q, want %q", gotPath, tt.wantPath)
+			}
+
+			// The dest filename is returned regardless of hit/miss (except when
+			// no chart name is given) so a cache-miss pull can be stored under
+			// the same digest-keyed name the lookup probes.
+			if (gotDest == "") != tt.wantDestEmpty {
+				t.Errorf("resolveCachedChartPathWithDigest() dest = %q, wantEmpty=%v", gotDest, tt.wantDestEmpty)
+			}
+			if !tt.wantDestEmpty && gotDest != filepath.Base(matchingChartFile) && tt.expectedDigest == correctDigest {
+				t.Errorf("resolveCachedChartPathWithDigest() dest = %q, want %q", gotDest, filepath.Base(matchingChartFile))
 			}
 
 			// Check log call count
@@ -633,6 +672,8 @@ func TestEnsureChartCached(t *testing.T) {
 				testChartName,
 				testChartVersion,
 				"", // chartRepo
+				"", // chartDigest
+				"", // destFileName
 				&RepoCreds{},
 			)
 
@@ -693,6 +734,8 @@ func TestEnsureChartCached_PathTraversalProtection(t *testing.T) {
 				"test",
 				"1.0.0",
 				"",
+				"",
+				"",
 				&RepoCreds{},
 			)
 
@@ -713,5 +756,202 @@ func TestEnsureChartCached_PathTraversalProtection(t *testing.T) {
 				t.Errorf("Expected sanitized path %q, got %q", expectedPath, gotPath)
 			}
 		})
+	}
+}
+
+func TestResolveEffectiveDigest(t *testing.T) {
+	const digestA = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const digestB = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+	// resolveEffectiveDigest now reconciles the digest already extracted from
+	// the chart URL with the spec digest. URL parsing is the caller's job.
+	cases := map[string]struct {
+		urlDigest  string
+		specDigest string
+		want       string
+		wantErr    error
+	}{
+		"BothEmpty": {
+			urlDigest:  "",
+			specDigest: "",
+			want:       "",
+		},
+		"URLOnly": {
+			urlDigest:  digestA,
+			specDigest: "",
+			want:       digestA,
+		},
+		"SpecOnly": {
+			urlDigest:  "",
+			specDigest: digestA,
+			want:       digestA,
+		},
+		"BothMatch": {
+			urlDigest:  digestA,
+			specDigest: digestA,
+			want:       digestA,
+		},
+		"Conflict": {
+			urlDigest:  digestA,
+			specDigest: digestB,
+			wantErr:    errors.Errorf(errDigestMismatchTmpl, digestA, digestB),
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got, err := resolveEffectiveDigest(tc.urlDigest, tc.specDigest)
+			if diff := cmp.Diff(tc.wantErr, err, test.EquateErrors()); diff != "" {
+				t.Fatalf("resolveEffectiveDigest() error: -want, +got:\n%s", diff)
+			}
+			if err != nil {
+				return
+			}
+			if got != tc.want {
+				t.Errorf("resolveEffectiveDigest() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestPullAndLoadChart_Validation covers the upfront validation guards in
+// PullAndLoadChart that fail fast before any chart pull is attempted: digest on
+// a non-OCI source, and (when no URL is given) a missing chart name or
+// repository. These paths return early, so a client without a configured pull
+// client is sufficient.
+func TestPullAndLoadChart_Validation(t *testing.T) {
+	const digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	mockClient := &client{log: &mockLogger{}}
+
+	rel := func(c clusterv1beta1.ChartSpec) *clusterv1beta1.Release {
+		return &clusterv1beta1.Release{
+			Spec: clusterv1beta1.ReleaseSpec{
+				ForProvider: clusterv1beta1.ReleaseParameters{Chart: c},
+			},
+		}
+	}
+
+	cases := map[string]struct {
+		chart   clusterv1beta1.ChartSpec
+		wantErr string
+	}{
+		"DigestOnNonOCIRepository": {
+			chart: clusterv1beta1.ChartSpec{
+				Repository: "https://charts.example.com",
+				Name:       "mychart",
+				Version:    "1.0.0",
+				Digest:     digest,
+			},
+			wantErr: errDigestNotSupportedForNonOCI,
+		},
+		"DigestWithNoURLOrRepository": {
+			chart: clusterv1beta1.ChartSpec{
+				Name:   "mychart",
+				Digest: digest,
+			},
+			wantErr: errDigestNotSupportedForNonOCI,
+		},
+		"NoURLMissingChartName": {
+			// version set so we skip the "pull latest" branch and reach the
+			// no-URL resolution branch that validates name/repository.
+			chart: clusterv1beta1.ChartSpec{
+				Repository: "https://charts.example.com",
+				Version:    "1.0.0",
+			},
+			wantErr: errNoChartName,
+		},
+		"NoURLMissingRepository": {
+			chart: clusterv1beta1.ChartSpec{
+				Name:    "mychart",
+				Version: "1.0.0",
+			},
+			wantErr: errNoChartRepository,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := mockClient.PullAndLoadChart(rel(tc.chart), &RepoCreds{})
+			if err == nil {
+				t.Fatalf("PullAndLoadChart() expected error %q, got nil", tc.wantErr)
+			}
+			if err.Error() != tc.wantErr {
+				t.Errorf("PullAndLoadChart() error = %q, want %q", err.Error(), tc.wantErr)
+			}
+		})
+	}
+}
+
+// TestDigestCacheRoundTrip proves the cache is genuinely content-addressed: a
+// chart pulled and stored under the digest-keyed name (the dest filename the
+// lookup hands out) is then found by a subsequent digest lookup. This is the
+// regression guard for the store/lookup key agreement — without it a
+// digest-pinned chart would be stored under Helm's version-based name and
+// re-pulled on every reconcile.
+func TestDigestCacheRoundTrip(t *testing.T) {
+	tempDir := t.TempDir()
+	localChartCache := filepath.Join(tempDir, "charts")
+	if err := os.MkdirAll(localChartCache, 0750); err != nil {
+		t.Fatalf("Failed to create local chart cache directory: %v", err)
+	}
+
+	origCache := chartCache
+	chartCache = localChartCache
+	defer func() { chartCache = origCache }()
+
+	const chartName = "podinfo"
+	chartContent := "pretend-this-is-a-chart-tarball"
+
+	// Compute the digest of the chart content the way the controller would
+	// learn it (e.g. from the OCI manifest / spec.forProvider.chart.digest).
+	seed := filepath.Join(tempDir, "seed")
+	if err := os.WriteFile(seed, []byte(chartContent), 0600); err != nil {
+		t.Fatalf("Failed to seed content: %v", err)
+	}
+	digest, err := computeFileDigest(seed)
+	if err != nil {
+		t.Fatalf("Failed to compute digest: %v", err)
+	}
+
+	log := &mockLogger{}
+
+	// Before any pull, the digest lookup misses but still hands back the cache
+	// basename a pull should be stored under.
+	missPath, destName := resolveCachedChartPathWithDigest(chartName, digest, log)
+	if missPath != "" {
+		t.Fatalf("expected cache miss before pull, got path %q", missPath)
+	}
+	if destName == "" {
+		t.Fatal("expected a non-empty dest filename to store the pull under")
+	}
+
+	// Simulate a Helm pull: a temp dir containing a single tarball whose name
+	// is Helm's version-based name (deliberately different from destName).
+	pullDir, err := os.MkdirTemp(localChartCache, "")
+	if err != nil {
+		t.Fatalf("Failed to create pull dir: %v", err)
+	}
+	helmName := chartName + "-1.2.3.tgz"
+	if err := os.WriteFile(filepath.Join(pullDir, helmName), []byte(chartContent), 0600); err != nil {
+		t.Fatalf("Failed to write pulled chart: %v", err)
+	}
+
+	// Store the pulled chart under the digest-keyed dest name.
+	storedPath, err := movePulledChartToCache(pullDir, destName)
+	if err != nil {
+		t.Fatalf("movePulledChartToCache() error: %v", err)
+	}
+	if storedPath != filepath.Join(localChartCache, destName) {
+		t.Errorf("stored path = %q, want %q", storedPath, filepath.Join(localChartCache, destName))
+	}
+
+	// The next reconcile's lookup must now hit and resolve to the stored path.
+	hitPath, hitDest := resolveCachedChartPathWithDigest(chartName, digest, log)
+	if hitPath != storedPath {
+		t.Errorf("cache lookup after store = %q, want hit at %q", hitPath, storedPath)
+	}
+	if hitDest != destName {
+		t.Errorf("dest filename = %q, want stable %q", hitDest, destName)
 	}
 }
