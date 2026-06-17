@@ -224,9 +224,12 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 		return managed.ExternalObservation{}, errors.New(errLastReleaseIsNil)
 	}
 
+	// Preserve the last-deployed digest from the persisted status so isUpToDate
+	// can detect spec.digest changes. generateObservation reconstructs the
+	// observation from the Helm release, which has no notion of OCI digest.
+	lastDigest := cr.Status.AtProvider.Digest
 	cr.Status.AtProvider = generateObservation(rel)
-	// Store the digest in status for drift detection
-	cr.Status.AtProvider.Digest = cr.Spec.ForProvider.Chart.Digest
+	cr.Status.AtProvider.Digest = lastDigest
 
 	// Determining whether the release is up to date may involve reading values
 	// from secrets, configmaps, etc. This will fail if said dependencies have
