@@ -108,6 +108,10 @@ type ReleaseParameters struct {
 	// This prevents silent adoption of unrelated resources during chart upgrades.
 	// Use this field to migrate manually-deployed Helm releases into Crossplane management.
 	TakeOwnership bool `json:"takeOwnership,omitempty"`
+	// MaxHistory limits the maximum number of revisions saved per release. Use 0 for no limit.
+	// +optional
+	// +kubebuilder:default:=20
+	MaxHistory int `json:"maxHistory,omitempty"`
 }
 
 // ReleaseObservation are the observable fields of a Release.

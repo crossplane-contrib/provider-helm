@@ -42,9 +42,6 @@ import (
 
 const (
 	helmDriverSecret = "secret"
-	// releaseMaxHistory is the maximum number of entries Helm will keep in
-	// release history. We just set a reasonable default for our use case.
-	releaseMaxHistory = 20
 )
 
 // chartCache is the directory where pulled chart tarballs are stored. It is
@@ -146,6 +143,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	uc.InsecureSkipTLSverify = args.InsecureSkipTLSVerify
 	uc.PlainHTTP = args.PlainHTTP
 	uc.TakeOwnership = args.TakeOwnership
+	uc.MaxHistory = args.MaxHistory
 
 	uic := action.NewUninstall(actionConfig)
 	uic.Wait = args.Wait
@@ -437,7 +435,6 @@ func (hc *client) Install(release string, chart *chart.Chart, vals map[string]in
 func (hc *client) Upgrade(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error) {
 	// Reset values so that source of truth for desired state is always the CR itself
 	hc.upgradeClient.ResetValues = true
-	hc.upgradeClient.MaxHistory = releaseMaxHistory
 
 	if len(patches) > 0 {
 		hc.upgradeClient.PostRenderer = &KustomizationRender{
