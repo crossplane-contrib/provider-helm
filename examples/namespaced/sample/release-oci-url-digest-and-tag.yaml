@@ -1,14 +1,13 @@
 apiVersion: helm.m.crossplane.io/v1beta1
 kind: Release
 metadata:
-  name: example-oci-digest
+  name: example-oci-url-with-digest-tag
   namespace: crossplane-system
 spec:
   forProvider:
     chart:
-      name: podinfo
-      repository: oci://ghcr.io/stefanprodan/charts
-      digest: sha256:c56f4d760bc9da702f231f37fcec89c66b0993f0cb91446f86d014b133c6693f
+      # OCI URL with both Tag and Digest
+      url: oci://ghcr.io/stefanprodan/charts/podinfo:6.10.2@sha256:c56f4d760bc9da702f231f37fcec89c66b0993f0cb91446f86d014b133c6693f
     namespace: crossplane-system
   providerConfigRef:
     name: helm-provider-cluster

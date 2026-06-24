@@ -95,7 +95,8 @@ CROSSPLANE_NAMESPACE = crossplane-system
 -include build/makelib/local.xpkg.mk
 -include build/makelib/controlplane.mk
 
-UPTEST_EXAMPLE_LIST ?= "examples/cluster/sample/release.yaml,examples/namespaced/sample/release.yaml,examples/cluster/sample/release-oci-digest.yaml,examples/namespaced/sample/release-oci-digest-url.yaml"
+UPTEST_EXAMPLE_LIST ?= "examples/cluster/sample/release.yaml,examples/cluster/sample/release-oci-digest.yaml,examples/cluster/sample/release-oci-digest-with-version.yaml,examples/cluster/sample/release-oci-url-and-spec-digest.yaml,examples/cluster/sample/release-oci-url-digest.yaml,examples/cluster/sample/release-oci-url-digest-and-tag.yaml,examples/cluster/sample/release-oci-url-with-tag.yaml,examples/namespaced/sample/release.yaml,examples/namespaced/sample/release-oci-digest.yaml,examples/namespaced/sample/release-oci-digest-with-version.yaml,examples/namespaced/sample/release-oci-url-and-spec-digest.yaml,examples/namespaced/sample/release-oci-url-digest.yaml,examples/namespaced/sample/release-oci-url-digest-and-tag.yaml,examples/namespaced/sample/release-oci-url-with-tag.yaml"
+
 uptest: $(UPTEST) $(KUBECTL) $(CHAINSAW) $(CROSSPLANE_CLI)
 	@$(INFO) running automated tests
 	@KUBECTL=$(KUBECTL) CHAINSAW=$(CHAINSAW) CROSSPLANE_CLI=$(CROSSPLANE_CLI) CROSSPLANE_NAMESPACE=$(CROSSPLANE_NAMESPACE) $(UPTEST) e2e "$(UPTEST_EXAMPLE_LIST)" --setup-script=cluster/test/setup.sh || $(FAIL)

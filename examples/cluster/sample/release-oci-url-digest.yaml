@@ -1,13 +1,11 @@
 apiVersion: helm.crossplane.io/v1beta1
 kind: Release
 metadata:
-  name: podinfo-digest-url-example
+  name: example-oci-url-embedded-digest
 spec:
   forProvider:
     chart:
-      # Using digest directly in the URL (OCI format)
-      # This ensures the exact chart is pulled regardless of tags
-      # The provider validates cached charts against the digest and reuses them when possible
+      # OCI URL with digest
       url: oci://ghcr.io/stefanprodan/charts/podinfo@sha256:c56f4d760bc9da702f231f37fcec89c66b0993f0cb91446f86d014b133c6693f
     namespace: crossplane-system
   providerConfigRef:

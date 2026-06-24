@@ -1,0 +1,11 @@
+apiVersion: helm.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: example-oci-url-with-tag
+spec:
+  forProvider:
+    chart:
+      url: oci://ghcr.io/stefanprodan/charts/podinfo:6.10.2
+    namespace: crossplane-system
+  providerConfigRef:
+    name: helm-provider
