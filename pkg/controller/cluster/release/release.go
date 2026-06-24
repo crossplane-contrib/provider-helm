@@ -253,6 +253,9 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 		if err != nil {
 			return managed.ExternalObservation{}, errors.Wrap(err, "cannot get connection details")
 		}
+		if cr.Status.AtProvider.Digest == "" {
+			cr.Status.AtProvider.Digest = cr.Spec.ForProvider.Chart.Digest
+		}
 		cr.Status.SetConditions(xpv1.Available())
 	} else {
 		cr.Status.SetConditions(xpv1.Unavailable())

@@ -107,7 +107,7 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 
 	// Check if digest has changed - if specified, compare against last synced digest
 	// Note: Chart metadata doesn't include OCI digest, so we store it in status
-	if in.Chart.Digest != "" && in.Chart.Digest != s.AtProvider.Digest {
+	if in.Chart.Digest != "" && s.AtProvider.Digest != "" && in.Chart.Digest != s.AtProvider.Digest {
 		return false, nil
 	}
 

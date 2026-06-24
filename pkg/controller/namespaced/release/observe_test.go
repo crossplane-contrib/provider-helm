@@ -472,7 +472,7 @@ func Test_isUpToDate(t *testing.T) {
 				err: nil,
 			},
 		},
-		"NotUpToDate_DigestSpecifiedButNotYetDeployed": {
+		"UpToDate_DigestSpecifiedButNotYetDeployed": {
 			args: args{
 				kube: &test.MockClient{
 					MockGet: nil,
@@ -509,7 +509,7 @@ func Test_isUpToDate(t *testing.T) {
 				},
 			},
 			want: want{
-				out: false,
+				out: true,
 				err: nil,
 			},
 		},
