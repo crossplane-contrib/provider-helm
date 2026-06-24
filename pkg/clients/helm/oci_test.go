@@ -1,8 +1,10 @@
 package helm
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
@@ -291,270 +293,76 @@ func TestResolveOCIChartVersion_BackwardCompatibility(t *testing.T) {
 	}
 }
 
-func TestComputeFileDigest(t *testing.T) {
-	tests := []struct {
-		name        string
-		fileContent string
-		wantDigest  string
-		wantErr     bool
-	}{
-		{
-			name:        "EmptyFile",
-			fileContent: "",
-			// SHA256 of empty string
-			wantDigest: "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-			wantErr:    false,
-		},
-		{
-			name:        "SimpleContent",
-			fileContent: "Hello, World!",
-			// SHA256 of "Hello, World!"
-			wantDigest: "sha256:dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f",
-			wantErr:    false,
-		},
-		{
-			name:        "BinaryContent",
-			fileContent: "\x00\x01\x02\x03\x04\x05",
-			// SHA256 of the binary content
-			wantDigest: "sha256:17e88db187afd62c16e5debf3e6527cd006bc012bc90b51a810cd80c2d511f43",
-			wantErr:    false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create a temporary file
-			tmpDir := t.TempDir()
-			tmpFile := filepath.Join(tmpDir, "test.tgz")
-
-			if err := os.WriteFile(tmpFile, []byte(tt.fileContent), 0600); err != nil {
-				t.Fatalf("Failed to create test file: %v", err)
-			}
-
-			// Compute digest
-			gotDigest, err := computeFileDigest(tmpFile)
-
-			if (err != nil) != tt.wantErr {
-				t.Errorf("computeFileDigest() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if gotDigest != tt.wantDigest {
-				t.Errorf("computeFileDigest() = %v, want %v", gotDigest, tt.wantDigest)
-			}
-		})
-	}
-
-	// Test file not found
-	t.Run("FileNotFound", func(t *testing.T) {
-		_, err := computeFileDigest("/nonexistent/file.tgz")
-		if err == nil {
-			t.Error("computeFileDigest() expected error for nonexistent file, got nil")
-		}
-	})
+// helmDigestPullFilename reproduces the filename Helm's chart downloader writes
+// for an OCI chart pulled by digest (see helm.sh/helm/v3 pkg/downloader
+// chart_downloader.go DownloadTo): it takes filepath.Base of the reference path
+// (e.g. "mychart@sha256:abc") and replaces the last ':' with '-', yielding
+// "mychart@sha256-abc.tgz". resolveCachedChartPathWithDigest must construct the
+// same name so a digest-pinned pull is found in the cache on the next reconcile.
+func helmDigestPullFilename(name, digest string) string {
+	base := filepath.Base(name) + "@" + digest // e.g. mychart@sha256:abc
+	idx := strings.LastIndexByte(base, ':')
+	return fmt.Sprintf("%s-%s.tgz", base[:idx], base[idx+1:])
 }
 
 func TestResolveCachedChartPathWithDigest(t *testing.T) {
-	// Instead of writing into the global /tmp/charts cache we create a
-	// temporary directory for this test and override the package variable so
-	// that the helper under test uses it. t.TempDir() will clean itself up once
-	// the test finishes, so no manual removal is necessary.
+	// Override the global cache path so we assert against a known base dir.
 	tempDir := t.TempDir()
 	localChartCache := filepath.Join(tempDir, "charts")
 	if err := os.MkdirAll(localChartCache, 0750); err != nil {
 		t.Fatalf("Failed to create local chart cache directory: %v", err)
 	}
-
-	// patch the global cache path for the duration of this test
 	origCache := chartCache
 	chartCache = localChartCache
 	defer func() { chartCache = origCache }()
 
-	testChartName := "test-chart-digest"
-	testChartContent := "test chart content for digest validation"
-
-	// The cache is content-addressed by digest. Compute the digest of the
-	// content, then ask the helper for the cache basename it expects for that
-	// digest (returned even on a miss) and write the chart there, so we never
-	// have to replicate the internal naming scheme in the test.
-	correctDigest, err := computeFileDigest(func() string {
-		f := filepath.Join(tempDir, "seed")
-		if err := os.WriteFile(f, []byte(testChartContent), 0600); err != nil {
-			t.Fatalf("Failed to seed content: %v", err)
-		}
-		return f
-	}())
-	if err != nil {
-		t.Fatalf("Failed to compute digest: %v", err)
-	}
-
-	// matchingChartFile is where a cache hit is expected to resolve to.
-	_, matchingName := resolveCachedChartPathWithDigest(testChartName, correctDigest, &mockLogger{})
-	matchingChartFile := filepath.Join(localChartCache, matchingName)
-	if err := os.WriteFile(matchingChartFile, []byte(testChartContent), 0600); err != nil {
-		t.Fatalf("Failed to create test chart file: %v", err)
-	}
-
-	// tamperedDigest names a cache file whose stored content does NOT hash to
-	// the digest in its name, exercising the content-mismatch branch.
-	tamperedDigest := "sha256:1111111111111111111111111111111111111111111111111111111111111111"
-	_, tamperedName := resolveCachedChartPathWithDigest(testChartName, tamperedDigest, &mockLogger{})
-	if err := os.WriteFile(filepath.Join(localChartCache, tamperedName), []byte("tampered"), 0600); err != nil {
-		t.Fatalf("Failed to create tampered chart file: %v", err)
-	}
-
-	// missingDigest names a cache file that does not exist on disk.
-	missingDigest := "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-
-	// Create a mock logger that captures debug messages
-	mockLog := &mockLogger{}
+	const digest = "sha256:d1c2884a2ac2d2f80fb1bf384e45b4cc72669498ccd237843dcc63bfcac810a3"
 
 	tests := []struct {
-		name           string
-		chartName      string
-		expectedDigest string
-		wantEmpty      bool   // Whether we expect an empty path (cache miss)
-		wantPath       string // expected path on cache hit
-		wantDestEmpty  bool   // Whether the returned dest filename is empty
-		wantLogCount   int    // Number of debug log calls expected
+		name      string
+		chartName string
+		digest    string
+		want      string
 	}{
 		{
-			name:           "DigestMatches",
-			chartName:      testChartName,
-			expectedDigest: correctDigest,
-			wantEmpty:      false, // Cache hit
-			wantPath:       matchingChartFile,
-			wantDestEmpty:  false,
-			wantLogCount:   1, // "Cache hit: digest matches"
+			name:      "ValidDigest",
+			chartName: "mychart",
+			digest:    digest,
+			// Must match the filename Helm writes for a digest pull.
+			want: filepath.Join(localChartCache, helmDigestPullFilename("mychart", digest)),
 		},
 		{
-			name:           "DigestMismatch_TamperedFile",
-			chartName:      testChartName,
-			expectedDigest: tamperedDigest,
-			wantEmpty:      true, // Cache miss: stored content does not match digest
-			wantDestEmpty:  false,
-			wantLogCount:   1, // "Cache digest mismatch"
+			name:      "ChartNameWithPathComponentsIsBased",
+			chartName: "charts/nested/mychart",
+			digest:    digest,
+			want:      filepath.Join(localChartCache, helmDigestPullFilename("mychart", digest)),
 		},
 		{
-			name:           "FileNotFound",
-			chartName:      testChartName,
-			expectedDigest: missingDigest,
-			wantEmpty:      true, // Cache miss: no file at digest-keyed path
-			wantDestEmpty:  false,
-			wantLogCount:   1, // "failed to verify cached digest"
+			name:      "EmptyChartName",
+			chartName: "",
+			digest:    digest,
+			want:      "", // cannot construct a cache path
 		},
 		{
-			name:           "EmptyChartName",
-			chartName:      "",
-			expectedDigest: correctDigest,
-			wantEmpty:      true, // Cache miss
-			wantDestEmpty:  true, // cannot construct a cache path
-			wantLogCount:   0,    // No logs, early return
+			name:      "DigestWithoutAlgoSeparator",
+			chartName: "mychart",
+			digest:    "deadbeef", // no "algo:hash" form
+			want:      "",
+		},
+		{
+			name:      "EmptyDigest",
+			chartName: "mychart",
+			digest:    "",
+			want:      "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Reset mock logger for each test
-			mockLog = &mockLogger{}
-
-			// Call the function
-			gotPath, gotDest := resolveCachedChartPathWithDigest(tt.chartName, tt.expectedDigest, mockLog)
-
-			// Check if the result matches expectations (empty vs non-empty)
-			gotEmpty := gotPath == ""
-			if gotEmpty != tt.wantEmpty {
-				t.Errorf("resolveCachedChartPathWithDigest() returned empty=%v, want empty=%v (path=%q)",
-					gotEmpty, tt.wantEmpty, gotPath)
-			}
-
-			// For cache hits, verify the path is what we expect
-			if !tt.wantEmpty && gotPath != tt.wantPath {
-				t.Errorf("resolveCachedChartPathWithDigest() = %q, want %q", gotPath, tt.wantPath)
-			}
-
-			// The dest filename is returned regardless of hit/miss (except when
-			// no chart name is given) so a cache-miss pull can be stored under
-			// the same digest-keyed name the lookup probes.
-			if (gotDest == "") != tt.wantDestEmpty {
-				t.Errorf("resolveCachedChartPathWithDigest() dest = %q, wantEmpty=%v", gotDest, tt.wantDestEmpty)
-			}
-			if !tt.wantDestEmpty && gotDest != filepath.Base(matchingChartFile) && tt.expectedDigest == correctDigest {
-				t.Errorf("resolveCachedChartPathWithDigest() dest = %q, want %q", gotDest, filepath.Base(matchingChartFile))
-			}
-
-			// Check log call count
-			if mockLog.debugCallCount != tt.wantLogCount {
-				t.Errorf("Debug log call count = %d, want %d", mockLog.debugCallCount, tt.wantLogCount)
-			}
-		})
-	}
-}
-
-func TestCacheDigestMatches(t *testing.T) {
-	tmpDir := t.TempDir()
-	testContent := "test content"
-	testFile := filepath.Join(tmpDir, "test.tgz")
-
-	if err := os.WriteFile(testFile, []byte(testContent), 0600); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-
-	// Compute the correct digest
-	correctDigest, err := computeFileDigest(testFile)
-	if err != nil {
-		t.Fatalf("Failed to compute digest: %v", err)
-	}
-
-	tests := []struct {
-		name       string
-		cachedPath string
-		expected   string
-		wantMatch  bool
-		wantDigest string
-		wantErr    bool
-	}{
-		{
-			name:       "Match",
-			cachedPath: testFile,
-			expected:   correctDigest,
-			wantMatch:  true,
-			wantDigest: correctDigest,
-			wantErr:    false,
-		},
-		{
-			name:       "Mismatch",
-			cachedPath: testFile,
-			expected:   "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-			wantMatch:  false,
-			wantDigest: correctDigest,
-			wantErr:    false,
-		},
-		{
-			name:       "FileNotFound",
-			cachedPath: "/nonexistent/file.tgz",
-			expected:   correctDigest,
-			wantMatch:  false,
-			wantDigest: "",
-			wantErr:    true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotMatch, gotDigest, gotErr := cacheDigestMatches(tt.cachedPath, tt.expected)
-
-			if (gotErr != nil) != tt.wantErr {
-				t.Errorf("cacheDigestMatches() error = %v, wantErr %v", gotErr, tt.wantErr)
-				return
-			}
-
-			if gotMatch != tt.wantMatch {
-				t.Errorf("cacheDigestMatches() match = %v, want %v", gotMatch, tt.wantMatch)
-			}
-
-			if gotDigest != tt.wantDigest {
-				t.Errorf("cacheDigestMatches() digest = %v, want %v", gotDigest, tt.wantDigest)
+			got := resolveCachedChartPathWithDigest(tt.chartName, tt.digest)
+			if got != tt.want {
+				t.Errorf("resolveCachedChartPathWithDigest(%q, %q) = %q, want %q",
+					tt.chartName, tt.digest, got, tt.want)
 			}
 		})
 	}
@@ -673,7 +481,6 @@ func TestEnsureChartCached(t *testing.T) {
 				testChartVersion,
 				"", // chartRepo
 				"", // chartDigest
-				"", // destFileName
 				&RepoCreds{},
 			)
 
@@ -733,7 +540,6 @@ func TestEnsureChartCached_PathTraversalProtection(t *testing.T) {
 				"",
 				"test",
 				"1.0.0",
-				"",
 				"",
 				"",
 				&RepoCreds{},
@@ -883,12 +689,13 @@ func TestPullAndLoadChart_Validation(t *testing.T) {
 	}
 }
 
-// TestDigestCacheRoundTrip proves the cache is genuinely content-addressed: a
-// chart pulled and stored under the digest-keyed name (the dest filename the
-// lookup hands out) is then found by a subsequent digest lookup. This is the
-// regression guard for the store/lookup key agreement — without it a
-// digest-pinned chart would be stored under Helm's version-based name and
-// re-pulled on every reconcile.
+// TestDigestCacheRoundTrip proves the store/lookup key agreement for
+// digest-pinned charts: the path resolveCachedChartPathWithDigest constructs
+// matches the filename Helm writes for a digest pull, so a chart pulled on one
+// reconcile is found as a cache hit (without re-pulling) on the next. Helm's
+// pull stores the tarball under <name>@sha256-<hash>.tgz; ensureChartCached
+// must resolve the same path to a hit. Without this agreement a digest-pinned
+// chart would be re-pulled on every reconcile.
 func TestDigestCacheRoundTrip(t *testing.T) {
 	tempDir := t.TempDir()
 	localChartCache := filepath.Join(tempDir, "charts")
@@ -900,58 +707,36 @@ func TestDigestCacheRoundTrip(t *testing.T) {
 	chartCache = localChartCache
 	defer func() { chartCache = origCache }()
 
+	mockClient := &client{log: &mockLogger{}}
+
 	const chartName = "podinfo"
-	chartContent := "pretend-this-is-a-chart-tarball"
+	const digest = "sha256:c56f4d760bc9da702f231f37fcec89c66b0993f0cb91446f86d014b133c6693f"
 
-	// Compute the digest of the chart content the way the controller would
-	// learn it (e.g. from the OCI manifest / spec.forProvider.chart.digest).
-	seed := filepath.Join(tempDir, "seed")
-	if err := os.WriteFile(seed, []byte(chartContent), 0600); err != nil {
-		t.Fatalf("Failed to seed content: %v", err)
+	// The lookup path for a digest-pinned chart.
+	cachePath := resolveCachedChartPathWithDigest(chartName, digest)
+	if cachePath == "" {
+		t.Fatal("expected a non-empty cache path for a valid digest")
 	}
-	digest, err := computeFileDigest(seed)
+
+	// It must equal the filename Helm produces for a digest pull, otherwise a
+	// pulled chart would never be found here.
+	wantPath := filepath.Join(localChartCache, helmDigestPullFilename(chartName, digest))
+	if cachePath != wantPath {
+		t.Fatalf("cache path %q does not match Helm's digest-pull filename %q", cachePath, wantPath)
+	}
+
+	// Simulate the chart already pulled and stored under that name on a prior
+	// reconcile (Helm's pull + cache store preserves this filename).
+	if err := os.WriteFile(cachePath, []byte("pretend-this-is-a-chart-tarball"), 0600); err != nil {
+		t.Fatalf("Failed to write cached chart: %v", err)
+	}
+
+	// The next reconcile must resolve to a cache hit and not attempt a pull.
+	gotPath, err := mockClient.ensureChartCached(cachePath, "", chartName, "", "", digest, &RepoCreds{})
 	if err != nil {
-		t.Fatalf("Failed to compute digest: %v", err)
+		t.Fatalf("ensureChartCached() error: %v", err)
 	}
-
-	log := &mockLogger{}
-
-	// Before any pull, the digest lookup misses but still hands back the cache
-	// basename a pull should be stored under.
-	missPath, destName := resolveCachedChartPathWithDigest(chartName, digest, log)
-	if missPath != "" {
-		t.Fatalf("expected cache miss before pull, got path %q", missPath)
-	}
-	if destName == "" {
-		t.Fatal("expected a non-empty dest filename to store the pull under")
-	}
-
-	// Simulate a Helm pull: a temp dir containing a single tarball whose name
-	// is Helm's version-based name (deliberately different from destName).
-	pullDir, err := os.MkdirTemp(localChartCache, "")
-	if err != nil {
-		t.Fatalf("Failed to create pull dir: %v", err)
-	}
-	helmName := chartName + "-1.2.3.tgz"
-	if err := os.WriteFile(filepath.Join(pullDir, helmName), []byte(chartContent), 0600); err != nil {
-		t.Fatalf("Failed to write pulled chart: %v", err)
-	}
-
-	// Store the pulled chart under the digest-keyed dest name.
-	storedPath, err := movePulledChartToCache(pullDir, destName)
-	if err != nil {
-		t.Fatalf("movePulledChartToCache() error: %v", err)
-	}
-	if storedPath != filepath.Join(localChartCache, destName) {
-		t.Errorf("stored path = %q, want %q", storedPath, filepath.Join(localChartCache, destName))
-	}
-
-	// The next reconcile's lookup must now hit and resolve to the stored path.
-	hitPath, hitDest := resolveCachedChartPathWithDigest(chartName, digest, log)
-	if hitPath != storedPath {
-		t.Errorf("cache lookup after store = %q, want hit at %q", hitPath, storedPath)
-	}
-	if hitDest != destName {
-		t.Errorf("dest filename = %q, want stable %q", hitDest, destName)
+	if gotPath != cachePath {
+		t.Errorf("ensureChartCached() = %q, want cache hit at %q", gotPath, cachePath)
 	}
 }

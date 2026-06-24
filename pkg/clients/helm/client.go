@@ -17,10 +17,7 @@ limitations under the License.
 package helm
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"path"
@@ -191,16 +188,8 @@ func getChartFileName(dir string) (string, error) {
 	return files[0].Name(), nil
 }
 
+// pullChartToCache pulls a chart into the cache and returns its absolute path.
 func (hc *client) pullChartToCache(chartUrl, chartName, chartVersion, chartRepo, chartDigest string, creds *RepoCreds) (string, error) {
-	return hc.pullChartToCacheWithFilename(chartUrl, chartName, chartVersion, chartRepo, chartDigest, "", creds)
-}
-
-// pullChartToCacheWithFilename pulls a chart into the cache and returns its absolute path.
-// When destFileName is non-empty the chart is stored under that basename
-// (content-addressed as "<name>-<digest>.tgz" for digest-pinned pulls) so that
-// subsequent digest lookups hit. When empty, the chart is stored under the
-// filename Helm produced (typically "<name>-<version>.tgz").
-func (hc *client) pullChartToCacheWithFilename(chartUrl, chartName, chartVersion, chartRepo, chartDigest, destFileName string, creds *RepoCreds) (string, error) {
 	tmpDir, err := os.MkdirTemp(chartCache, "")
 	if err != nil {
 		return "", err
@@ -215,25 +204,11 @@ func (hc *client) pullChartToCacheWithFilename(chartUrl, chartName, chartVersion
 		return "", err
 	}
 
-	return movePulledChartToCache(tmpDir, destFileName)
-}
-
-// movePulledChartToCache moves the single chart tarball pulled into tmpDir to the
-// cache. If destFileName is non-empty it is used as the cache basename (its
-// directory components are stripped for safety); otherwise the chart keeps the
-// name Helm produced. Returns the absolute path of the cached chart.
-func movePulledChartToCache(tmpDir, destFileName string) (string, error) {
 	pulledName, err := getChartFileName(tmpDir)
 	if err != nil {
 		return "", err
 	}
-
-	finalName := pulledName
-	if destFileName != "" {
-		finalName = filepath.Base(destFileName)
-	}
-
-	chartFilePath := filepath.Join(chartCache, finalName)
+	chartFilePath := filepath.Join(chartCache, pulledName)
 	if err := os.Rename(filepath.Join(tmpDir, pulledName), chartFilePath); err != nil {
 		return "", err
 	}
@@ -311,21 +286,24 @@ func (hc *client) login(chartUrl, chartRepo string, creds *RepoCreds, insecure b
 // missing. chartFilePath is sanitized with filepath.Base before use, so
 // directory components in the input cannot escape chartCache. Returns the
 // final absolute path to the cached chart file or an error.
-func (hc *client) ensureChartCached(chartFilePath, chartUrl, chartName, chartVersion, chartRepo, chartDigest, destFileName string, creds *RepoCreds) (string, error) {
+func (hc *client) ensureChartCached(chartFilePath, chartUrl, chartName, chartVersion, chartRepo, chartDigest string, creds *RepoCreds) (string, error) {
 	if chartFilePath == "" {
-		return hc.pullChartToCacheWithFilename(chartUrl, chartName, chartVersion, chartRepo, chartDigest, destFileName, creds)
+		hc.log.Debug("no cache path for chart", "URL", chartUrl, "name", chartName, "version", chartVersion, "repo", chartRepo, "digest", chartDigest)
+		return hc.pullChartToCache(chartUrl, chartName, chartVersion, chartRepo, chartDigest, creds)
 	}
 	cachedPath := filepath.Join(chartCache, filepath.Base(chartFilePath))
 	fileInfo, err := os.Stat(cachedPath)
 	switch {
 	case os.IsNotExist(err):
-		return hc.pullChartToCacheWithFilename(chartUrl, chartName, chartVersion, chartRepo, chartDigest, destFileName, creds)
+		hc.log.Debug("cache miss for chart", "cachedPath", cachedPath, "URL", chartUrl, "name", chartName, "version", chartVersion, "repo", chartRepo, "digest", chartDigest)
+		return hc.pullChartToCache(chartUrl, chartName, chartVersion, chartRepo, chartDigest, creds)
 	case err != nil:
 		return "", errors.Wrap(err, errFailedToCheckIfLocalChartExists)
 	case fileInfo.IsDir():
 		return "", errors.New("expected chart file, got directory")
 	}
 
+	hc.log.Debug("cache hit for chart", "cachedPath", cachedPath, "URL", chartUrl, "name", chartName, "version", chartVersion, "repo", chartRepo, "digest", chartDigest)
 	return cachedPath, nil
 }
 
@@ -368,12 +346,6 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 		}
 	}
 
-	// destFileName is set when the chart is content-addressed by digest, so that
-	// a cache-miss pull is stored under the same "<name>-<digest>.tgz" key the
-	// lookup probes (otherwise the pulled chart would be saved under Helm's
-	// version-based name and never hit on the next reconcile).
-	var destFileName string
-
 	switch {
 	case chartUrl == "" && (chartVersion == "" || chartVersion == devel) && chartDigest == "":
 		// No URL, no version, no digest -> pull latest
@@ -398,7 +370,7 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 			// Validate cached chart against the effective digest, and store any
 			// pull under the same digest-keyed name.
 			name := path.Base(u.Path)
-			chartFilePath, destFileName = resolveCachedChartPathWithDigest(name, effectiveDigest, hc.log)
+			chartFilePath = resolveCachedChartPathWithDigest(name, effectiveDigest)
 		case v == "":
 			// No version or digest in URL: pull latest
 			chartFilePath, err = hc.pullChartToCache(chartUrl, chartName, chartVersion, chartRepo, chartDigest, creds)
@@ -423,13 +395,13 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 		case chartRepo == "":
 			return nil, errors.New(errNoChartRepository)
 		case chartDigest != "":
-			chartFilePath, destFileName = resolveCachedChartPathWithDigest(chartName, chartDigest, hc.log)
+			chartFilePath = resolveCachedChartPathWithDigest(chartName, chartDigest)
 		default:
 			chartFilePath = resolveChartFilePath(chartName, chartVersion)
 		}
 	}
 
-	chartFilePath, err = hc.ensureChartCached(chartFilePath, chartUrl, chartName, chartVersion, chartRepo, chartDigest, destFileName, creds)
+	chartFilePath, err = hc.ensureChartCached(chartFilePath, chartUrl, chartName, chartVersion, chartRepo, chartDigest, creds)
 	if err != nil {
 		return nil, err
 	}
@@ -528,15 +500,15 @@ func resolveOCIChartVersion(chartURL string) (*url.URL, string, error) {
 // cache given the chart name and version. It is equivalent to
 // filepath.Join(base, fmt.Sprintf("%s-%s.tgz", name, version)) where base is
 // the directory used by the client for its cache.
-func resolveChartFilePath(name string, versionOrDigest string) string {
-	return resolveChartFilePathWithBase(chartCache, name, versionOrDigest)
+func resolveChartFilePath(name, version string) string {
+	return resolveChartFilePathWithBase(chartCache, name, version)
 }
 
 // resolveChartFilePathWithBase is a helper that mirrors resolveChartFilePath but
 // allows callers (most importantly tests) to supply an arbitrary base directory
 // instead of the package-wide chartCache variable.
-func resolveChartFilePathWithBase(base, name, versionOrDigest string) string {
-	filename := fmt.Sprintf("%s-%s.tgz", name, versionOrDigest)
+func resolveChartFilePathWithBase(base, name, version string) string {
+	filename := fmt.Sprintf("%s-%s.tgz", name, version)
 	return filepath.Join(base, filename)
 }
 
@@ -548,76 +520,15 @@ func resolveOCIChartRef(repository, name, digest string) string {
 	return ref
 }
 
-// computeFileDigest computes the SHA256 digest of a chart file at filePath.
-// Returned in OCI format "sha256:<hex>". filePath is expected to be an
-// internally-constructed cache path (from resolveChartFilePath or similar);
-// path-traversal sanitization is the caller's responsibility.
-func computeFileDigest(filePath string) (string, error) {
-	// G304: filePath originates from cache-layout helpers, not user input.
-	f, err := os.Open(filePath) //nolint:gosec
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		_ = f.Close()
-	}()
-
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-
-	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
-}
-
-// cacheDigestMatches computes the digest of the chart at cachedPath and
-// compares it to the expected value. It returns a boolean indicating whether
-// they match, the computed digest (empty if an error occurred), and any error
-// encountered while reading the file. The caller may log the error or take
-// other action; a non-match with a nil error simply means the contents are
-// different.
-func cacheDigestMatches(cachedPath, expected string) (bool, string, error) {
-	digest, err := computeFileDigest(cachedPath)
-	if err != nil {
-		return false, "", err
-	}
-	return digest == expected, digest, nil
-}
-
-// resolveCachedChartPathWithDigest validates that a cached chart's digest matches
-// the expected digest. Returns the cached path if the digest matches, or an empty
-// string if there's a mismatch or error.
-//
-// Parameters:
-//   - chartName: name of the chart
-//   - chartVersion: version of the chart
-//   - expectedDigest: the digest to validate against (e.g., "sha256:abc...")
-//   - log: logger for debug messages
-//
-// Returns empty string if:
-//   - chartName is empty (cannot construct cache path)
-//   - digest verification fails (file read error)
-//   - digest doesn't match the expected value
-func resolveCachedChartPathWithDigest(chartName, expectedDigest string, log logging.Logger) (string, string) {
+func resolveCachedChartPathWithDigest(chartName, digest string) string {
 	// Cannot construct cache path without name
 	if chartName == "" {
-		return "", ""
+		return ""
 	}
-
-	cachedPath := resolveChartFilePath(chartName, strings.TrimPrefix(expectedDigest, "sha256:"))
-	destFilename := filepath.Base(cachedPath)
-	match, cachedDigest, err := cacheDigestMatches(cachedPath, expectedDigest)
-
-	if err != nil {
-		log.Debug("failed to verify cached digest, will pull fresh", "path", cachedPath, "err", err)
-		return "", destFilename
+	algo, hashSum, found := strings.Cut(digest, ":")
+	if !found {
+		return ""
 	}
-
-	if match {
-		log.Debug("Cache hit: digest matches", "path", cachedPath, "digest", expectedDigest)
-		return cachedPath, destFilename
-	}
-
-	log.Debug("Cache digest mismatch, will pull fresh", "path", cachedPath, "requestedDigest", expectedDigest, "cachedDigest", cachedDigest)
-	return "", destFilename
+	filename := fmt.Sprintf("%s@%s-%s.tgz", filepath.Base(chartName), algo, hashSum)
+	return filepath.Join(chartCache, filename)
 }
