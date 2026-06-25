@@ -10,7 +10,7 @@ require (
 	github.com/chrismellard/docker-credential-acr-env v0.0.0-20230304212654-82a0ddb27589
 	github.com/crossplane-contrib/provider-kubernetes v1.2.0
 	github.com/crossplane/crossplane-runtime/v2 v2.0.0-rc.1
-	github.com/crossplane/crossplane-tools v0.0.0-20250731192036-00d407d8b7ec
+	github.com/crossplane/crossplane-tools v0.0.0-20251017183449-dd4517244339
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.20.7
 	github.com/pkg/errors v0.9.1
