@@ -26,7 +26,7 @@ GO_STATIC_PACKAGES = $(GO_PROJECT)/cmd/provider
 GO_LDFLAGS += -X $(GO_PROJECT)/pkg/version.Version=$(VERSION)
 GO_SUBDIRS += cmd pkg apis generate
 GO111MODULE = on
-GOLANGCILINT_VERSION = 2.4.0
+GOLANGCILINT_VERSION = 2.10.1
 
 -include build/makelib/golang.mk
 
@@ -95,7 +95,8 @@ CROSSPLANE_NAMESPACE = crossplane-system
 -include build/makelib/local.xpkg.mk
 -include build/makelib/controlplane.mk
 
-UPTEST_EXAMPLE_LIST ?= "examples/cluster/sample/release.yaml,examples/namespaced/sample/release.yaml"
+UPTEST_EXAMPLE_LIST ?= "examples/cluster/sample/release.yaml,examples/cluster/sample/release-oci-digest.yaml,examples/cluster/sample/release-oci-digest-with-version.yaml,examples/cluster/sample/release-oci-url-and-spec-digest.yaml,examples/cluster/sample/release-oci-url-digest.yaml,examples/cluster/sample/release-oci-url-digest-and-tag.yaml,examples/cluster/sample/release-oci-url-with-tag.yaml,examples/namespaced/sample/release.yaml,examples/namespaced/sample/release-oci-digest.yaml,examples/namespaced/sample/release-oci-digest-with-version.yaml,examples/namespaced/sample/release-oci-url-and-spec-digest.yaml,examples/namespaced/sample/release-oci-url-digest.yaml,examples/namespaced/sample/release-oci-url-digest-and-tag.yaml,examples/namespaced/sample/release-oci-url-with-tag.yaml"
+
 uptest: $(UPTEST) $(KUBECTL) $(CHAINSAW) $(CROSSPLANE_CLI)
 	@$(INFO) running automated tests
 	@KUBECTL=$(KUBECTL) CHAINSAW=$(CHAINSAW) CROSSPLANE_CLI=$(CROSSPLANE_CLI) CROSSPLANE_NAMESPACE=$(CROSSPLANE_NAMESPACE) $(UPTEST) e2e "$(UPTEST_EXAMPLE_LIST)" --setup-script=cluster/test/setup.sh || $(FAIL)

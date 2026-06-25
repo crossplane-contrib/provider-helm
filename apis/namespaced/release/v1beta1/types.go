@@ -32,10 +32,19 @@ type ChartSpec struct {
 	Repository string `json:"repository,omitempty"`
 	// Name of Helm chart, required if ChartSpec.URL not set
 	Name string `json:"name,omitempty"`
-	// Version of Helm chart, late initialized with latest version if not set
+	// Version of Helm chart. Optional when Digest is specified.
+	// If not set and Digest is not specified, gets late initialized with the latest available version.
+	// If not set and Digest is specified, version is NOT late initialized to avoid spec drift.
+	// The actual deployed version is always available in status.atProvider.version for observability.
 	Version string `json:"version,omitempty"`
 	// URL to chart package (typically .tgz), optional and overrides others fields in the spec
 	URL string `json:"url,omitempty"`
+	// Digest is the OCI image digest in the format "sha256:abc123..."
+	// Only supported for OCI registries. When specified, the chart will be pulled by digest.
+	// Can be used alone or in combination with Version. Optional.
+	// +kubebuilder:validation:Pattern=`^sha256:[a-f0-9]{64}$`
+	// +optional
+	Digest string `json:"digest,omitempty"`
 	// PullSecretRef is reference to the secret containing credentials to helm repository.
 	// The secret must contain 'username' and 'password' keys. Optional - if not provided,
 	// the default credential chain is used (AWS IRSA, Azure/GCP Workload Identity, etc.).
@@ -100,6 +109,10 @@ type ReleaseObservation struct {
 	State              release.Status `json:"state,omitempty"`
 	ReleaseDescription string         `json:"releaseDescription,omitempty"`
 	Revision           int            `json:"revision,omitempty"`
+	// Digest is the last successfully deployed chart digest (for OCI charts only).
+	Digest string `json:"digest,omitempty"`
+	// Version is the actual deployed chart version.
+	Version string `json:"version,omitempty"`
 }
 
 // A ReleaseSpec defines the desired state of a Release.

@@ -57,6 +57,12 @@ func generateObservation(in *release.Release) v1beta1.ReleaseObservation {
 		o.ReleaseDescription = relInfo.Description
 		o.Revision = in.Version
 	}
+
+	// Store actual deployed chart version for observability
+	if in.Chart != nil && in.Chart.Metadata != nil {
+		o.Version = in.Chart.Metadata.Version
+	}
+
 	return o
 }
 
@@ -93,9 +99,18 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 		return true, nil
 	}
 
-	if in.Chart.Version != ocm.Version && in.Chart.Version != devel {
+	// Check version match only if version is specified in spec
+	// For digest-only deployments, skip version check as version is optional
+	if in.Chart.Version != "" && in.Chart.Version != ocm.Version && in.Chart.Version != devel {
 		return false, nil
 	}
+
+	// Check if digest has changed - if specified, compare against last synced digest
+	// Note: Chart metadata doesn't include OCI digest, so we store it in status
+	if in.Chart.Digest != "" && s.AtProvider.Digest != "" && in.Chart.Digest != s.AtProvider.Digest {
+		return false, nil
+	}
+
 	desiredConfig, err := composeValuesFromSpec(ctx, kube, in.ValuesSpec, namespace)
 	if err != nil {
 		return false, errors.Wrap(err, errFailedToComposeValues)

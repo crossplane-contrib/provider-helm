@@ -216,6 +216,67 @@ func TestResolveNamespaced(t *testing.T) {
 	}
 }
 
+func TestNormalizeRegistryURL(t *testing.T) {
+	cases := map[string]struct {
+		input string
+		want  string
+	}{
+		"OCI URL": {
+			input: "oci://registry.example.com/charts",
+			want:  "registry.example.com/charts",
+		},
+		"OCI URL with trailing slash": {
+			input: "oci://registry.example.com/charts/",
+			want:  "registry.example.com/charts",
+		},
+		"OCI URL with digest": {
+			input: "oci://ghcr.io/stefanprodan/charts/podinfo@sha256:c56f4d760bc9da702f231f37fcec89c66b0993f0cb91446f86d014b133c6693f",
+			want:  "ghcr.io/stefanprodan/charts/podinfo",
+		},
+		"OCI URL with version": {
+			input: "oci://registry.example.com/charts/mychart:1.2.3",
+			want:  "registry.example.com/charts/mychart",
+		},
+		"OCI URL with version and digest": {
+			input: "oci://registry.example.com/charts/mychart:1.2.3@sha256:abcd1234",
+			want:  "registry.example.com/charts/mychart",
+		},
+		"HTTPS URL": {
+			input: "https://registry.example.com/charts",
+			want:  "registry.example.com/charts",
+		},
+		"HTTP URL": {
+			input: "http://registry.example.com/charts",
+			want:  "registry.example.com/charts",
+		},
+		"URL with port": {
+			input: "oci://registry.example.com:5000/charts",
+			want:  "registry.example.com:5000/charts",
+		},
+		"URL with port and digest": {
+			input: "oci://registry.example.com:5000/charts/mychart@sha256:abcd1234",
+			want:  "registry.example.com:5000/charts/mychart",
+		},
+		"URL with port and version": {
+			input: "oci://registry.example.com:5000/charts/mychart:1.2.3",
+			want:  "registry.example.com:5000/charts/mychart",
+		},
+		"Plain URL": {
+			input: "registry.example.com/charts",
+			want:  "registry.example.com/charts",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := normalizeRegistryURL(tc.input)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("normalizeRegistryURL() -want, +got:\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestResolveCluster(t *testing.T) {
 	type args struct {
 		kube    client.Client

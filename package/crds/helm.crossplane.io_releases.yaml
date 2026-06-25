@@ -548,6 +548,13 @@ spec:
                   chart:
                     description: A ChartSpec defines the chart spec for a Release
                     properties:
+                      digest:
+                        description: |-
+                          Digest is the OCI image digest in the format "sha256:abc123..."
+                          Only supported for OCI registries. When specified, the chart will be pulled by digest.
+                          Can be used alone or in combination with Version. Optional.
+                        pattern: ^sha256:[a-f0-9]{64}$
+                        type: string
                       name:
                         description: Name of Helm chart, required if ChartSpec.URL
                           not set
@@ -577,8 +584,11 @@ spec:
                           and overrides others fields in the spec
                         type: string
                       version:
-                        description: Version of Helm chart, late initialized with
-                          latest version if not set
+                        description: |-
+                          Version of Helm chart. Optional when Digest is specified.
+                          If not set and Digest is not specified, gets late initialized with the latest available version.
+                          If not set and Digest is specified, version is NOT late initialized to avoid spec drift.
+                          The actual deployed version is always available in status.atProvider.version for observability.
                         type: string
                     type: object
                   insecureSkipTLSVerify:
@@ -837,12 +847,19 @@ spec:
               atProvider:
                 description: ReleaseObservation are the observable fields of a Release.
                 properties:
+                  digest:
+                    description: Digest is the last successfully deployed chart digest
+                      (for OCI charts only).
+                    type: string
                   releaseDescription:
                     type: string
                   revision:
                     type: integer
                   state:
                     description: Status is the status of a release
+                    type: string
+                  version:
+                    description: Version is the actual deployed chart version.
                     type: string
                 type: object
               conditions:

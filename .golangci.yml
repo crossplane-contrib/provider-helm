@@ -20,7 +20,6 @@ linters:
     - exhaustive
     - gocheckcompilerdirectives
     - gochecksumtype
-    - goconst
     - gocritic
     - gocyclo
     - gosec

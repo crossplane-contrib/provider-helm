@@ -41,10 +41,15 @@ import (
 )
 
 const (
-	helmDriverSecret  = "secret"
-	chartCache        = "/tmp/charts"
+	helmDriverSecret = "secret"
+	// releaseMaxHistory is the maximum number of entries Helm will keep in
+	// release history. We just set a reasonable default for our use case.
 	releaseMaxHistory = 20
 )
+
+// chartCache is the directory where pulled chart tarballs are stored. It is
+// mutable in tests so that they can override it with a temporary location.
+var chartCache = "/tmp/charts"
 
 const (
 	errFailedToCheckIfLocalChartExists = "failed to check if cached chart file exists"
@@ -54,6 +59,10 @@ const (
 	errFailedToParseURL                = "failed to parse URL"
 	errFailedToLogin                   = "failed to login to registry"
 	errUnexpectedOCIUrlTmpl            = "url not prefixed with oci://, got [%s]"
+	errDigestNotSupportedForNonOCI     = "digest is only supported for OCI registries"
+	errDigestMismatchTmpl              = "conflicting digest input: URL contains @%s but spec.forProvider.chart.digest is %s"
+	errNoChartName                     = "spec.forProvider.chart.name must be specified when URL is empty"
+	errNoChartRepository               = "spec.forProvider.chart.repository must be specified when URL is empty"
 	devel                              = ">0.0.0-0"
 )
 
@@ -158,6 +167,12 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	}, nil
 }
 
+// safePath constructs a safe file path by sanitizing the filename component
+// to prevent path traversal attacks. It ensures only the base filename is used.
+func safePath(baseDir, fileName string) string {
+	return filepath.Join(baseDir, filepath.Base(fileName))
+}
+
 func getChartFileName(dir string) (string, error) {
 	files, err := os.ReadDir(dir)
 	if err != nil {
@@ -173,8 +188,8 @@ func getChartFileName(dir string) (string, error) {
 	return files[0].Name(), nil
 }
 
-// Pulls latest chart version. Returns absolute chartFilePath or error.
-func (hc *client) pullLatestChartVersion(chartUrl, chartName, chartVersion, chartRepo string, creds *RepoCreds) (string, error) {
+// pullChartToCache pulls a chart into the cache and returns its absolute path.
+func (hc *client) pullChartToCache(chartUrl, chartName, chartVersion, chartRepo, chartDigest string, creds *RepoCreds) (string, error) {
 	tmpDir, err := os.MkdirTemp(chartCache, "")
 	if err != nil {
 		return "", err
@@ -185,41 +200,49 @@ func (hc *client) pullLatestChartVersion(chartUrl, chartName, chartVersion, char
 		}
 	}()
 
-	if err := hc.pullChart(chartUrl, chartName, chartVersion, chartRepo, creds, tmpDir); err != nil {
+	if err := hc.pullChart(chartUrl, chartName, chartVersion, chartRepo, chartDigest, creds, tmpDir); err != nil {
 		return "", err
 	}
 
-	chartFileName, err := getChartFileName(tmpDir)
+	pulledName, err := getChartFileName(tmpDir)
 	if err != nil {
 		return "", err
 	}
-
-	chartFilePath := filepath.Join(chartCache, chartFileName)
-	if err := os.Rename(filepath.Join(tmpDir, chartFileName), chartFilePath); err != nil {
+	chartFilePath := filepath.Join(chartCache, pulledName)
+	if err := os.Rename(filepath.Join(tmpDir, pulledName), chartFilePath); err != nil {
 		return "", err
 	}
 	return chartFilePath, nil
 }
 
-func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo string, creds *RepoCreds, chartDir string) error {
+func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo, chartDigest string, creds *RepoCreds, chartDir string) error {
 	pc := hc.pullClient
 
 	chartRef := chartUrl
 	if chartUrl == "" {
 		if registry.IsOCI(chartRepo) {
-			chartRef = resolveOCIChartRef(chartRepo, chartName)
+			chartRef = resolveOCIChartRef(chartRepo, chartName, chartDigest)
 		} else {
 			chartRef = chartName
 			pc.RepoURL = chartRepo
 		}
 		pc.Version = chartVersion
 	} else if registry.IsOCI(chartUrl) {
-		ociURL, version, err := resolveOCIChartVersion(chartUrl)
+		ociURL, version, urlDigest, err := resolveOCIChartVersionAndDigest(chartUrl)
 		if err != nil {
 			return err
 		}
 		pc.Version = version
 		chartRef = ociURL.String()
+
+		effectiveDigest, err := resolveEffectiveDigest(urlDigest, chartDigest)
+		if err != nil {
+			return err
+		}
+		// Append digest if present (per Helm PR #12690)
+		if effectiveDigest != "" {
+			chartRef = chartRef + "@" + effectiveDigest
+		}
 	}
 	pc.Username = creds.Username
 	pc.Password = creds.Password
@@ -259,8 +282,43 @@ func (hc *client) login(chartUrl, chartRepo string, creds *RepoCreds, insecure b
 	return errors.Wrap(err, errFailedToLogin)
 }
 
+// ensureChartCached verifies a chart exists in the cache and pulls it if
+// missing. chartFilePath is sanitized with filepath.Base before use, so
+// directory components in the input cannot escape chartCache. Returns the
+// final absolute path to the cached chart file or an error.
+func (hc *client) ensureChartCached(chartFilePath, chartUrl, chartName, chartVersion, chartRepo, chartDigest string, creds *RepoCreds) (string, error) {
+	if chartFilePath == "" {
+		hc.log.Debug("no cache path for chart", "URL", chartUrl, "name", chartName, "version", chartVersion, "repo", chartRepo, "digest", chartDigest)
+		return hc.pullChartToCache(chartUrl, chartName, chartVersion, chartRepo, chartDigest, creds)
+	}
+	cachedPath := filepath.Join(chartCache, filepath.Base(chartFilePath))
+	fileInfo, err := os.Stat(cachedPath)
+	switch {
+	case os.IsNotExist(err):
+		hc.log.Debug("cache miss for chart", "cachedPath", cachedPath, "URL", chartUrl, "name", chartName, "version", chartVersion, "repo", chartRepo, "digest", chartDigest)
+		return hc.pullChartToCache(chartUrl, chartName, chartVersion, chartRepo, chartDigest, creds)
+	case err != nil:
+		return "", errors.Wrap(err, errFailedToCheckIfLocalChartExists)
+	case fileInfo.IsDir():
+		return "", errors.New("expected chart file, got directory")
+	}
+
+	hc.log.Debug("cache hit for chart", "cachedPath", cachedPath, "URL", chartUrl, "name", chartName, "version", chartVersion, "repo", chartRepo, "digest", chartDigest)
+	return cachedPath, nil
+}
+
+func resolveEffectiveDigest(urlDigest, specDigest string) (string, error) {
+	if specDigest != "" && urlDigest != "" && urlDigest != specDigest {
+		return "", errors.Errorf(errDigestMismatchTmpl, urlDigest, specDigest)
+	}
+	if urlDigest != "" {
+		return urlDigest, nil
+	}
+	return specDigest, nil
+}
+
 func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*chart.Chart, error) { //nolint:gocyclo
-	var chartFilePath, chartUrl, chartName, chartVersion, chartRepo string
+	var chartFilePath, chartUrl, chartName, chartVersion, chartDigest, chartRepo string
 	var err error
 
 	switch r := mg.(type) {
@@ -269,54 +327,88 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 		chartVersion = r.Spec.ForProvider.Chart.Version
 		chartName = r.Spec.ForProvider.Chart.Name
 		chartRepo = r.Spec.ForProvider.Chart.Repository
+		chartDigest = r.Spec.ForProvider.Chart.Digest
 	case *namespacedv1beta1.Release:
 		chartUrl = r.Spec.ForProvider.Chart.URL
 		chartVersion = r.Spec.ForProvider.Chart.Version
 		chartName = r.Spec.ForProvider.Chart.Name
 		chartRepo = r.Spec.ForProvider.Chart.Repository
+		chartDigest = r.Spec.ForProvider.Chart.Digest
 	default:
 		return nil, errors.New("This object must be *clusterv1beta1.Release or *namespacedv1beta1.Release")
 	}
 
+	// Validate: Digest only works with OCI registries
+	if chartDigest != "" {
+		isOCI := registry.IsOCI(chartUrl) || registry.IsOCI(chartRepo)
+		if !isOCI {
+			return nil, errors.New(errDigestNotSupportedForNonOCI)
+		}
+	}
+
 	switch {
-	case chartUrl == "" && (chartVersion == "" || chartVersion == devel):
-		chartFilePath, err = hc.pullLatestChartVersion(chartUrl, chartName, chartVersion, chartRepo, creds)
+	case chartUrl == "" && (chartVersion == "" || chartVersion == devel) && chartDigest == "":
+		// No URL, no version, no digest -> pull latest
+		chartFilePath, err = hc.pullChartToCache(chartUrl, chartName, chartVersion, chartRepo, chartDigest, creds)
 		if err != nil {
 			return nil, err
 		}
 	case registry.IsOCI(chartUrl):
-		u, v, err := resolveOCIChartVersion(chartUrl)
+		u, v, urlDigest, err := resolveOCIChartVersionAndDigest(chartUrl)
 		if err != nil {
 			return nil, err
 		}
 
-		if v == "" {
-			chartFilePath, err = hc.pullLatestChartVersion(chartUrl, chartName, chartVersion, chartRepo, creds)
+		// validate
+		effectiveDigest, err := resolveEffectiveDigest(urlDigest, chartDigest)
+		if err != nil {
+			return nil, err
+		}
+
+		switch {
+		case effectiveDigest != "":
+			// Validate cached chart against the effective digest, and store any
+			// pull under the same digest-keyed name.
+			name := path.Base(u.Path)
+			chartFilePath = resolveCachedChartPathWithDigest(name, effectiveDigest)
+		case v == "":
+			// No version or digest in URL: pull latest
+			chartFilePath, err = hc.pullChartToCache(chartUrl, chartName, chartVersion, chartRepo, chartDigest, creds)
 			if err != nil {
 				return nil, err
 			}
-		} else {
+		default:
 			chartFilePath = resolveChartFilePath(path.Base(u.Path), v)
 		}
 	case chartUrl != "":
+		// Non-OCI URL(e.g. HTTP/HTTPS)
 		u, err := url.Parse(chartUrl)
 		if err != nil {
 			return nil, errors.Wrap(err, errFailedToParseURL)
 		}
 		chartFilePath = filepath.Join(chartCache, path.Base(u.Path))
 	default:
-		chartFilePath = resolveChartFilePath(chartName, chartVersion)
-	}
-
-	if _, err := os.Stat(chartFilePath); os.IsNotExist(err) {
-		if err = hc.pullChart(chartUrl, chartName, chartVersion, chartRepo, creds, chartCache); err != nil {
-			return nil, err
+		// No URL: resolve from spec Repository + Name + Version + (optionally Digest)
+		switch {
+		case chartName == "":
+			return nil, errors.New(errNoChartName)
+		case chartRepo == "":
+			return nil, errors.New(errNoChartRepository)
+		case chartDigest != "":
+			chartFilePath = resolveCachedChartPathWithDigest(chartName, chartDigest)
+		default:
+			chartFilePath = resolveChartFilePath(chartName, chartVersion)
 		}
-	} else if err != nil {
-		return nil, errors.Wrap(err, errFailedToCheckIfLocalChartExists)
 	}
 
-	chart, err := loader.Load(chartFilePath)
+	chartFilePath, err = hc.ensureChartCached(chartFilePath, chartUrl, chartName, chartVersion, chartRepo, chartDigest, creds)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load chart from cache using safe path construction
+	realPath := safePath(chartCache, chartFilePath)
+	chart, err := loader.Load(realPath)
 	if err != nil {
 		return nil, errors.Wrap(err, errFailedToLoadChart)
 	}
@@ -364,27 +456,79 @@ func (hc *client) Uninstall(release string) error {
 	return err
 }
 
-func resolveOCIChartVersion(chartURL string) (*url.URL, string, error) {
+// resolveOCIChartVersionAndDigest extracts version and digest from OCI chart URL.
+// Supports: oci://registry/chart, oci://registry/chart:version,
+//
+//	oci://registry/chart@sha256:..., oci://registry/chart:version@sha256:...
+//
+// Returns: (baseURL, version, digest, error)
+func resolveOCIChartVersionAndDigest(chartURL string) (*url.URL, string, string, error) {
 	if !registry.IsOCI(chartURL) {
-		return nil, "", errors.Errorf(errUnexpectedOCIUrlTmpl, chartURL)
+		return nil, "", "", errors.Errorf(errUnexpectedOCIUrlTmpl, chartURL)
 	}
 	ociURL, err := url.Parse(chartURL)
 	if err != nil {
-		return nil, "", errors.Wrap(err, errFailedToParseURL)
+		return nil, "", "", errors.Wrap(err, errFailedToParseURL)
 	}
-	parts := strings.Split(ociURL.Path, ":")
-	if len(parts) > 1 {
-		ociURL.Path = parts[0]
-		return ociURL, parts[1], nil
+
+	path := ociURL.Path
+	version := ""
+	digest := ""
+
+	// Extract digest first (after @)
+	if atIndex := strings.LastIndex(path, "@"); atIndex != -1 {
+		digest = path[atIndex+1:]
+		path = path[:atIndex]
 	}
-	return ociURL, "", nil
+
+	// Extract version (after :)
+	if colonIndex := strings.LastIndex(path, ":"); colonIndex != -1 {
+		version = path[colonIndex+1:]
+		path = path[:colonIndex]
+	}
+
+	ociURL.Path = path
+	return ociURL, version, digest, nil
 }
 
-func resolveChartFilePath(name string, version string) string {
+func resolveOCIChartVersion(chartURL string) (*url.URL, string, error) {
+	u, v, _, err := resolveOCIChartVersionAndDigest(chartURL)
+	return u, v, err
+}
+
+// resolveChartFilePath returns the expected location of a chart tarball in the
+// cache given the chart name and version. It is equivalent to
+// filepath.Join(base, fmt.Sprintf("%s-%s.tgz", name, version)) where base is
+// the directory used by the client for its cache.
+func resolveChartFilePath(name, version string) string {
+	return resolveChartFilePathWithBase(chartCache, name, version)
+}
+
+// resolveChartFilePathWithBase is a helper that mirrors resolveChartFilePath but
+// allows callers (most importantly tests) to supply an arbitrary base directory
+// instead of the package-wide chartCache variable.
+func resolveChartFilePathWithBase(base, name, version string) string {
 	filename := fmt.Sprintf("%s-%s.tgz", name, version)
-	return filepath.Join(chartCache, filename)
+	return filepath.Join(base, filename)
 }
 
-func resolveOCIChartRef(repository string, name string) string {
-	return strings.Join([]string{strings.TrimSuffix(repository, "/"), name}, "/")
+func resolveOCIChartRef(repository, name, digest string) string {
+	ref := strings.Join([]string{strings.TrimSuffix(repository, "/"), name}, "/")
+	if d := strings.TrimSpace(digest); d != "" {
+		ref += "@" + d
+	}
+	return ref
+}
+
+func resolveCachedChartPathWithDigest(chartName, digest string) string {
+	// Cannot construct cache path without name
+	if chartName == "" {
+		return ""
+	}
+	algo, hashSum, found := strings.Cut(digest, ":")
+	if !found {
+		return ""
+	}
+	filename := fmt.Sprintf("%s@%s-%s.tgz", filepath.Base(chartName), algo, hashSum)
+	return filepath.Join(chartCache, filename)
 }

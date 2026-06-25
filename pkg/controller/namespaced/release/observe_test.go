@@ -96,6 +96,7 @@ func Test_isUpToDate(t *testing.T) {
 		kube     client.Client
 		spec     *v1beta1.ReleaseSpec
 		observed *release.Release
+		status   v1beta1.ReleaseStatus
 	}
 	type want struct {
 		out bool
@@ -389,6 +390,169 @@ func Test_isUpToDate(t *testing.T) {
 				err: nil,
 			},
 		},
+		"NotUpToDate_DigestChanged": {
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							Name:    testChart,
+							Version: testVersion,
+							Digest:  "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Raw: nil,
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: testVersion,
+						},
+					},
+					Config: testReleaseConfig,
+				},
+				status: v1beta1.ReleaseStatus{
+					AtProvider: v1beta1.ReleaseObservation{
+						Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+					},
+				},
+			},
+			want: want{
+				out: false,
+				err: nil,
+			},
+		},
+		"UpToDate_DigestMatchesLastDeployed": {
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							Name:    testChart,
+							Version: testVersion,
+							Digest:  "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Raw: nil,
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: testVersion,
+						},
+					},
+					Config: testReleaseConfig,
+				},
+				status: v1beta1.ReleaseStatus{
+					AtProvider: v1beta1.ReleaseObservation{
+						Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+					},
+				},
+			},
+			want: want{
+				out: true,
+				err: nil,
+			},
+		},
+		"UpToDate_DigestSpecifiedButNotYetDeployed": {
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							Name:    testChart,
+							Version: testVersion,
+							Digest:  "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Raw: nil,
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: testVersion,
+						},
+					},
+					Config: testReleaseConfig,
+				},
+				status: v1beta1.ReleaseStatus{
+					AtProvider: v1beta1.ReleaseObservation{
+						Digest: "",
+					},
+				},
+			},
+			want: want{
+				out: true,
+				err: nil,
+			},
+		},
+		"UpToDate_DigestOnly_VersionEmpty": {
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							Name:   testChart,
+							Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Raw: nil,
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: "1.2.3",
+						},
+					},
+					Config: testReleaseConfig,
+				},
+				status: v1beta1.ReleaseStatus{
+					AtProvider: v1beta1.ReleaseObservation{
+						Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+					},
+				},
+			},
+			want: want{
+				out: true,
+				err: nil,
+			},
+		},
 		"SuccessUpToDate": {
 			args: args{
 				kube: &test.MockClient{
@@ -463,7 +627,7 @@ func Test_isUpToDate(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got, gotErr := isUpToDate(context.Background(), tc.args.kube, tc.args.spec, tc.args.observed, v1beta1.ReleaseStatus{}, testNamespace)
+			got, gotErr := isUpToDate(context.Background(), tc.args.kube, tc.args.spec, tc.args.observed, tc.args.status, testNamespace)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
 				t.Fatalf("isUpToDate(...): -want error, +got error: %s", diff)
 			}
