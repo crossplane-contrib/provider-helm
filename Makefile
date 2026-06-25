@@ -26,7 +26,7 @@ GO_STATIC_PACKAGES = $(GO_PROJECT)/cmd/provider
 GO_LDFLAGS += -X $(GO_PROJECT)/pkg/version.Version=$(VERSION)
 GO_SUBDIRS += cmd pkg apis generate
 GO111MODULE = on
-GOLANGCILINT_VERSION = 2.10.1
+GOLANGCILINT_VERSION = 2.12.2
 
 -include build/makelib/golang.mk
 
