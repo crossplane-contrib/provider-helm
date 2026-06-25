@@ -10,7 +10,7 @@ on:
 
 env:
   # Common versions
-  GO_VERSION: '1.25.10'
+  GO_VERSION: '1.25.11'
   GOLANGCI_VERSION: 'v2.10.1'
   DOCKER_BUILDX_VERSION: 'v0.8.2'
 
