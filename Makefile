@@ -33,7 +33,7 @@ GOLANGCILINT_VERSION = 2.10.1
 # ====================================================================================
 # Setup Kubernetes tools
 
-KIND_VERSION = v0.30.0
+KIND_VERSION = v0.32.0
 KIND_NODE_IMAGE_TAG ?= v1.24.0
 USE_HELM3 = true
 UPTEST_VERSION = v2.2.0
