@@ -11,8 +11,8 @@ import (
 	xpv2 "github.com/crossplane/crossplane-runtime/v2/apis/common/v2"
 	"k8s.io/apimachinery/pkg/runtime"
 
+	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	"github.com/google/go-cmp/cmp"
-	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/storage/driver"

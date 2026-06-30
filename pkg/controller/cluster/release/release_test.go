@@ -8,8 +8,8 @@ import (
 	kubeclient "github.com/crossplane-contrib/provider-kubernetes/pkg/kube/client"
 	kconfig "github.com/crossplane-contrib/provider-kubernetes/pkg/kube/config"
 
+	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	"github.com/google/go-cmp/cmp"
-	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/storage/driver"

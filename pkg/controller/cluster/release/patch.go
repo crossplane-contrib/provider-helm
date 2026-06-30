@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pkg/errors"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ktypes "sigs.k8s.io/kustomize/api/types"
 	"sigs.k8s.io/yaml"

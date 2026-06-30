@@ -19,7 +19,7 @@ package release
 import (
 	"context"
 
-	"github.com/pkg/errors"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
