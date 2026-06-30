@@ -595,6 +595,11 @@ spec:
                     description: InsecureSkipTLSVerify skips tls certificate checks
                       for the chart download
                     type: boolean
+                  maxHistory:
+                    default: 20
+                    description: MaxHistory limits the maximum number of revisions
+                      saved per release. Use 0 for no limit.
+                    type: integer
                   namespace:
                     description: Namespace to install the release into.
                     type: string

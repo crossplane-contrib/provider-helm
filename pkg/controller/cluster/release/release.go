@@ -157,6 +157,7 @@ func withRelease(cr *v1beta1.Release) helmClient.ArgsApplier {
 		// Only use TakeOwnership if requested AND not already used
 		// This prevents silent adoption of resources during upgrades after initial adoption
 		config.TakeOwnership = cr.Spec.ForProvider.TakeOwnership && !cr.Status.AtProvider.OwnershipTaken
+		config.MaxHistory = cr.Spec.ForProvider.MaxHistory
 	}
 }
 
