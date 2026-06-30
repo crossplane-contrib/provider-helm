@@ -3,6 +3,7 @@ package release
 import (
 	"context"
 	"testing"
+	"time"
 
 	kubeclient "github.com/crossplane-contrib/provider-kubernetes/pkg/kube/client"
 	kconfig "github.com/crossplane-contrib/provider-kubernetes/pkg/kube/config"
@@ -860,6 +861,68 @@ func Test_helmExternal_Delete(t *testing.T) {
 			_, gotErr := e.Delete(context.Background(), tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
 				t.Fatalf("e.Delete(...): -want error, +got error: %s", diff)
+			}
+		})
+	}
+}
+
+func Test_withRelease(t *testing.T) {
+	type args struct {
+		cr *v1beta1.Release
+	}
+	type want struct {
+		args helmClient.Args
+	}
+	timeout := metav1.Duration{Duration: 10 * time.Minute}
+	cases := map[string]struct {
+		args
+		want
+	}{
+		"AllFieldsSet": {
+			args: args{
+				cr: helmRelease(func(r *v1beta1.Release) {
+					r.Spec.ForProvider.Namespace = "test-namespace"
+					r.Spec.ForProvider.Wait = true
+					r.Spec.ForProvider.WaitTimeout = &timeout
+					r.Spec.ForProvider.SkipCRDs = true
+					r.Spec.ForProvider.InsecureSkipTLSVerify = true
+					r.Spec.ForProvider.PlainHTTP = true
+					r.Spec.ForProvider.TakeOwnership = true
+				}),
+			},
+			want: want{
+				args: helmClient.Args{
+					Namespace:             "test-namespace",
+					Wait:                  true,
+					Timeout:               10 * time.Minute,
+					SkipCRDs:              true,
+					InsecureSkipTLSVerify: true,
+					PlainHTTP:             true,
+					TakeOwnership:         true,
+				},
+			},
+		},
+		"TakeOwnershipFalse": {
+			args: args{
+				cr: helmRelease(func(r *v1beta1.Release) {
+					r.Spec.ForProvider.TakeOwnership = false
+				}),
+			},
+			want: want{
+				args: helmClient.Args{
+					Timeout:       5 * time.Minute, // default timeout
+					TakeOwnership: false,
+				},
+			},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			applier := withRelease(tc.args.cr)
+			got := &helmClient.Args{}
+			applier(got)
+			if diff := cmp.Diff(tc.want.args, *got); diff != "" {
+				t.Fatalf("withRelease(...): -want args, +got args: %s", diff)
 			}
 		})
 	}

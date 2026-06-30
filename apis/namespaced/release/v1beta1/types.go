@@ -102,6 +102,12 @@ type ReleaseParameters struct {
 	InsecureSkipTLSVerify bool `json:"insecureSkipTLSVerify,omitempty"`
 	// PlainHTTP uses insecure HTTP connections for the chart download
 	PlainHTTP bool `json:"plainHTTP,omitempty"`
+	// TakeOwnership ignores Helm ownership validation and adopts pre-existing releases.
+	// This is a ONE-TIME operation: after the first successful deployment, the flag is recorded
+	// in status.atProvider.ownershipTaken and subsequent reconciles use normal Helm validation.
+	// This prevents silent adoption of unrelated resources during chart upgrades.
+	// Use this field to migrate manually-deployed Helm releases into Crossplane management.
+	TakeOwnership bool `json:"takeOwnership,omitempty"`
 }
 
 // ReleaseObservation are the observable fields of a Release.
@@ -113,6 +119,10 @@ type ReleaseObservation struct {
 	Digest string `json:"digest,omitempty"`
 	// Version is the actual deployed chart version.
 	Version string `json:"version,omitempty"`
+	// OwnershipTaken indicates that spec.forProvider.takeOwnership was used for initial adoption.
+	// Once set to true, subsequent reconciles use normal Helm validation instead of takeOwnership,
+	// preventing silent adoption of unrelated resources during upgrades.
+	OwnershipTaken bool `json:"ownershipTaken,omitempty"`
 }
 
 // A ReleaseSpec defines the desired state of a Release.

@@ -16,4 +16,7 @@ type Args struct {
 	InsecureSkipTLSVerify bool
 	// PlainHTTP uses HTTP connections for the chart download
 	PlainHTTP bool
+	// TakeOwnership ignore the check for helm annotations and take ownership
+	// of the existing resources.
+	TakeOwnership bool
 }

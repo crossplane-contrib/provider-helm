@@ -154,6 +154,9 @@ func withRelease(cr *v1beta1.Release) helmClient.ArgsApplier {
 		config.SkipCRDs = cr.Spec.ForProvider.SkipCRDs
 		config.InsecureSkipTLSVerify = cr.Spec.ForProvider.InsecureSkipTLSVerify
 		config.PlainHTTP = cr.Spec.ForProvider.PlainHTTP
+		// Only use TakeOwnership if requested AND not already used
+		// This prevents silent adoption of resources during upgrades after initial adoption
+		config.TakeOwnership = cr.Spec.ForProvider.TakeOwnership && !cr.Status.AtProvider.OwnershipTaken
 	}
 }
 
@@ -270,7 +273,7 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 
 type deployAction func(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error)
 
-func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action deployAction) error {
+func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action deployAction) error { //nolint:gocyclo // easier to follow as a unit
 	cv, err := composeValuesFromSpec(ctx, e.localKube, cr.Spec.ForProvider.ValuesSpec)
 	if err != nil {
 		return errors.Wrap(err, errFailedToComposeValues)
@@ -337,6 +340,10 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action d
 	cr.Status.AtProvider = generateObservation(rel)
 	// Store the digest in status for drift detection
 	cr.Status.AtProvider.Digest = cr.Spec.ForProvider.Chart.Digest
+	// Mark ownership as taken if TakeOwnership was used
+	if cr.Spec.ForProvider.TakeOwnership {
+		cr.Status.AtProvider.OwnershipTaken = true
+	}
 
 	return nil
 }

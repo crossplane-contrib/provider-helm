@@ -697,6 +697,14 @@ spec:
                     description: SkipCreateNamespace won't create the namespace for
                       the release. This requires the namespace to already exist.
                     type: boolean
+                  takeOwnership:
+                    description: |-
+                      TakeOwnership ignores Helm ownership validation and adopts pre-existing releases.
+                      This is a ONE-TIME operation: after the first successful deployment, the flag is recorded
+                      in status.atProvider.ownershipTaken and subsequent reconciles use normal Helm validation.
+                      This prevents silent adoption of unrelated resources during chart upgrades.
+                      Use this field to migrate manually-deployed Helm releases into Crossplane management.
+                    type: boolean
                   values:
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
@@ -851,6 +859,12 @@ spec:
                     description: Digest is the last successfully deployed chart digest
                       (for OCI charts only).
                     type: string
+                  ownershipTaken:
+                    description: |-
+                      OwnershipTaken indicates that spec.forProvider.takeOwnership was used for initial adoption.
+                      Once set to true, subsequent reconciles use normal Helm validation instead of takeOwnership,
+                      preventing silent adoption of unrelated resources during upgrades.
+                    type: boolean
                   releaseDescription:
                     type: string
                   revision:
