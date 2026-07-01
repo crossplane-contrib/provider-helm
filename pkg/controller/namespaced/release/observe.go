@@ -17,7 +17,6 @@ limitations under the License.
 package release
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -27,6 +26,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/fieldpath"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -34,7 +34,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	"helm.sh/helm/v3/pkg/release"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
 
 	"github.com/crossplane-contrib/provider-helm/apis/namespaced/release/v1beta1"
 )
@@ -116,11 +115,6 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 		return false, errors.Wrap(err, errFailedToComposeValues)
 	}
 
-	d, err := yaml.Marshal(desiredConfig)
-	if err != nil {
-		return false, err
-	}
-
 	observedConfig := observed.Config
 	if observedConfig == nil {
 		// If no config provider, desiredConfig returns as empty map. However, observed would be nil in this case.
@@ -128,12 +122,7 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 		observedConfig = make(map[string]interface{})
 	}
 
-	o, err := yaml.Marshal(observedConfig)
-	if err != nil {
-		return false, err
-	}
-
-	if !bytes.Equal(d, o) {
+	if !equality.Semantic.DeepEqual(observedConfig, desiredConfig) {
 		return false, nil
 	}
 
