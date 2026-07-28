@@ -28,8 +28,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
+	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
 
 	clusterv1beta1 "github.com/crossplane-contrib/provider-helm/apis/cluster/release/v1beta1"
 	namespacedv1beta1 "github.com/crossplane-contrib/provider-helm/apis/namespaced/release/v1beta1"
@@ -114,7 +114,7 @@ func TestResolveNamespaced(t *testing.T) {
 								Repository: testChartRepo,
 								Name:       testChartName,
 								Version:    testChartVer,
-								PullSecretRef: xpv1.LocalSecretReference{
+								PullSecretRef: xpv2.LocalSecretReference{
 									Name: testSecretName,
 								},
 							},
@@ -148,7 +148,7 @@ func TestResolveNamespaced(t *testing.T) {
 								Repository: testChartRepo,
 								Name:       testChartName,
 								Version:    testChartVer,
-								PullSecretRef: xpv1.LocalSecretReference{
+								PullSecretRef: xpv2.LocalSecretReference{
 									Name: testSecretName,
 								},
 							},
@@ -185,7 +185,7 @@ func TestResolveNamespaced(t *testing.T) {
 								Repository: testChartRepo,
 								Name:       testChartName,
 								Version:    testChartVer,
-								PullSecretRef: xpv1.LocalSecretReference{
+								PullSecretRef: xpv2.LocalSecretReference{
 									Name: testSecretName,
 								},
 							},
@@ -299,7 +299,7 @@ func TestResolveCluster(t *testing.T) {
 						Name: "test-release",
 					},
 					Spec: clusterv1beta1.ReleaseSpec{
-						ResourceSpec: xpv1.ResourceSpec{},
+						ClusterManagedResourceSpec: xpv2.ClusterManagedResourceSpec{},
 						ForProvider: clusterv1beta1.ReleaseParameters{
 							Chart: clusterv1beta1.ChartSpec{
 								Repository: testChartRepo,
@@ -334,13 +334,13 @@ func TestResolveCluster(t *testing.T) {
 						Name: "test-release",
 					},
 					Spec: clusterv1beta1.ReleaseSpec{
-						ResourceSpec: xpv1.ResourceSpec{},
+						ClusterManagedResourceSpec: xpv2.ClusterManagedResourceSpec{},
 						ForProvider: clusterv1beta1.ReleaseParameters{
 							Chart: clusterv1beta1.ChartSpec{
 								Repository: testChartRepo,
 								Name:       testChartName,
 								Version:    testChartVer,
-								PullSecretRef: xpv1.SecretReference{
+								PullSecretRef: xpv2.SecretReference{
 									Name:      testSecretName,
 									Namespace: testNamespace,
 								},
@@ -365,13 +365,13 @@ func TestResolveCluster(t *testing.T) {
 						Name: "test-release",
 					},
 					Spec: clusterv1beta1.ReleaseSpec{
-						ResourceSpec: xpv1.ResourceSpec{},
+						ClusterManagedResourceSpec: xpv2.ClusterManagedResourceSpec{},
 						ForProvider: clusterv1beta1.ReleaseParameters{
 							Chart: clusterv1beta1.ChartSpec{
 								Repository: testChartRepo,
 								Name:       testChartName,
 								Version:    testChartVer,
-								PullSecretRef: xpv1.SecretReference{
+								PullSecretRef: xpv2.SecretReference{
 									Name: testSecretName,
 									// Namespace missing
 								},

@@ -23,9 +23,9 @@ import (
 	"fmt"
 	"strings"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/fieldpath"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
+	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
@@ -92,9 +92,9 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 		return false, nil
 	}
 
-	mp := sets.New[xpv1.ManagementAction](spec.ManagementPolicies...)
+	mp := sets.New[xpv2.ManagementAction](spec.ManagementPolicies...)
 
-	if len(mp) != 0 && !mp.HasAny(xpv1.ManagementActionUpdate, xpv1.ManagementActionAll) {
+	if len(mp) != 0 && !mp.HasAny(xpv2.ManagementActionUpdate, xpv2.ManagementActionAll) {
 		// Treated as up-to-date as we don't update or create the resource
 		return true, nil
 	}

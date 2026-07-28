@@ -12,8 +12,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
+	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
 
 	"github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
 )
@@ -34,7 +34,7 @@ var (
 func Test_userInfoFromSecret(t *testing.T) {
 	type args struct {
 		kube      client.Client
-		secretRef xpv1.LocalSecretReference
+		secretRef xpv2.LocalSecretReference
 	}
 	type want struct {
 		out *helm.RepoCreds
@@ -65,7 +65,7 @@ func Test_userInfoFromSecret(t *testing.T) {
 						return errBoom
 					},
 				},
-				secretRef: xpv1.LocalSecretReference{
+				secretRef: xpv2.LocalSecretReference{
 					Name: testPullSecretName,
 				},
 			},
@@ -91,7 +91,7 @@ func Test_userInfoFromSecret(t *testing.T) {
 						return errBoom
 					},
 				},
-				secretRef: xpv1.LocalSecretReference{
+				secretRef: xpv2.LocalSecretReference{
 					Name: testPullSecretName,
 				},
 			},
@@ -116,7 +116,7 @@ func Test_userInfoFromSecret(t *testing.T) {
 						return errBoom
 					},
 				},
-				secretRef: xpv1.LocalSecretReference{
+				secretRef: xpv2.LocalSecretReference{
 					Name: testPullSecretName,
 				},
 			},
@@ -141,7 +141,7 @@ func Test_userInfoFromSecret(t *testing.T) {
 						return errBoom
 					},
 				},
-				secretRef: xpv1.LocalSecretReference{
+				secretRef: xpv2.LocalSecretReference{
 					Name: testPullSecretName,
 				},
 			},

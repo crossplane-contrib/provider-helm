@@ -22,7 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
+	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
 )
 
 // A ChartSpec defines the chart spec for a Release
@@ -47,7 +47,7 @@ type ChartSpec struct {
 	// PullSecretRef is reference to the secret containing credentials to helm repository.
 	// The secret must contain 'username' and 'password' keys. Optional - if not provided,
 	// the default credential chain is used (AWS IRSA, Azure/GCP Workload Identity, etc.).
-	PullSecretRef xpv1.SecretReference `json:"pullSecretRef,omitempty"`
+	PullSecretRef xpv2.SecretReference `json:"pullSecretRef,omitempty"`
 }
 
 // NamespacedName represents a namespaced object name
@@ -135,20 +135,20 @@ type ReleaseObservation struct {
 
 // A ReleaseSpec defines the desired state of a Release.
 type ReleaseSpec struct {
-	xpv1.ResourceSpec `json:",inline"`
-	ConnectionDetails []ConnectionDetail `json:"connectionDetails,omitempty"`
-	ForProvider       ReleaseParameters  `json:"forProvider"`
+	xpv2.ClusterManagedResourceSpec `json:",inline"`
+	ConnectionDetails               []ConnectionDetail `json:"connectionDetails,omitempty"`
+	ForProvider                     ReleaseParameters  `json:"forProvider"`
 	// RollbackRetriesLimit is max number of attempts to retry Helm deployment by rolling back the release.
 	RollbackRetriesLimit *int32 `json:"rollbackLimit,omitempty"`
 }
 
 // A ReleaseStatus represents the observed state of a Release.
 type ReleaseStatus struct {
-	xpv1.ResourceStatus `json:",inline"`
-	AtProvider          ReleaseObservation `json:"atProvider,omitempty"`
-	PatchesSha          string             `json:"patchesSha,omitempty"`
-	Failed              int32              `json:"failed,omitempty"`
-	Synced              bool               `json:"synced,omitempty"`
+	xpv2.ManagedResourceStatus `json:",inline"`
+	AtProvider                 ReleaseObservation `json:"atProvider,omitempty"`
+	PatchesSha                 string             `json:"patchesSha,omitempty"`
+	Failed                     int32              `json:"failed,omitempty"`
+	Synced                     bool               `json:"synced,omitempty"`
 }
 
 // ConnectionDetail todo

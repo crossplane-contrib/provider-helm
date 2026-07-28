@@ -33,7 +33,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ktype "sigs.k8s.io/kustomize/api/types"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/event"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/feature"
@@ -42,6 +41,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/statemetrics"
+	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
 
 	kubeclient "github.com/crossplane-contrib/provider-kubernetes/pkg/kube/client"
 
@@ -260,9 +260,9 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 		if cr.Status.AtProvider.Digest == "" {
 			cr.Status.AtProvider.Digest = cr.Spec.ForProvider.Chart.Digest
 		}
-		cr.Status.SetConditions(xpv1.Available())
+		cr.Status.SetConditions(xpv2.Available())
 	} else {
-		cr.Status.SetConditions(xpv1.Unavailable())
+		cr.Status.SetConditions(xpv2.Unavailable())
 	}
 
 	return managed.ExternalObservation{
@@ -297,8 +297,8 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action d
 	}
 
 	// Check if LateInitialize is allowed by management policies
-	mp := sets.New[xpv1.ManagementAction](cr.Spec.ManagementPolicies...)
-	shouldLateInit := len(mp) == 0 || mp.HasAny(xpv1.ManagementActionLateInitialize, xpv1.ManagementActionAll)
+	mp := sets.New[xpv2.ManagementAction](cr.Spec.ManagementPolicies...)
+	shouldLateInit := len(mp) == 0 || mp.HasAny(xpv2.ManagementActionLateInitialize, xpv2.ManagementActionAll)
 
 	needsUpdate := false
 	if shouldLateInit {
