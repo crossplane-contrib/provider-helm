@@ -20,12 +20,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	kconfig "github.com/crossplane-contrib/provider-kubernetes/pkg/kube/config"
-	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
+	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
 )
 
 // A ProviderConfigStatus defines the status of a Provider.
 type ProviderConfigStatus struct {
-	xpv1.ProviderConfigStatus `json:",inline"`
+	xpv2.ProviderConfigStatus `json:",inline"`
 }
 
 // +kubebuilder:object:root=true
@@ -66,7 +66,7 @@ type ProviderConfigUsage struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	xpv1.ProviderConfigUsage `json:",inline"`
+	xpv2.ProviderConfigUsage `json:",inline"`
 }
 
 // +kubebuilder:object:root=true

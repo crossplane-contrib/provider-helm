@@ -23,7 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
+	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
 
 	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
 )
@@ -40,7 +40,7 @@ const (
 	errChartPullSecretMissingPassword  = "password missing in chart pull secret"
 )
 
-func repoCredsFromSecret(ctx context.Context, kube client.Client, namespace string, secretRef xpv1.LocalSecretReference) (*helmClient.RepoCreds, error) {
+func repoCredsFromSecret(ctx context.Context, kube client.Client, namespace string, secretRef xpv2.LocalSecretReference) (*helmClient.RepoCreds, error) {
 	repoUser := ""
 	repoPass := ""
 	if secretRef.Name != "" {

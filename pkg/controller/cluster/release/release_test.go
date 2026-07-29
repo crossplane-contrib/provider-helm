@@ -20,11 +20,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/api/types"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
+	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
 
 	"github.com/crossplane-contrib/provider-helm/apis/cluster/release/v1beta1"
 	helmv1beta1 "github.com/crossplane-contrib/provider-helm/apis/cluster/v1beta1"
@@ -45,8 +45,8 @@ func helmRelease(rm ...helmReleaseModifier) *v1beta1.Release {
 			Namespace: testNamespace,
 		},
 		Spec: v1beta1.ReleaseSpec{
-			ResourceSpec: xpv1.ResourceSpec{
-				ProviderConfigReference: &xpv1.Reference{
+			ClusterManagedResourceSpec: xpv2.ClusterManagedResourceSpec{
+				ProviderConfigReference: &xpv2.Reference{
 					Name: providerName,
 				},
 			},
@@ -119,12 +119,12 @@ func Test_connector_Connect(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: providerName},
 		Spec: kconfig.ProviderConfigSpec{
 			Credentials: kconfig.ProviderCredentials{
-				Source: xpv1.CredentialsSourceNone,
+				Source: xpv2.CredentialsSourceNone,
 			},
 			Identity: &kconfig.Identity{
 				Type: kconfig.IdentityTypeGoogleApplicationCredentials,
 				ProviderCredentials: kconfig.ProviderCredentials{
-					Source: xpv1.CredentialsSourceNone,
+					Source: xpv2.CredentialsSourceNone,
 				},
 			},
 		},
@@ -135,25 +135,25 @@ func Test_connector_Connect(t *testing.T) {
 	}
 
 	providerConfigGoogleInjectedIdentity := *providerConfig.DeepCopy()
-	providerConfigGoogleInjectedIdentity.Spec.Identity.Source = xpv1.CredentialsSourceInjectedIdentity
+	providerConfigGoogleInjectedIdentity.Spec.Identity.Source = xpv2.CredentialsSourceInjectedIdentity
 
 	providerConfigAzure := helmv1beta1.ProviderConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: providerName},
 		Spec: kconfig.ProviderConfigSpec{
 			Credentials: kconfig.ProviderCredentials{
-				Source: xpv1.CredentialsSourceNone,
+				Source: xpv2.CredentialsSourceNone,
 			},
 			Identity: &kconfig.Identity{
 				Type: kconfig.IdentityTypeAzureServicePrincipalCredentials,
 				ProviderCredentials: kconfig.ProviderCredentials{
-					Source: xpv1.CredentialsSourceNone,
+					Source: xpv2.CredentialsSourceNone,
 				},
 			},
 		},
 	}
 
 	providerConfigAzureInjectedIdentity := *providerConfigAzure.DeepCopy()
-	providerConfigAzureInjectedIdentity.Spec.Identity.Source = xpv1.CredentialsSourceInjectedIdentity
+	providerConfigAzureInjectedIdentity.Spec.Identity.Source = xpv2.CredentialsSourceInjectedIdentity
 
 	providerConfigUnknownIdentitySource := *providerConfigAzure.DeepCopy()
 	providerConfigUnknownIdentitySource.Spec.Identity.Type = "foo"

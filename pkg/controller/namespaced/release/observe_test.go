@@ -4,11 +4,10 @@ import (
 	"context"
 	"testing"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
-	xpv2 "github.com/crossplane/crossplane-runtime/v2/apis/common/v2"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
+	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
 	"github.com/google/go-cmp/cmp"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
@@ -312,10 +311,10 @@ func Test_isUpToDate(t *testing.T) {
 				},
 				spec: &v1beta1.ReleaseSpec{
 					ManagedResourceSpec: xpv2.ManagedResourceSpec{
-						ManagementPolicies: []xpv1.ManagementAction{
-							xpv1.ManagementActionCreate,
-							xpv1.ManagementActionDelete,
-							xpv1.ManagementActionObserve,
+						ManagementPolicies: []xpv2.ManagementAction{
+							xpv2.ManagementActionCreate,
+							xpv2.ManagementActionDelete,
+							xpv2.ManagementActionObserve,
 						},
 					},
 					ForProvider: v1beta1.ReleaseParameters{
@@ -354,11 +353,11 @@ func Test_isUpToDate(t *testing.T) {
 				},
 				spec: &v1beta1.ReleaseSpec{
 					ManagedResourceSpec: xpv2.ManagedResourceSpec{
-						ManagementPolicies: []xpv1.ManagementAction{
-							xpv1.ManagementActionCreate,
-							xpv1.ManagementActionDelete,
-							xpv1.ManagementActionObserve,
-							xpv1.ManagementActionUpdate,
+						ManagementPolicies: []xpv2.ManagementAction{
+							xpv2.ManagementActionCreate,
+							xpv2.ManagementActionDelete,
+							xpv2.ManagementActionObserve,
+							xpv2.ManagementActionUpdate,
 						},
 					},
 					ForProvider: v1beta1.ReleaseParameters{
