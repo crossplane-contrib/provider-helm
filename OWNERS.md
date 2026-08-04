@@ -17,3 +17,4 @@ maintainers.
 * Sergen Yalcin <sergen@upbound.io> ([sergenyalcin](https://github.com/sergenyalcin))
 * Fatih Turken <fatih@upbound.io> ([turkenf](https://github.com/turkenf)))
 * Alper Ulucinar <alper@upbound.io> ([ulucinar](https://github.com/ulucinar))
+* Jonasz Łasut-Balcerzak <jonasz@upbound.io> ([jonasz-lasut](https://github.com/jonasz-lasut))
