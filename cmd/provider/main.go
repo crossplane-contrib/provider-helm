@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -29,6 +28,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -81,9 +81,9 @@ func main() {
 		pollInterval            = app.Flag("poll", "How often individual resources will be checked for drift from the desired state").Default("10m").Duration()
 		pollStateMetricInterval = app.Flag("poll-state-metric", "State metric recording interval").Default("5s").Duration()
 		maxReconcileRate        = app.Flag("max-reconcile-rate", "The global maximum rate per second at which resources may checked for drift from the desired state.").Default("100").Int()
-		webhookPort             = app.Flag("webhook-port", "Port for the webhook server.").Default("9443").Envar("WEBHOOK_PORT").Int()
-		metricsPort             = app.Flag("metrics-port", "Port for the metrics server.").Default("8080").Envar("METRICS_PORT").Int()
-		healthProbePort         = app.Flag("health-probe-port", "Port for the health probe server.").Default("8081").Envar("HEALTH_PROBE_PORT").Int()
+		webhookPort             = app.Flag("webhook-port", "The port the webhook server listens on.").Default("9443").Envar("WEBHOOK_PORT").Int()
+		metricsPort             = app.Flag("metrics-port", "The port the metrics server listens on.").Default("8080").Envar("METRICS_PORT").Int()
+		healthProbePort         = app.Flag("health-probe-port", "The port the health probe endpoint listens on.").Default("8081").Envar("HEALTH_PROBE_PORT").Int()
 
 		enableManagementPolicies = app.Flag("enable-management-policies", "Enable support for Management Policies.").Default("true").Envar("ENABLE_MANAGEMENT_POLICIES").Bool()
 		enableChangeLogs         = app.Flag("enable-changelogs", "Enable support for capturing change logs during reconciliation.").Default("false").Envar("ENABLE_CHANGE_LOGS").Bool()
@@ -243,28 +243,13 @@ func canWatchCRD(ctx context.Context, mgr manager.Manager) (bool, error) {
 	return true, nil
 }
 
-// setupHealthProbes configures liveness and readiness probes for the manager
+// setupHealthProbes sets up the health and readiness probes.
 func setupHealthProbes(mgr ctrl.Manager) error {
-	log := logging.NewLogrLogger(zap.New().WithName("health-probes"))
-
-	// Add readiness probe
-	if err := mgr.AddReadyzCheck("ready", func(_ *http.Request) error {
-		// Add any specific readiness checks here
-		return nil
-	}); err != nil {
-		log.Debug("Unable to set up readiness check", "error", err)
-		return err
+	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+		return errors.Wrap(err, "cannot add readiness probe")
 	}
-
-	// Add liveness probe
-	if err := mgr.AddHealthzCheck("healthz", func(_ *http.Request) error {
-		// Add any specific liveness checks here
-		return nil
-	}); err != nil {
-		log.Debug("Unable to set up health check", "error", err)
-		return err
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+		return errors.Wrap(err, "cannot add liveness probe")
 	}
-
-	log.Debug("Health probes configured successfully")
 	return nil
 }
