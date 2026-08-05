@@ -9,7 +9,9 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/crossplane-contrib/provider-helm/apis/namespaced/release/v1beta1"
@@ -300,6 +302,117 @@ keyB:
 				err: errors.Wrap(errors.Wrap(errors.Wrap(errBoom, fmt.Sprintf(errFailedToGetSecret, testNamespace)),
 					errFailedToGetDataFromSecretRef),
 					errFailedToGetValueFromSource),
+			},
+		},
+		"SetSkippedWhenOptionalValueFromSecretMissing": {
+			args: args{
+				kube: &test.MockClient{
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						return kerrors.NewNotFound(schema.GroupResource{Resource: "secrets"}, key.Name)
+					},
+				},
+				spec: v1beta1.ValuesSpec{
+					Values: runtime.RawExtension{
+						Raw: []byte(`
+keyA: valA
+`),
+					},
+					Set: []v1beta1.SetVal{
+						{
+							Name: "keyA",
+							ValueFrom: &v1beta1.ValueFromSource{
+								SecretKeyRef: &v1beta1.DataKeySelector{
+									Name:     testSecretName,
+									Key:      "keyA",
+									Optional: true,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: want{
+				out: map[string]interface{}{
+					"keyA": "valA",
+				},
+				err: nil,
+			},
+		},
+		"SetSkippedWhenOptionalValueFromKeyMissing": {
+			args: args{
+				kube: &test.MockClient{
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						if key.Name == testSecretName && key.Namespace == testNamespace {
+							s := corev1.Secret{
+								Data: map[string][]byte{
+									"otherKey": []byte("valY"),
+								},
+							}
+							*obj.(*corev1.Secret) = s
+							return nil
+						}
+						return errBoom
+					},
+				},
+				spec: v1beta1.ValuesSpec{
+					Values: runtime.RawExtension{
+						Raw: []byte(`
+keyA: valA
+`),
+					},
+					Set: []v1beta1.SetVal{
+						{
+							Name: "keyA",
+							ValueFrom: &v1beta1.ValueFromSource{
+								SecretKeyRef: &v1beta1.DataKeySelector{
+									Name:     testSecretName,
+									Key:      "keyA",
+									Optional: true,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: want{
+				out: map[string]interface{}{
+					"keyA": "valA",
+				},
+				err: nil,
+			},
+		},
+		"SetSkippedWhenOptionalValueFromConfigMapMissing": {
+			args: args{
+				kube: &test.MockClient{
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						return kerrors.NewNotFound(schema.GroupResource{Resource: "configmaps"}, key.Name)
+					},
+				},
+				spec: v1beta1.ValuesSpec{
+					Values: runtime.RawExtension{
+						Raw: []byte(`
+keyA: valA
+`),
+					},
+					Set: []v1beta1.SetVal{
+						{
+							Name: "keyA",
+							ValueFrom: &v1beta1.ValueFromSource{
+								ConfigMapKeyRef: &v1beta1.DataKeySelector{
+									Name:     testCMName,
+									Key:      "keyA",
+									Optional: true,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: want{
+				out: map[string]interface{}{
+					"keyA": "valA",
+				},
+				err: nil,
 			},
 		},
 	}
