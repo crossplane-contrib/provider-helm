@@ -100,7 +100,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	actionConfig := new(action.Configuration)
 	// Always store helm state in the same cluster/namespace where chart is deployed
 	if err := actionConfig.Init(rg, args.Namespace, helmDriverSecret, func(format string, v ...interface{}) {
-		log.Debug(fmt.Sprintf(format, v))
+		log.Debug(fmt.Sprintf(format, v...))
 	}); err != nil {
 		return nil, err
 	}
