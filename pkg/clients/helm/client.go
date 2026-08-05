@@ -151,6 +151,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	ic.InsecureSkipTLSVerify = args.InsecureSkipTLSVerify
 	ic.PlainHTTP = args.PlainHTTP
 	ic.TakeOwnership = args.TakeOwnership
+	ic.ForceConflicts = args.SSAForceConflicts
 
 	uc := action.NewUpgrade(actionConfig)
 	uc.WaitStrategy = waitStrategy
@@ -160,6 +161,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	uc.PlainHTTP = args.PlainHTTP
 	uc.TakeOwnership = args.TakeOwnership
 	uc.MaxHistory = args.MaxHistory
+	uc.ForceConflicts = args.SSAForceConflicts
 
 	uic := action.NewUninstall(actionConfig)
 	uic.WaitStrategy = waitStrategy
@@ -168,6 +170,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	rb := action.NewRollback(actionConfig)
 	rb.WaitStrategy = waitStrategy
 	rb.Timeout = args.Timeout
+	rb.ForceConflicts = args.SSAForceConflicts
 
 	lc := action.NewRegistryLogin(actionConfig)
 

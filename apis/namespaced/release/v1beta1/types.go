@@ -111,6 +111,12 @@ type ReleaseParameters struct {
 	// +optional
 	// +kubebuilder:default:=20
 	MaxHistory int `json:"maxHistory,omitempty"`
+	// SSAForceConflicts forces Kubernetes server-side apply to overwrite
+	// field conflicts ("become sole manager") when installing, upgrading,
+	// or rolling back the release.
+	// See https://kubernetes.io/docs/reference/using-api/server-side-apply/#conflicts
+	// +optional
+	SSAForceConflicts bool `json:"ssaForceConflicts,omitempty"`
 }
 
 // ReleaseObservation are the observable fields of a Release.
