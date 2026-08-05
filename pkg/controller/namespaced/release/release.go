@@ -94,7 +94,7 @@ func Setup(mgr ctrl.Manager, o controller.Options, timeout time.Duration) error 
 		}),
 		managed.WithPollInterval(o.PollInterval),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
-		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))), //nolint:staticcheck // TODO(jonasz-lasut) Update after crossplane-runtime is updated to the new events API. - https://github.com/crossplane/crossplane/issues/7152
+		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
 		managed.WithTimeout(timeout),
 		managed.WithMetricRecorder(o.MetricOptions.MRMetrics),
 		managed.WithDeterministicExternalName(true),

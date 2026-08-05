@@ -39,7 +39,7 @@ const (
 
 func ResolveProviderConfig(ctx context.Context, crClient kclient.Client, lt resource.LegacyTracker, mt resource.ModernTracker, mg resource.Managed) (*kconfig.ProviderConfigSpec, error) {
 	switch m := mg.(type) {
-	case resource.LegacyManaged: //nolint:staticcheck // still need to support LegacyManaged resources
+	case resource.LegacyManaged:
 		return resolveProviderConfigLegacy(ctx, crClient, m, lt)
 	case resource.ModernManaged:
 		return resolveProviderConfigModern(ctx, crClient, m, mt)
@@ -48,7 +48,7 @@ func ResolveProviderConfig(ctx context.Context, crClient kclient.Client, lt reso
 	}
 }
 
-func resolveProviderConfigLegacy(ctx context.Context, client kclient.Client, mg resource.LegacyManaged, lt resource.LegacyTracker) (*kconfig.ProviderConfigSpec, error) { //nolint:staticcheck // still need to support LegacyManaged resources
+func resolveProviderConfigLegacy(ctx context.Context, client kclient.Client, mg resource.LegacyManaged, lt resource.LegacyTracker) (*kconfig.ProviderConfigSpec, error) {
 	configRef := mg.GetProviderConfigReference()
 	if configRef == nil {
 		return nil, errors.New(errProviderConfigNotSet)

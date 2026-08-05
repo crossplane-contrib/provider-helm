@@ -199,7 +199,7 @@ func Test_connector_Connect(t *testing.T) {
 						return nil
 					},
 				},
-				usage: resource.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error { //nolint:staticcheck // still need to support LegacyManaged resources
+				usage: resource.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error {
 					return errBoom
 				}),
 				mg: helmRelease(),
@@ -219,7 +219,7 @@ func Test_connector_Connect(t *testing.T) {
 						return nil
 					},
 				},
-				usage: resource.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error { return nil }), //nolint:staticcheck // still need to support LegacyManaged resources
+				usage: resource.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error { return nil }),
 				mg:    helmRelease(),
 			},
 			want: want{
@@ -244,7 +244,7 @@ func Test_connector_Connect(t *testing.T) {
 				newHelmClientFn: func(log logging.Logger, restConfig *rest.Config, helmArgs ...helmClient.ArgsApplier) (helmClient.Client, error) {
 					return nil, errBoom
 				},
-				usage: resource.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error { return nil }), //nolint:staticcheck // still need to support LegacyManaged resources
+				usage: resource.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error { return nil }),
 				mg:    helmRelease(),
 			},
 			want: want{
@@ -271,7 +271,7 @@ func Test_connector_Connect(t *testing.T) {
 				newHelmClientFn: func(log logging.Logger, restConfig *rest.Config, helmArgs ...helmClient.ArgsApplier) (h helmClient.Client, err error) {
 					return &MockHelmClient{}, nil
 				},
-				usage: resource.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error { return nil }), //nolint:staticcheck // still need to support LegacyManaged resources
+				usage: resource.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error { return nil }),
 				mg:    helmRelease(),
 			},
 			want: want{
