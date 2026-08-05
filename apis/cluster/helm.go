@@ -29,10 +29,10 @@ import (
 func init() {
 	// Register the types with the Scheme so the components can map objects to GroupVersionKinds and back
 	AddToSchemes = append(AddToSchemes,
-		helmv1alpha1.SchemeBuilder.AddToScheme,
-		helmv1beta1.SchemeBuilder.AddToScheme,
-		v1alpha1.SchemeBuilder.AddToScheme,
-		v1beta1.SchemeBuilder.AddToScheme,
+		helmv1alpha1.AddToScheme,
+		helmv1beta1.AddToScheme,
+		v1alpha1.AddToScheme,
+		v1beta1.AddToScheme,
 	)
 }
 
