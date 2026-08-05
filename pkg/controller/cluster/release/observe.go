@@ -19,6 +19,7 @@ package release
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -57,6 +58,25 @@ func generateObservation(in *release.Release) v1beta1.ReleaseObservation {
 		o.Revision = in.Version
 	}
 	return o
+}
+
+// normalizeConfig JSON-serializes and re-deserializes a config map to
+// normalize numeric types (int64 → float64), matching how Helm stores
+// release configs. This ensures desired vs observed comparison succeeds
+// when the only difference is int64 vs float64 (commonly from strvals parsing).
+func normalizeConfig(cfg map[string]interface{}) map[string]interface{} {
+	if cfg == nil {
+		return nil
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return cfg
+	}
+	var normalized map[string]interface{}
+	if err := json.Unmarshal(data, &normalized); err != nil {
+		return cfg
+	}
+	return normalized
 }
 
 // isUpToDate checks whether desired spec up to date with the observed state for a given release
@@ -107,7 +127,9 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 		observedConfig = make(map[string]interface{})
 	}
 
-	if !equality.Semantic.DeepEqual(desiredConfig, observedConfig) {
+	desiredNorm := normalizeConfig(desiredConfig)
+	observedNorm := normalizeConfig(observedConfig)
+	if !equality.Semantic.DeepEqual(desiredNorm, observedNorm) {
 		return false, nil
 	}
 
