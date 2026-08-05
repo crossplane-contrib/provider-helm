@@ -622,6 +622,43 @@ func Test_isUpToDate(t *testing.T) {
 				err: nil,
 			},
 		},
+		"Success_Int64VsFloat64_Set": {
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							Name:    testChart,
+							Version: testVersion,
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Set: []v1beta1.SetVal{
+								{Name: "replicas", Value: "3"},
+							},
+						},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Raw: nil,
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: testVersion,
+						},
+					},
+					Config: map[string]interface{}{
+						"replicas": float64(3),
+					},
+				},
+			},
+			want: want{
+				out: true,
+				err: nil,
+			},
+		},
 	}
 
 	for name, tc := range cases {

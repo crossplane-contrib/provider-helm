@@ -17,9 +17,9 @@ limitations under the License.
 package release
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -27,6 +27,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -34,7 +35,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	"helm.sh/helm/v3/pkg/release"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
 
 	"github.com/crossplane-contrib/provider-helm/apis/namespaced/release/v1beta1"
 )
@@ -64,6 +64,29 @@ func generateObservation(in *release.Release) v1beta1.ReleaseObservation {
 	}
 
 	return o
+}
+
+// normalizeConfig JSON-serializes and re-deserializes a config map to
+// normalize numeric types (int64 → float64), matching how Helm stores
+// release configs. This ensures desired vs observed comparison succeeds
+// when the only difference is int64 vs float64 (commonly from strvals parsing).
+func normalizeConfig(cfg map[string]interface{}) map[string]interface{} {
+	if cfg == nil {
+		return nil
+	}
+
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return cfg
+	}
+
+	var normalized map[string]interface{}
+
+	if err := json.Unmarshal(data, &normalized); err != nil {
+		return cfg
+	}
+
+	return normalized
 }
 
 // isUpToDate checks whether desired spec up to date with the observed state for a given release
@@ -116,11 +139,6 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 		return false, errors.Wrap(err, errFailedToComposeValues)
 	}
 
-	d, err := yaml.Marshal(desiredConfig)
-	if err != nil {
-		return false, err
-	}
-
 	observedConfig := observed.Config
 	if observedConfig == nil {
 		// If no config provider, desiredConfig returns as empty map. However, observed would be nil in this case.
@@ -128,12 +146,9 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 		observedConfig = make(map[string]interface{})
 	}
 
-	o, err := yaml.Marshal(observedConfig)
-	if err != nil {
-		return false, err
-	}
-
-	if !bytes.Equal(d, o) {
+	desiredNorm := normalizeConfig(desiredConfig)
+	observedNorm := normalizeConfig(observedConfig)
+	if !equality.Semantic.DeepEqual(desiredNorm, observedNorm) {
 		return false, nil
 	}
 
