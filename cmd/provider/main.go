@@ -82,8 +82,8 @@ func main() {
 		pollStateMetricInterval = app.Flag("poll-state-metric", "State metric recording interval").Default("5s").Duration()
 		maxReconcileRate        = app.Flag("max-reconcile-rate", "The global maximum rate per second at which resources may checked for drift from the desired state.").Default("100").Int()
 		webhookPort             = app.Flag("webhook-port", "The port the webhook server listens on.").Default("9443").Envar("WEBHOOK_PORT").Int()
-		metricsPort             = app.Flag("metrics-port", "The port the metrics server listens on.").Default("8080").Envar("METRICS_PORT").Int()
-		healthProbePort         = app.Flag("health-probe-port", "The port the health probe endpoint listens on.").Default("8081").Envar("HEALTH_PROBE_PORT").Int()
+		metricsBindAddress      = app.Flag("metrics-bind-address", "The address the metrics server listens on").Default(":8080").Envar("METRICS_BIND_ADDRESS").String()
+		healthProbeBindAddress  = app.Flag("health-probe-bind-addr", "The address the health/readiness probe server listens on").Default(":8081").Envar("HEALTH_PROBE_BIND_ADDRESS").String()
 
 		enableManagementPolicies = app.Flag("enable-management-policies", "Enable support for Management Policies.").Default("true").Envar("ENABLE_MANAGEMENT_POLICIES").Bool()
 		enableChangeLogs         = app.Flag("enable-changelogs", "Enable support for capturing change logs during reconciliation.").Default("false").Envar("ENABLE_CHANGE_LOGS").Bool()
@@ -113,9 +113,9 @@ func main() {
 			Port: *webhookPort,
 		}),
 		Metrics: metricsserver.Options{
-			BindAddress: fmt.Sprintf(":%d", *metricsPort),
+			BindAddress: *metricsBindAddress,
 		},
-		HealthProbeBindAddress: fmt.Sprintf(":%d", *healthProbePort),
+		HealthProbeBindAddress: *healthProbeBindAddress,
 
 		// controller-runtime uses both ConfigMaps and Leases for leader
 		// election by default. Leases expire after 15 seconds, with a
