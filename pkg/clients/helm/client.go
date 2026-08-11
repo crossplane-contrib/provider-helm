@@ -62,6 +62,10 @@ const (
 	errDigestMismatchTmpl              = "conflicting digest input: URL contains @%s but spec.forProvider.chart.digest is %s"
 	errNoChartName                     = "spec.forProvider.chart.name must be specified when URL is empty"
 	errNoChartRepository               = "spec.forProvider.chart.repository must be specified when URL is empty"
+	errFailedToInitActionConfig        = "failed to initialize helm action configuration"
+	errFailedToCreateRegistryClient    = "failed to create registry client"
+	errFailedToCreateChartCacheDir     = "failed to create chart cache directory"
+	errFailedToCreateContentCacheDir   = "failed to create chart content cache directory"
 	devel                              = ">0.0.0-0"
 )
 
@@ -100,14 +104,18 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	rg := newRESTClientGetter(restConfig, args.Namespace)
 
 	actionConfig := new(action.Configuration)
+	// Helm v4 discards its internal logs (including kstatus wait diagnostics)
+	// unless a handler is set, and Init copies the handler into the kube
+	// client and storage driver, so this must run before Init.
+	actionConfig.SetLogger(slogHandler{log: log})
 	// Always store helm state in the same cluster/namespace where chart is deployed
 	if err := actionConfig.Init(rg, args.Namespace, helmDriverSecret); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, errFailedToInitActionConfig)
 	}
 
 	rc, err := registry.NewClient()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, errFailedToCreateRegistryClient)
 	}
 	actionConfig.RegistryClient = rc
 
@@ -116,7 +124,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	if _, err := os.Stat(chartCache); os.IsNotExist(err) {
 		err = os.Mkdir(chartCache, 0750)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, errFailedToCreateChartCacheDir)
 		}
 	}
 
@@ -126,7 +134,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	if _, err := os.Stat(chartContentCache); os.IsNotExist(err) {
 		err = os.Mkdir(chartContentCache, 0750)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, errFailedToCreateContentCacheDir)
 		}
 	}
 
@@ -138,6 +146,13 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 
 	gc := action.NewGet(actionConfig)
 
+	// Helm v4 replaced the boolean wait with wait strategies. This mapping
+	// follows helm's own shim for the deprecated --wait flag (pkg/cmd/flags.go):
+	// wait=false still waits for hook Pods/Jobs only, matching v3, while
+	// wait=true now waits on kstatus readiness instead of v3's poller — a
+	// deliberate semantic change: the v3-compatible kube.LegacyStrategy is not
+	// used because the poller has false positives, e.g. it reports ready with
+	// zero ready pods when a Deployment's replicas - maxUnavailable == 0.
 	waitStrategy := kube.HookOnlyStrategy
 	if args.Wait {
 		waitStrategy = kube.StatusWatcherStrategy
