@@ -21,4 +21,8 @@ type Args struct {
 	TakeOwnership bool
 	// MaxHistory limits the maximum number of revisions saved per release. Use 0 for no limit.
 	MaxHistory int
+	// SSAForceConflicts forces Kubernetes server-side apply to overwrite
+	// field conflicts ("become sole manager") on install, upgrade, and
+	// rollback.
+	SSAForceConflicts bool
 }

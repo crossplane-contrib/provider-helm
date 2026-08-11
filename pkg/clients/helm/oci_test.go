@@ -294,7 +294,7 @@ func TestResolveOCIChartVersion_BackwardCompatibility(t *testing.T) {
 }
 
 // helmDigestPullFilename reproduces the filename Helm's chart downloader writes
-// for an OCI chart pulled by digest (see helm.sh/helm/v3 pkg/downloader
+// for an OCI chart pulled by digest (see helm.sh/helm/v4 pkg/downloader
 // chart_downloader.go DownloadTo): it takes filepath.Base of the reference path
 // (e.g. "mychart@sha256:abc") and replaces the last ':' with '-', yielding
 // "mychart@sha256-abc.tgz". resolveCachedChartPathWithDigest must construct the

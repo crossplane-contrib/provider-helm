@@ -17,7 +17,7 @@ limitations under the License.
 package v1beta1
 
 import (
-	"helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v4/pkg/release/common"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -111,13 +111,19 @@ type ReleaseParameters struct {
 	// +optional
 	// +kubebuilder:default:=20
 	MaxHistory int `json:"maxHistory,omitempty"`
+	// SSAForceConflicts forces Kubernetes server-side apply to overwrite
+	// field conflicts ("become sole manager") when installing, upgrading,
+	// or rolling back the release.
+	// See https://kubernetes.io/docs/reference/using-api/server-side-apply/#conflicts
+	// +optional
+	SSAForceConflicts bool `json:"ssaForceConflicts,omitempty"`
 }
 
 // ReleaseObservation are the observable fields of a Release.
 type ReleaseObservation struct {
-	State              release.Status `json:"state,omitempty"`
-	ReleaseDescription string         `json:"releaseDescription,omitempty"`
-	Revision           int            `json:"revision,omitempty"`
+	State              common.Status `json:"state,omitempty"`
+	ReleaseDescription string        `json:"releaseDescription,omitempty"`
+	Revision           int           `json:"revision,omitempty"`
 	// Digest is the last successfully deployed chart digest (for OCI charts only).
 	Digest string `json:"digest,omitempty"`
 	// Version is the actual deployed chart version.

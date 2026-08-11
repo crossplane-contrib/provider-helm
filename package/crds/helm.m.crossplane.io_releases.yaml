@@ -265,6 +265,13 @@ spec:
                     description: SkipCreateNamespace won't create the namespace for
                       the release. This requires the namespace to already exist.
                     type: boolean
+                  ssaForceConflicts:
+                    description: |-
+                      SSAForceConflicts forces Kubernetes server-side apply to overwrite
+                      field conflicts ("become sole manager") when installing, upgrading,
+                      or rolling back the release.
+                      See https://kubernetes.io/docs/reference/using-api/server-side-apply/#conflicts
+                    type: boolean
                   takeOwnership:
                     description: |-
                       TakeOwnership ignores Helm ownership validation and adopts pre-existing releases.

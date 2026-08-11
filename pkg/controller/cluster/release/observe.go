@@ -33,7 +33,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
-	"helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v4/pkg/release/common"
+	release "helm.sh/helm/v4/pkg/release/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/crossplane-contrib/provider-helm/apis/cluster/release/v1beta1"
@@ -160,8 +161,8 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 	return true, nil
 }
 
-func isPending(s release.Status) bool {
-	return s == release.StatusPendingInstall || s == release.StatusPendingUpgrade || s == release.StatusPendingRollback
+func isPending(s common.Status) bool {
+	return s == common.StatusPendingInstall || s == common.StatusPendingUpgrade || s == common.StatusPendingRollback
 }
 
 func connectionDetails(ctx context.Context, kube client.Client, connDetails []v1beta1.ConnectionDetail, relName, relNamespace string) (managed.ConnectionDetails, error) {

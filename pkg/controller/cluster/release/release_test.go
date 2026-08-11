@@ -10,9 +10,10 @@ import (
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	"github.com/google/go-cmp/cmp"
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/release"
-	"helm.sh/helm/v3/pkg/storage/driver"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
+	"helm.sh/helm/v4/pkg/release/common"
+	release "helm.sh/helm/v4/pkg/release/v1"
+	"helm.sh/helm/v4/pkg/storage/driver"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -162,7 +163,7 @@ func Test_connector_Connect(t *testing.T) {
 		client            client.Client
 		clientForProvider client.Client
 		newHelmClientFn   func(log logging.Logger, config *rest.Config, helmArgs ...helmClient.ArgsApplier) (helmClient.Client, error)
-		usage             helmClient.LegacyTracker
+		usage             resource.LegacyTracker
 		mg                resource.Managed
 	}
 	type want struct {
@@ -198,7 +199,7 @@ func Test_connector_Connect(t *testing.T) {
 						return nil
 					},
 				},
-				usage: helmClient.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error {
+				usage: resource.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error {
 					return errBoom
 				}),
 				mg: helmRelease(),
@@ -218,7 +219,7 @@ func Test_connector_Connect(t *testing.T) {
 						return nil
 					},
 				},
-				usage: helmClient.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error { return nil }),
+				usage: resource.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error { return nil }),
 				mg:    helmRelease(),
 			},
 			want: want{
@@ -243,7 +244,7 @@ func Test_connector_Connect(t *testing.T) {
 				newHelmClientFn: func(log logging.Logger, restConfig *rest.Config, helmArgs ...helmClient.ArgsApplier) (helmClient.Client, error) {
 					return nil, errBoom
 				},
-				usage: helmClient.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error { return nil }),
+				usage: resource.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error { return nil }),
 				mg:    helmRelease(),
 			},
 			want: want{
@@ -270,7 +271,7 @@ func Test_connector_Connect(t *testing.T) {
 				newHelmClientFn: func(log logging.Logger, restConfig *rest.Config, helmArgs ...helmClient.ArgsApplier) (h helmClient.Client, err error) {
 					return &MockHelmClient{}, nil
 				},
-				usage: helmClient.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error { return nil }),
+				usage: resource.LegacyTrackerFn(func(ctx context.Context, mg resource.LegacyManaged) error { return nil }),
 				mg:    helmRelease(),
 			},
 			want: want{
@@ -410,7 +411,7 @@ func Test_helmExternal_Observe(t *testing.T) {
 						return &release.Release{
 							Name: r,
 							Info: &release.Info{
-								Status: release.StatusFailed,
+								Status: common.StatusFailed,
 							},
 							Chart: &chart.Chart{
 								Metadata: &chart.Metadata{
@@ -683,7 +684,7 @@ func Test_helmExternal_Update(t *testing.T) {
 					r.Spec.RollbackRetriesLimit = &l
 					r.Status.Synced = true
 					r.Status.AtProvider.Revision = 1
-					r.Status.AtProvider.State = release.StatusFailed
+					r.Status.AtProvider.State = common.StatusFailed
 				}),
 			},
 			want: want{
@@ -702,7 +703,7 @@ func Test_helmExternal_Update(t *testing.T) {
 					r.Spec.RollbackRetriesLimit = &l
 					r.Status.Synced = true
 					r.Status.AtProvider.Revision = 3
-					r.Status.AtProvider.State = release.StatusFailed
+					r.Status.AtProvider.State = common.StatusFailed
 				}),
 			},
 			want: want{
@@ -721,7 +722,7 @@ func Test_helmExternal_Update(t *testing.T) {
 					r.Spec.RollbackRetriesLimit = &l
 					r.Status.Synced = true
 					r.Status.AtProvider.Revision = 3
-					r.Status.AtProvider.State = release.StatusFailed
+					r.Status.AtProvider.State = common.StatusFailed
 				}),
 			},
 			want: want{
@@ -737,7 +738,7 @@ func Test_helmExternal_Update(t *testing.T) {
 					r.Status.Failed = 3
 					r.Status.Synced = true
 					r.Status.AtProvider.Revision = 3
-					r.Status.AtProvider.State = release.StatusFailed
+					r.Status.AtProvider.State = common.StatusFailed
 				}),
 			},
 			want: want{

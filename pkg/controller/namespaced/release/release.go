@@ -21,9 +21,10 @@ import (
 	"time"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/release"
-	"helm.sh/helm/v3/pkg/storage/driver"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
+	"helm.sh/helm/v4/pkg/release/common"
+	release "helm.sh/helm/v4/pkg/release/v1"
+	"helm.sh/helm/v4/pkg/storage/driver"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -139,7 +140,7 @@ func SetupGated(mgr ctrl.Manager, o controller.Options, timeout time.Duration) e
 type connector struct {
 	logger logging.Logger
 	client client.Client
-	usage  helmClient.ModernTracker
+	usage  resource.ModernTracker
 
 	clientBuilder   kubeclient.Builder
 	newHelmClientFn func(log logging.Logger, config *rest.Config, helmArgs ...helmClient.ArgsApplier) (helmClient.Client, error)
@@ -163,6 +164,7 @@ func withRelease(cr *v1beta1.Release) helmClient.ArgsApplier {
 		// This prevents silent adoption of resources during upgrades after initial adoption
 		config.TakeOwnership = cr.Spec.ForProvider.TakeOwnership && !cr.Status.AtProvider.OwnershipTaken
 		config.MaxHistory = cr.Spec.ForProvider.MaxHistory
+		config.SSAForceConflicts = cr.Spec.ForProvider.SSAForceConflicts
 	}
 }
 
@@ -255,7 +257,7 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 	}
 	cr.Status.Synced = s
 	cd := managed.ConnectionDetails{}
-	if cr.Status.AtProvider.State == release.StatusDeployed && s {
+	if cr.Status.AtProvider.State == common.StatusDeployed && s {
 		cr.Status.Failed = 0
 
 		cd, err = connectionDetails(ctx, e.kube, cr.Spec.ConnectionDetails, rel.Name, rel.Namespace)
@@ -417,9 +419,9 @@ func (e *helmExternal) Delete(_ context.Context, mg resource.Managed) (managed.E
 
 func shouldRollBack(cr *v1beta1.Release) bool {
 	return rollBackEnabled(cr) &&
-		((cr.Status.Synced && cr.Status.AtProvider.State == release.StatusFailed) ||
-			(cr.Status.AtProvider.State == release.StatusPendingInstall) ||
-			(cr.Status.AtProvider.State == release.StatusPendingUpgrade))
+		((cr.Status.Synced && cr.Status.AtProvider.State == common.StatusFailed) ||
+			(cr.Status.AtProvider.State == common.StatusPendingInstall) ||
+			(cr.Status.AtProvider.State == common.StatusPendingUpgrade))
 }
 
 func rollBackEnabled(cr *v1beta1.Release) bool {

@@ -27,12 +27,13 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
-	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/chart/loader"
-	"helm.sh/helm/v3/pkg/cli"
-	"helm.sh/helm/v3/pkg/registry"
-	"helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v4/pkg/action"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
+	"helm.sh/helm/v4/pkg/chart/v2/loader"
+	"helm.sh/helm/v4/pkg/cli"
+	"helm.sh/helm/v4/pkg/kube"
+	"helm.sh/helm/v4/pkg/registry"
+	release "helm.sh/helm/v4/pkg/release/v1"
 	"k8s.io/client-go/rest"
 	ktype "sigs.k8s.io/kustomize/api/types"
 
@@ -41,7 +42,8 @@ import (
 )
 
 const (
-	helmDriverSecret = "secret"
+	helmDriverSecret  = "secret"
+	chartContentCache = "/tmp/content-cache"
 )
 
 // chartCache is the directory where pulled chart tarballs are stored. It is
@@ -60,6 +62,10 @@ const (
 	errDigestMismatchTmpl              = "conflicting digest input: URL contains @%s but spec.forProvider.chart.digest is %s"
 	errNoChartName                     = "spec.forProvider.chart.name must be specified when URL is empty"
 	errNoChartRepository               = "spec.forProvider.chart.repository must be specified when URL is empty"
+	errFailedToInitActionConfig        = "failed to initialize helm action configuration"
+	errFailedToCreateRegistryClient    = "failed to create registry client"
+	errFailedToCreateChartCacheDir     = "failed to create chart cache directory"
+	errFailedToCreateContentCacheDir   = "failed to create chart content cache directory"
 	devel                              = ">0.0.0-0"
 )
 
@@ -98,60 +104,88 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	rg := newRESTClientGetter(restConfig, args.Namespace)
 
 	actionConfig := new(action.Configuration)
+	// Helm v4 discards its internal logs (including kstatus wait diagnostics)
+	// unless a handler is set, and Init copies the handler into the kube
+	// client and storage driver, so this must run before Init.
+	actionConfig.SetLogger(slogHandler{log: log})
 	// Always store helm state in the same cluster/namespace where chart is deployed
-	if err := actionConfig.Init(rg, args.Namespace, helmDriverSecret, func(format string, v ...interface{}) {
-		log.Debug(fmt.Sprintf(format, v...))
-	}); err != nil {
-		return nil, err
+	if err := actionConfig.Init(rg, args.Namespace, helmDriverSecret); err != nil {
+		return nil, errors.Wrap(err, errFailedToInitActionConfig)
 	}
 
 	rc, err := registry.NewClient()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, errFailedToCreateRegistryClient)
 	}
 	actionConfig.RegistryClient = rc
 
-	pc := action.NewPullWithOpts(action.WithConfig(actionConfig))
+	pc := action.NewPull(action.WithConfig(actionConfig))
 
 	if _, err := os.Stat(chartCache); os.IsNotExist(err) {
 		err = os.Mkdir(chartCache, 0750)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, errFailedToCreateChartCacheDir)
 		}
 	}
 
 	pc.DestDir = chartCache
-	pc.Settings = &cli.EnvSettings{}
-	pc.InsecureSkipTLSverify = args.InsecureSkipTLSVerify
+	// Helm v4's downloader requires a content cache path; an empty
+	// EnvSettings causes "content cache must be set" from chart pull.
+	if _, err := os.Stat(chartContentCache); os.IsNotExist(err) {
+		err = os.Mkdir(chartContentCache, 0750)
+		if err != nil {
+			return nil, errors.Wrap(err, errFailedToCreateContentCacheDir)
+		}
+	}
+
+	pc.Settings = &cli.EnvSettings{
+		ContentCache: chartContentCache,
+	}
+	pc.InsecureSkipTLSVerify = args.InsecureSkipTLSVerify
 	pc.PlainHTTP = args.PlainHTTP
 
 	gc := action.NewGet(actionConfig)
 
+	// Helm v4 replaced the boolean wait with wait strategies. This mapping
+	// follows helm's own shim for the deprecated --wait flag (pkg/cmd/flags.go):
+	// wait=false still waits for hook Pods/Jobs only, matching v3, while
+	// wait=true now waits on kstatus readiness instead of v3's poller — a
+	// deliberate semantic change: the v3-compatible kube.LegacyStrategy is not
+	// used because the poller has false positives, e.g. it reports ready with
+	// zero ready pods when a Deployment's replicas - maxUnavailable == 0.
+	waitStrategy := kube.HookOnlyStrategy
+	if args.Wait {
+		waitStrategy = kube.StatusWatcherStrategy
+	}
+
 	ic := action.NewInstall(actionConfig)
 	ic.Namespace = args.Namespace
-	ic.Wait = args.Wait
+	ic.WaitStrategy = waitStrategy
 	ic.Timeout = args.Timeout
 	ic.SkipCRDs = args.SkipCRDs
-	ic.InsecureSkipTLSverify = args.InsecureSkipTLSVerify
+	ic.InsecureSkipTLSVerify = args.InsecureSkipTLSVerify
 	ic.PlainHTTP = args.PlainHTTP
 	ic.TakeOwnership = args.TakeOwnership
+	ic.ForceConflicts = args.SSAForceConflicts
 
 	uc := action.NewUpgrade(actionConfig)
-	uc.Wait = args.Wait
+	uc.WaitStrategy = waitStrategy
 	uc.Timeout = args.Timeout
 	uc.SkipCRDs = args.SkipCRDs
-	uc.InsecureSkipTLSverify = args.InsecureSkipTLSVerify
+	uc.InsecureSkipTLSVerify = args.InsecureSkipTLSVerify
 	uc.PlainHTTP = args.PlainHTTP
 	uc.TakeOwnership = args.TakeOwnership
 	uc.MaxHistory = args.MaxHistory
+	uc.ForceConflicts = args.SSAForceConflicts
 
 	uic := action.NewUninstall(actionConfig)
-	uic.Wait = args.Wait
+	uic.WaitStrategy = waitStrategy
 	uic.Timeout = args.Timeout
 
 	rb := action.NewRollback(actionConfig)
-	rb.Wait = args.Wait
+	rb.WaitStrategy = waitStrategy
 	rb.Timeout = args.Timeout
+	rb.ForceConflicts = args.SSAForceConflicts
 
 	lc := action.NewRegistryLogin(actionConfig)
 
@@ -250,7 +284,7 @@ func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo, chartD
 	pc.DestDir = chartDir
 
 	if creds.Username != "" && creds.Password != "" {
-		err := hc.login(chartUrl, chartRepo, creds, pc.InsecureSkipTLSverify)
+		err := hc.login(chartUrl, chartRepo, creds, pc.InsecureSkipTLSVerify)
 		if err != nil {
 			return err
 		}
@@ -415,12 +449,20 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 	return chart, nil
 }
 
-func (hc *client) GetLastRelease(release string) (*release.Release, error) {
-	return hc.getClient.Run(release)
+func (hc *client) GetLastRelease(name string) (*release.Release, error) {
+	r, err := hc.getClient.Run(name)
+	if err != nil {
+		return nil, err
+	}
+	rel, ok := r.(*release.Release)
+	if !ok {
+		return nil, errors.Errorf("unexpected release type %T", r)
+	}
+	return rel, nil
 }
 
-func (hc *client) Install(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error) {
-	hc.installClient.ReleaseName = release
+func (hc *client) Install(name string, chrt *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error) {
+	hc.installClient.ReleaseName = name
 
 	if len(patches) > 0 {
 		hc.installClient.PostRenderer = &KustomizationRender{
@@ -429,10 +471,18 @@ func (hc *client) Install(release string, chart *chart.Chart, vals map[string]in
 		}
 	}
 
-	return hc.installClient.Run(chart, vals)
+	r, err := hc.installClient.Run(chrt, vals)
+	if err != nil {
+		return nil, err
+	}
+	rel, ok := r.(*release.Release)
+	if !ok {
+		return nil, errors.Errorf("unexpected release type %T", r)
+	}
+	return rel, nil
 }
 
-func (hc *client) Upgrade(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error) {
+func (hc *client) Upgrade(name string, chrt *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error) {
 	// Reset values so that source of truth for desired state is always the CR itself
 	hc.upgradeClient.ResetValues = true
 
@@ -443,15 +493,23 @@ func (hc *client) Upgrade(release string, chart *chart.Chart, vals map[string]in
 		}
 	}
 
-	return hc.upgradeClient.Run(release, chart, vals)
+	r, err := hc.upgradeClient.Run(name, chrt, vals)
+	if err != nil {
+		return nil, err
+	}
+	rel, ok := r.(*release.Release)
+	if !ok {
+		return nil, errors.Errorf("unexpected release type %T", r)
+	}
+	return rel, nil
 }
 
-func (hc *client) Rollback(release string) error {
-	return hc.rollbackClient.Run(release)
+func (hc *client) Rollback(name string) error {
+	return hc.rollbackClient.Run(name)
 }
 
-func (hc *client) Uninstall(release string) error {
-	_, err := hc.uninstallClient.Run(release)
+func (hc *client) Uninstall(name string) error {
+	_, err := hc.uninstallClient.Run(name)
 	return err
 }
 
