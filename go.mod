@@ -11,7 +11,7 @@ require (
 	github.com/crossplane-contrib/provider-kubernetes v1.2.2-0.20260727015853-5c0847002934
 	github.com/crossplane/crossplane-runtime/v2 v2.3.3
 	github.com/crossplane/crossplane-tools v0.0.0-20260715161912-60e57f817ad1
-	github.com/crossplane/crossplane/apis/v2 v2.3.3
+	github.com/crossplane/crossplane/apis/v2 v2.3.4
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.21.7
 	go.uber.org/zap v1.28.0
