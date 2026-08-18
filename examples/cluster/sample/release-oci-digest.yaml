@@ -2,6 +2,8 @@ apiVersion: helm.crossplane.io/v1beta1
 kind: Release
 metadata:
   name: example-oci-digest
+  annotations:
+    uptest.upbound.io/post-assert-hook: testhooks/digest-labels.sh
 spec:
   forProvider:
     chart:
