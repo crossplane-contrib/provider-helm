@@ -402,3 +402,52 @@ func TestResolveCluster(t *testing.T) {
 		})
 	}
 }
+
+func TestKeychainScope(t *testing.T) {
+	cases := map[string]struct {
+		url        string
+		repository string
+		chartName  string
+		want       string
+	}{
+		"URLWinsOverRepository": {
+			url:        "oci://pull.example.com/charts/mychart",
+			repository: "oci://stale.example.com/charts",
+			chartName:  "mychart",
+			want:       "oci://pull.example.com/charts/mychart",
+		},
+		"URLAloneIsNotSuffixedWithName": {
+			url:       "oci://pull.example.com/charts/mychart:1.2.3",
+			chartName: "other-name",
+			want:      "oci://pull.example.com/charts/mychart:1.2.3",
+		},
+		"RepositoryJoinedWithName": {
+			repository: "oci://registry.example.com/charts",
+			chartName:  "mychart",
+			want:       "oci://registry.example.com/charts/mychart",
+		},
+		"RepositoryTrailingSlashTrimmed": {
+			repository: "oci://registry.example.com/charts/",
+			chartName:  "mychart",
+			want:       "oci://registry.example.com/charts/mychart",
+		},
+		"RepositoryAlreadyEndsWithName": {
+			repository: "oci://registry.example.com/charts/mychart",
+			chartName:  "mychart",
+			want:       "oci://registry.example.com/charts/mychart",
+		},
+		"RepositoryWithoutName": {
+			repository: "oci://registry.example.com/charts",
+			want:       "oci://registry.example.com/charts",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := keychainScope(tc.url, tc.repository, tc.chartName)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("keychainScope() -want, +got:\n%s", diff)
+			}
+		})
+	}
+}

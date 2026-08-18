@@ -29,3 +29,43 @@ spec:
   credentials:
     source: InjectedIdentity
 EOF
+
+echo "Verifying CEL validation rejects never-valid chart specs..."
+if ${KUBECTL} apply --dry-run=server -f - >/dev/null 2>&1 <<MANIFEST
+apiVersion: helm.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: cel-reject-missing-repository
+spec:
+  forProvider:
+    chart:
+      name: podinfo
+    namespace: default
+  providerConfigRef:
+    name: helm-provider
+MANIFEST
+then
+  echo "ERROR: chart spec without url and repository was not rejected"
+  exit 1
+fi
+
+if ${KUBECTL} apply --dry-run=server -f - >/dev/null 2>&1 <<MANIFEST
+apiVersion: helm.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: cel-reject-non-oci-digest
+spec:
+  forProvider:
+    chart:
+      name: podinfo
+      repository: https://charts.example.com
+      digest: sha256:c56f4d760bc9da702f231f37fcec89c66b0993f0cb91446f86d014b133c6693f
+    namespace: default
+  providerConfigRef:
+    name: helm-provider
+MANIFEST
+then
+  echo "ERROR: digest on a non-OCI repository was not rejected"
+  exit 1
+fi
+echo "CEL validation rejects never-valid chart specs as expected"

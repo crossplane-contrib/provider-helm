@@ -659,8 +659,6 @@ func TestPullAndLoadChart_Validation(t *testing.T) {
 			wantErr: errDigestNotSupportedForNonOCI,
 		},
 		"NoURLMissingChartName": {
-			// version set so we skip the "pull latest" branch and reach the
-			// no-URL resolution branch that validates name/repository.
 			chart: clusterv1beta1.ChartSpec{
 				Repository: "https://charts.example.com",
 				Version:    "1.0.0",
@@ -674,6 +672,32 @@ func TestPullAndLoadChart_Validation(t *testing.T) {
 			},
 			wantErr: errNoChartRepository,
 		},
+		"NoURLNoVersionMissingChartName": {
+			// No version and no digest previously short-circuited into the
+			// "pull latest" branch, past name/repository validation, and failed
+			// with an opaque helm error.
+			chart: clusterv1beta1.ChartSpec{
+				Repository: "https://charts.example.com",
+			},
+			wantErr: errNoChartName,
+		},
+		"NoURLNoVersionMissingRepository": {
+			chart: clusterv1beta1.ChartSpec{
+				Name: "mychart",
+			},
+			wantErr: errNoChartRepository,
+		},
+		"AllEmpty": {
+			chart:   clusterv1beta1.ChartSpec{},
+			wantErr: errNoChartName,
+		},
+		"OCIURLVersionConflictsWithSpecVersion": {
+			chart: clusterv1beta1.ChartSpec{
+				URL:     "oci://registry.example.com/charts/mychart:1.2.3",
+				Version: "2.0.0",
+			},
+			wantErr: fmt.Sprintf(errVersionMismatchTmpl, "1.2.3", "2.0.0"),
+		},
 	}
 
 	for name, tc := range cases {
@@ -684,6 +708,57 @@ func TestPullAndLoadChart_Validation(t *testing.T) {
 			}
 			if err.Error() != tc.wantErr {
 				t.Errorf("PullAndLoadChart() error = %q, want %q", err.Error(), tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestResolveEffectiveVersion(t *testing.T) {
+	cases := map[string]struct {
+		urlVersion  string
+		specVersion string
+		want        string
+		wantErr     error
+	}{
+		"BothEmpty": {
+			want: "",
+		},
+		"URLOnly": {
+			urlVersion: "1.2.3",
+			want:       "1.2.3",
+		},
+		"SpecOnly": {
+			specVersion: "1.2.3",
+			want:        "1.2.3",
+		},
+		"BothMatch": {
+			urlVersion:  "1.2.3",
+			specVersion: "1.2.3",
+			want:        "1.2.3",
+		},
+		"Conflict": {
+			urlVersion:  "1.2.3",
+			specVersion: "2.0.0",
+			wantErr:     errors.Errorf(errVersionMismatchTmpl, "1.2.3", "2.0.0"),
+		},
+		"DevelSpecTreatedAsUnset": {
+			urlVersion:  "1.2.3",
+			specVersion: devel,
+			want:        "1.2.3",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got, err := resolveEffectiveVersion(tc.urlVersion, tc.specVersion)
+			if diff := cmp.Diff(tc.wantErr, err, test.EquateErrors()); diff != "" {
+				t.Fatalf("resolveEffectiveVersion() error: -want, +got:\n%s", diff)
+			}
+			if err != nil {
+				return
+			}
+			if got != tc.want {
+				t.Errorf("resolveEffectiveVersion() = %q, want %q", got, tc.want)
 			}
 		})
 	}
