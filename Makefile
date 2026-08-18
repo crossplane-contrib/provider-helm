@@ -35,7 +35,6 @@ GOLANGCILINT_VERSION = 2.13.1
 
 KIND_VERSION = v0.32.0
 KIND_NODE_IMAGE_TAG ?= v1.24.0
-USE_HELM3 = true
 UPTEST_VERSION = v2.2.0
 CROSSPLANE_VERSION = 2.0.2
 CROSSPLANE_CLI_VERSION = v2.0.2
@@ -101,7 +100,7 @@ CROSSPLANE_NAMESPACE = crossplane-system
 -include build/makelib/local.xpkg.mk
 -include build/makelib/controlplane.mk
 
-UPTEST_EXAMPLE_LIST ?= "examples/cluster/sample/release.yaml,examples/cluster/sample/release-oci-digest.yaml,examples/cluster/sample/release-oci-digest-with-version.yaml,examples/cluster/sample/release-oci-url-and-spec-digest.yaml,examples/cluster/sample/release-oci-url-digest.yaml,examples/cluster/sample/release-oci-url-digest-and-tag.yaml,examples/cluster/sample/release-oci-url-with-tag.yaml,examples/cluster/sample/release-oci-url-spec-version.yaml,examples/cluster/sample/release-url-drift.yaml,examples/cluster/sample/release-url-migration.yaml,examples/namespaced/sample/release.yaml,examples/namespaced/sample/release-oci-digest.yaml,examples/namespaced/sample/release-oci-digest-with-version.yaml,examples/namespaced/sample/release-oci-url-and-spec-digest.yaml,examples/namespaced/sample/release-oci-url-digest.yaml,examples/namespaced/sample/release-oci-url-digest-and-tag.yaml,examples/namespaced/sample/release-oci-url-with-tag.yaml,examples/namespaced/sample/release-oci-url-spec-version.yaml,examples/namespaced/sample/release-url-drift.yaml,examples/namespaced/sample/release-url-migration.yaml"
+UPTEST_EXAMPLE_LIST ?= "examples/cluster/sample/release.yaml,examples/cluster/sample/release-oci-digest.yaml,examples/cluster/sample/release-oci-digest-with-version.yaml,examples/cluster/sample/release-oci-url-and-spec-digest.yaml,examples/cluster/sample/release-oci-url-digest.yaml,examples/cluster/sample/release-oci-url-digest-and-tag.yaml,examples/cluster/sample/release-oci-url-with-tag.yaml,examples/cluster/sample/release-oci-url-spec-version.yaml,examples/cluster/sample/release-url-drift.yaml,examples/cluster/sample/release-url-migration.yaml,examples/cluster/sample/release-cache-hit.yaml,examples/namespaced/sample/release.yaml,examples/namespaced/sample/release-oci-digest.yaml,examples/namespaced/sample/release-oci-digest-with-version.yaml,examples/namespaced/sample/release-oci-url-and-spec-digest.yaml,examples/namespaced/sample/release-oci-url-digest.yaml,examples/namespaced/sample/release-oci-url-digest-and-tag.yaml,examples/namespaced/sample/release-oci-url-with-tag.yaml,examples/namespaced/sample/release-oci-url-spec-version.yaml,examples/namespaced/sample/release-url-drift.yaml,examples/namespaced/sample/release-url-migration.yaml"
 
 uptest: $(UPTEST) $(KUBECTL) $(CHAINSAW) $(CROSSPLANE_CLI)
 	@$(INFO) running automated tests

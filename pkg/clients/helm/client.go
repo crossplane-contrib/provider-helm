@@ -17,15 +17,16 @@ limitations under the License.
 package helm
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
-	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -37,9 +38,13 @@ import (
 	chart "helm.sh/helm/v4/pkg/chart/v2"
 	"helm.sh/helm/v4/pkg/chart/v2/loader"
 	"helm.sh/helm/v4/pkg/cli"
+	"helm.sh/helm/v4/pkg/downloader"
+	"helm.sh/helm/v4/pkg/getter"
+	"helm.sh/helm/v4/pkg/helmpath"
 	"helm.sh/helm/v4/pkg/kube"
 	"helm.sh/helm/v4/pkg/registry"
 	release "helm.sh/helm/v4/pkg/release/v1"
+	repo "helm.sh/helm/v4/pkg/repo/v1"
 	"k8s.io/client-go/rest"
 	ktype "sigs.k8s.io/kustomize/api/types"
 
@@ -52,20 +57,15 @@ const (
 	chartContentCache = "/tmp/content-cache"
 )
 
-// chartCache is the directory where pulled chart tarballs are stored. It is
-// mutable in tests so that they can override it with a temporary location.
-var chartCache = "/tmp/charts"
-
 // chtimesFn is os.Chtimes, indirected so tests can simulate the file having
 // vanished between writeCABundleToFile's Stat and this call (e.g. a
 // concurrent sweep) without needing a genuine data race to hit that branch.
 var chtimesFn = os.Chtimes
 
 // caBundleCacheDir is where content-addressed CA bundle files are written,
-// each keyed by the SHA-256 of its content. Unlike chartCache, which is
-// name-keyed and reused verbatim across reconciles, this exists specifically
-// so that repeated calls with the same content reuse the same file instead
-// of accumulating a new one every time. Mutable in tests.
+// each keyed by the SHA-256 of its content, so that repeated calls with the
+// same content reuse the same file instead of accumulating a new one every
+// time. Mutable in tests.
 var caBundleCacheDir = "/tmp/ca-bundles"
 
 // caBundleTTL is how long an unused CA bundle file is kept before an
@@ -90,25 +90,25 @@ var systemCACandidates = []string{
 }
 
 const (
-	errFailedToCheckIfLocalChartExists = "failed to check if cached chart file exists"
-	errFailedToPullChart               = "failed to pull chart"
-	errFailedToLoadChart               = "failed to load chart"
-	errUnexpectedDirContentTmpl        = "expected 1 .tgz chart file, got [%s]"
-	errFailedToParseURL                = "failed to parse URL"
-	errFailedToLogin                   = "failed to login to registry"
-	errUnexpectedOCIUrlTmpl            = "url not prefixed with oci://, got [%s]"
-	errDigestNotSupportedForNonOCI     = "digest is only supported for OCI registries"
-	errDigestMismatchTmpl              = "conflicting digest input: URL contains @%s but spec.forProvider.chart.digest is %s"
-	errVersionMismatchTmpl             = "conflicting version input: URL contains :%s but spec.forProvider.chart.version is %s"
-	errNoChartName                     = "spec.forProvider.chart.name must be specified when URL is empty"
-	errNoChartRepository               = "spec.forProvider.chart.repository must be specified when URL is empty"
-	errFailedToInitActionConfig        = "failed to initialize helm action configuration"
-	errFailedToCreateRegistryClient    = "failed to create registry client"
-	errFailedToCreateChartCacheDir     = "failed to create chart cache directory"
-	errFailedToCreateContentCacheDir   = "failed to create chart content cache directory"
-	errFailedToParseCABundle           = "failed to parse CA bundle: no PEM certificates found"
-	errFailedToWriteCABundle           = "failed to write CA bundle to a temporary file"
-	devel                              = ">0.0.0-0"
+	errFailedToPullChart             = "failed to pull chart"
+	errFailedToLoadChart             = "failed to load chart"
+	errFailedToParseURL              = "failed to parse URL"
+	errFailedToLogin                 = "failed to login to registry"
+	errUnexpectedOCIUrlTmpl          = "url not prefixed with oci://, got [%s]"
+	errDigestNotSupportedForNonOCI   = "digest is only supported for OCI registries"
+	errDigestMismatchTmpl            = "conflicting digest input: URL contains @%s but spec.forProvider.chart.digest is %s"
+	errVersionMismatchTmpl           = "conflicting version input: URL contains :%s but spec.forProvider.chart.version is %s"
+	errChartDigestMismatchTmpl       = "chart downloaded from %s does not match the digest advertised by its repository index"
+	errMalformedDigestTmpl           = "malformed chart digest %q"
+	errNoChartName                   = "spec.forProvider.chart.name must be specified when URL is empty"
+	errNoChartRepository             = "spec.forProvider.chart.repository must be specified when URL is empty"
+	errFailedToInitActionConfig      = "failed to initialize helm action configuration"
+	errFailedToCreateRegistryClient  = "failed to create registry client"
+	errFailedToCreateContentCacheDir = "failed to create chart content cache directory"
+	errFailedToResolveRepoIndexTmpl  = "failed to resolve chart from repository index of %q"
+	errFailedToParseCABundle         = "failed to parse CA bundle: no PEM certificates found"
+	errFailedToWriteCABundle         = "failed to write CA bundle to a temporary file"
+	devel                            = ">0.0.0-0"
 )
 
 // DeployOptions are the per-deploy inputs to Install and Upgrade. Unlike Args,
@@ -136,13 +136,19 @@ type Client interface {
 
 type client struct {
 	log             logging.Logger
-	pullClient      *action.Pull
 	getClient       *action.Get
 	installClient   *action.Install
 	upgradeClient   *action.Upgrade
 	rollbackClient  *action.Rollback
 	uninstallClient *action.Uninstall
 	loginClient     *action.RegistryLogin
+
+	getters               getter.Providers
+	registryClient        *registry.Client
+	contentCache          string
+	insecureSkipTLSVerify bool
+	plainHTTP             bool
+	caFile                string
 }
 
 // ArgsApplier defines helm client arguments helper
@@ -175,10 +181,11 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	actionConfig.RegistryClient = rc
 
 	// caFile is only set when a CABundle is supplied. It configures the
-	// classic HTTP(S) chart-repository getter (used by Pull/Install/Upgrade
-	// for non-OCI repos). The OCI registry path above does not read this
-	// field at all - it goes through its own *registry.Client - so both
-	// need to be configured for a CABundle to cover both protocols.
+	// classic HTTP(S) chart-repository getter (via the chart downloader's
+	// TLS options and Install/Upgrade's ChartPathOptions, for non-OCI
+	// repos). The OCI registry path above does not read this field at all -
+	// it goes through its own *registry.Client - so both need to be
+	// configured for a CABundle to cover both protocols.
 	var caFile string
 	if len(args.CABundle) > 0 {
 		// Unlike the OCI path above (which builds its cert pool from
@@ -207,31 +214,15 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 		}
 	}
 
-	pc := action.NewPull(action.WithConfig(actionConfig))
-
-	if _, err := os.Stat(chartCache); os.IsNotExist(err) {
-		err = os.Mkdir(chartCache, 0750)
-		if err != nil {
-			return nil, errors.Wrap(err, errFailedToCreateChartCacheDir)
-		}
-	}
-
-	pc.DestDir = chartCache
-	// Helm v4's downloader requires a content cache path; an empty
-	// EnvSettings causes "content cache must be set" from chart pull.
+	// Charts are cached content-addressed: entries are keyed by the digest
+	// resolved from the requesting source, so they cannot collide across
+	// sources or be poisoned by charts advertising a foreign name and version.
 	if _, err := os.Stat(chartContentCache); os.IsNotExist(err) {
 		err = os.Mkdir(chartContentCache, 0750)
 		if err != nil {
 			return nil, errors.Wrap(err, errFailedToCreateContentCacheDir)
 		}
 	}
-
-	pc.Settings = &cli.EnvSettings{
-		ContentCache: chartContentCache,
-	}
-	pc.InsecureSkipTLSVerify = args.InsecureSkipTLSVerify
-	pc.PlainHTTP = args.PlainHTTP
-	pc.CaFile = caFile
 
 	gc := action.NewGet(actionConfig)
 
@@ -292,20 +283,20 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 
 	return &client{
 		log:             log,
-		pullClient:      pc,
 		getClient:       gc,
 		installClient:   ic,
 		upgradeClient:   uc,
 		rollbackClient:  rb,
 		uninstallClient: uic,
 		loginClient:     lc,
-	}, nil
-}
 
-// safePath constructs a safe file path by sanitizing the filename component
-// to prevent path traversal attacks. It ensures only the base filename is used.
-func safePath(baseDir, fileName string) string {
-	return filepath.Join(baseDir, filepath.Base(fileName))
+		getters:               getter.All(&cli.EnvSettings{ContentCache: chartContentCache}),
+		registryClient:        rc,
+		contentCache:          chartContentCache,
+		insecureSkipTLSVerify: args.InsecureSkipTLSVerify,
+		plainHTTP:             args.PlainHTTP,
+		caFile:                caFile,
+	}, nil
 }
 
 // newRegistryClient builds the OCI registry client that every pull shares
@@ -473,106 +464,241 @@ func sweepStaleCABundles(now time.Time) {
 	}
 }
 
-func getChartFileName(dir string) (string, error) {
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		return "", err
+// newChartDownloader builds a downloader wired to helm's content-addressed
+// chart cache.
+func (hc *client) newChartDownloader(creds *RepoCreds) *downloader.ChartDownloader {
+	return &downloader.ChartDownloader{
+		Out:     io.Discard,
+		Verify:  downloader.VerifyNever,
+		Getters: hc.getters,
+		Options: []getter.Option{
+			getter.WithBasicAuth(creds.Username, creds.Password),
+			getter.WithInsecureSkipVerifyTLS(hc.insecureSkipTLSVerify),
+			getter.WithPlainHTTP(hc.plainHTTP),
+			getter.WithTLSClientConfig("", "", hc.caFile),
+			getter.WithRegistryClient(hc.registryClient),
+		},
+		RegistryClient: hc.registryClient,
+		ContentCache:   hc.contentCache,
+		Cache:          &downloader.DiskCache{Root: hc.contentCache},
 	}
-	if len(files) != 1 {
-		fileNames := make([]string, 0, len(files))
-		for _, f := range files {
-			fileNames = append(fileNames, f.Name())
-		}
-		return "", errors.Errorf(errUnexpectedDirContentTmpl, strings.Join(fileNames, ","))
-	}
-	return files[0].Name(), nil
 }
 
-// pullChartToCache pulls a chart into the cache and returns its absolute path.
-func (hc *client) pullChartToCache(chartUrl, chartName, chartVersion, chartRepo, chartDigest string, creds *RepoCreds) (string, error) {
-	tmpDir, err := os.MkdirTemp(chartCache, "")
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			hc.log.WithValues("tmpDir", tmpDir).Info("failed to remove temporary directory")
+// pullChart fetches the chart described by the spec through helm's
+// content-addressed cache and returns the path of the cached tarball. Cache
+// keys are digests resolved from the requesting source at lookup time (the
+// OCI registry, or the classic repository index), never reconstructed
+// filenames.
+func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo, chartDigest string, creds *RepoCreds) (string, error) {
+	if creds.Username != "" && creds.Password != "" {
+		if err := hc.login(chartUrl, chartRepo, creds); err != nil {
+			return "", err
 		}
-	}()
-
-	if err := hc.pullChart(chartUrl, chartName, chartVersion, chartRepo, chartDigest, creds, tmpDir); err != nil {
-		return "", err
 	}
 
-	pulledName, err := getChartFileName(tmpDir)
-	if err != nil {
-		return "", err
-	}
-	chartFilePath := filepath.Join(chartCache, pulledName)
-	if err := os.Rename(filepath.Join(tmpDir, pulledName), chartFilePath); err != nil {
-		return "", err
-	}
-	return chartFilePath, nil
-}
+	dl := hc.newChartDownloader(creds)
 
-func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo, chartDigest string, creds *RepoCreds, chartDir string) error {
-	pc := hc.pullClient
-
-	chartRef := chartUrl
-	if chartUrl == "" {
-		if registry.IsOCI(chartRepo) {
-			chartRef = resolveOCIChartRef(chartRepo, chartName, chartDigest)
-		} else {
-			chartRef = chartName
-			pc.RepoURL = chartRepo
-		}
-		pc.Version = chartVersion
-	} else if registry.IsOCI(chartUrl) {
-		ociURL, urlVersion, urlDigest, err := resolveOCIChartVersionAndDigest(chartUrl)
+	switch {
+	case registry.IsOCI(chartUrl):
+		u, urlVersion, urlDigest, err := resolveOCIChartVersionAndDigest(chartUrl)
 		if err != nil {
-			return err
+			return "", err
+		}
+		effectiveDigest, err := resolveEffectiveDigest(urlDigest, chartDigest)
+		if err != nil {
+			return "", err
 		}
 		version, err := resolveEffectiveVersion(urlVersion, chartVersion)
 		if err != nil {
-			return err
+			return "", err
 		}
-		pc.Version = version
-		chartRef = ociURL.String()
-
-		effectiveDigest, err := resolveEffectiveDigest(urlDigest, chartDigest)
-		if err != nil {
-			return err
-		}
-		// Append digest if present (per Helm PR #12690)
 		if effectiveDigest != "" {
-			chartRef = chartRef + "@" + effectiveDigest
+			// Append digest if present (per Helm PR #12690)
+			return hc.fetchOCIRefToCache(dl, u.String()+"@"+effectiveDigest, effectiveDigest)
 		}
-	}
-	pc.Username = creds.Username
-	pc.Password = creds.Password
-
-	pc.DestDir = chartDir
-
-	if creds.Username != "" && creds.Password != "" {
-		err := hc.login(chartUrl, chartRepo, creds, pc.InsecureSkipTLSVerify, pc.PlainHTTP)
-		if err != nil {
-			return err
+		return hc.downloadToCache(dl, u.String(), version)
+	case chartUrl != "":
+		// Direct (non-OCI) URL: nothing advertises a digest up front, so the
+		// tarball is downloaded on every pull and cached by its content hash.
+		return hc.downloadToCache(dl, chartUrl, "")
+	case registry.IsOCI(chartRepo):
+		if chartDigest != "" {
+			return hc.fetchOCIRefToCache(dl, resolveOCIChartRef(chartRepo, chartName, chartDigest), chartDigest)
 		}
+		return hc.downloadToCache(dl, resolveOCIChartRef(chartRepo, chartName, ""), chartVersion)
+	default:
+		return hc.pullRepoChart(dl, chartRepo, chartName, chartVersion, creds)
 	}
+}
 
-	o, err := pc.Run(chartRef)
-	hc.log.Debug(o)
+func (hc *client) downloadToCache(dl *downloader.ChartDownloader, ref, version string) (string, error) {
+	chartFilePath, _, err := dl.DownloadToCache(ref, version)
 	if err != nil {
-		return errors.Wrap(err, errFailedToPullChart)
+		return "", errors.Wrap(err, errFailedToPullChart)
 	}
-	return nil
+	hc.log.Debug("chart resolved through content cache", "ref", ref, "version", version, "path", chartFilePath)
+	return chartFilePath, nil
+}
+
+// pullRepoChart resolves a chart in a classic repository index and fetches it
+// through the content-addressed cache. The index advertises the tarball's
+// digest, so a cached chart skips the tarball download entirely.
+func (hc *client) pullRepoChart(dl *downloader.ChartDownloader, repoURL, name, version string, creds *RepoCreds) (string, error) {
+	if version == devel {
+		version = ""
+	}
+
+	// The entry name only namespaces the transient index cache files; a
+	// random name prevents concurrent reconciles from racing on them,
+	// mirroring helm's own FindChartInRepoURL.
+	buf := make([]byte, 20)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	entry := &repo.Entry{
+		Name:                  strings.ReplaceAll(base64.StdEncoding.EncodeToString(buf), "/", "-"),
+		URL:                   repoURL,
+		Username:              creds.Username,
+		Password:              creds.Password,
+		InsecureSkipTLSVerify: hc.insecureSkipTLSVerify,
+		CAFile:                hc.caFile,
+	}
+	cr, err := repo.NewChartRepository(entry, hc.getters)
+	if err != nil {
+		return "", errors.Wrapf(err, errFailedToResolveRepoIndexTmpl, repoURL)
+	}
+	idxPath, err := cr.DownloadIndexFile()
+	if err != nil {
+		return "", errors.Wrapf(err, errFailedToResolveRepoIndexTmpl, repoURL)
+	}
+	defer func() {
+		_ = os.RemoveAll(filepath.Join(cr.CachePath, helmpath.CacheChartsFile(cr.Config.Name)))
+		_ = os.RemoveAll(filepath.Join(cr.CachePath, helmpath.CacheIndexFile(cr.Config.Name)))
+	}()
+
+	idx, err := repo.LoadIndexFile(idxPath)
+	if err != nil {
+		return "", errors.Wrapf(err, errFailedToResolveRepoIndexTmpl, repoURL)
+	}
+	cv, err := idx.Get(name, version)
+	if err != nil {
+		return "", errors.Wrapf(err, errFailedToResolveRepoIndexTmpl, repoURL)
+	}
+	if len(cv.URLs) == 0 {
+		return "", errors.Errorf("chart %q in repository %q has no downloadable URLs", name, repoURL)
+	}
+	chartURL, err := repo.ResolveReferenceURL(repoURL, cv.URLs[0])
+	if err != nil {
+		return "", errors.Wrapf(err, errFailedToResolveRepoIndexTmpl, repoURL)
+	}
+
+	return hc.fetchURLToCache(dl, chartURL, cv.Digest)
+}
+
+// cachedChart returns the content-cache path for a digest-pinned chart when
+// it is already cached, letting digest-pinned deploys skip the registry
+// round-trip entirely. The Info log doubles as the observable signal for
+// end-to-end cache tests, which assert it via the provider logs.
+func (hc *client) cachedChart(dl *downloader.ChartDownloader, digest string) (string, bool) {
+	key, ok := digestCacheKey(digest)
+	if !ok {
+		return "", false
+	}
+	chartFilePath, err := dl.Cache.Get(key, downloader.CacheChart)
+	if err != nil {
+		return "", false
+	}
+	hc.log.Info("chart served from content cache", "digest", digest, "path", chartFilePath)
+	return chartFilePath, true
+}
+
+// fetchOCIRefToCache pulls a digest-pinned OCI chart through the content
+// cache, keyed by the pinned manifest digest. Helm's own downloader resolves
+// no cache key for install-by-digest references (ValidateReference returns an
+// empty hash for them), which would leave every digest-only pull keyed by the
+// post-download tarball hash — a key nothing can look up before the next
+// download. The tarball bytes cannot be verified against the manifest digest
+// (it hashes the OCI manifest, not the tarball); the registry client already
+// verifies the pull content-addressably.
+func (hc *client) fetchOCIRefToCache(dl *downloader.ChartDownloader, ref, digest string) (string, error) {
+	if chartFilePath, ok := hc.cachedChart(dl, digest); ok {
+		return chartFilePath, nil
+	}
+	key, haveKey := digestCacheKey(digest)
+	if !haveKey {
+		return "", errors.Errorf(errMalformedDigestTmpl, digest)
+	}
+
+	u, err := url.Parse(ref)
+	if err != nil {
+		return "", errors.Wrap(err, errFailedToParseURL)
+	}
+	g, err := dl.Getters.ByScheme(u.Scheme)
+	if err != nil {
+		return "", errors.Wrap(err, errFailedToPullChart)
+	}
+	data, err := g.Get(ref, append(dl.Options, getter.WithURL(ref))...)
+	if err != nil {
+		return "", errors.Wrap(err, errFailedToPullChart)
+	}
+
+	chartFilePath, err := dl.Cache.Put(key, data, downloader.CacheChart)
+	return chartFilePath, errors.Wrap(err, errFailedToPullChart)
+}
+
+// fetchURLToCache downloads chartURL through the content cache. When the
+// source advertises a well-formed sha256 digest, a cached copy is returned
+// without any network fetch, and downloaded bytes are verified against the
+// advertised digest before entering the cache, so a repository cannot poison
+// cache entries it does not itself advertise.
+func (hc *client) fetchURLToCache(dl *downloader.ChartDownloader, chartURL, digest string) (string, error) {
+	if chartFilePath, ok := hc.cachedChart(dl, digest); ok {
+		return chartFilePath, nil
+	}
+	key, haveKey := digestCacheKey(digest)
+
+	u, err := url.Parse(chartURL)
+	if err != nil {
+		return "", errors.Wrap(err, errFailedToParseURL)
+	}
+	g, err := dl.Getters.ByScheme(u.Scheme)
+	if err != nil {
+		return "", errors.Wrap(err, errFailedToPullChart)
+	}
+	// WithURL marks chartURL as the URL the basic auth credentials belong to;
+	// without it the http getter withholds them from every request. This
+	// mirrors what helm's downloader sets for a ref without an owning
+	// repositories.yaml entry.
+	data, err := g.Get(chartURL, append(dl.Options, getter.WithURL(chartURL))...)
+	if err != nil {
+		return "", errors.Wrap(err, errFailedToPullChart)
+	}
+
+	sum := sha256.Sum256(data.Bytes())
+	if haveKey && sum != key {
+		return "", errors.Errorf(errChartDigestMismatchTmpl, chartURL)
+	}
+	chartFilePath, err := dl.Cache.Put(sum, data, downloader.CacheChart)
+	return chartFilePath, errors.Wrap(err, errFailedToPullChart)
+}
+
+// digestCacheKey converts an advertised sha256 digest, with or without the
+// "sha256:" prefix, into a content cache key.
+func digestCacheKey(digest string) ([sha256.Size]byte, bool) {
+	var key [sha256.Size]byte
+	sum, err := hex.DecodeString(strings.TrimPrefix(digest, "sha256:"))
+	if err != nil || len(sum) != sha256.Size {
+		return key, false
+	}
+	copy(key[:], sum)
+	return key, true
 }
 
 // login logs in to an OCI registry before a pull. Helm v4's RegistryLogin.Run
 // always sets the shared registry client's plainHTTP from WithPlainHTTPLogin,
 // so plainHTTP must be passed here too: otherwise the login goes over HTTPS
 // and the pull that follows does as well.
-func (hc *client) login(chartUrl, chartRepo string, creds *RepoCreds, insecure, plainHTTP bool) error {
+func (hc *client) login(chartUrl, chartRepo string, creds *RepoCreds) error {
 	ociURL := chartUrl
 	if chartUrl == "" {
 		ociURL = chartRepo
@@ -585,34 +711,9 @@ func (hc *client) login(chartUrl, chartRepo string, creds *RepoCreds, insecure, 
 		return errors.Wrap(err, errFailedToParseURL)
 	}
 	var out strings.Builder
-	err = hc.loginClient.Run(&out, parsedURL.Host, creds.Username, creds.Password, action.WithInsecure(insecure), action.WithPlainHTTPLogin(plainHTTP))
+	err = hc.loginClient.Run(&out, parsedURL.Host, creds.Username, creds.Password, action.WithInsecure(hc.insecureSkipTLSVerify), action.WithPlainHTTPLogin(hc.plainHTTP))
 	hc.log.Debug(out.String())
 	return errors.Wrap(err, errFailedToLogin)
-}
-
-// ensureChartCached verifies a chart exists in the cache and pulls it if
-// missing. chartFilePath is sanitized with filepath.Base before use, so
-// directory components in the input cannot escape chartCache. Returns the
-// final absolute path to the cached chart file or an error.
-func (hc *client) ensureChartCached(chartFilePath, chartUrl, chartName, chartVersion, chartRepo, chartDigest string, creds *RepoCreds) (string, error) {
-	if chartFilePath == "" {
-		hc.log.Debug("no cache path for chart", "URL", chartUrl, "name", chartName, "version", chartVersion, "repo", chartRepo, "digest", chartDigest)
-		return hc.pullChartToCache(chartUrl, chartName, chartVersion, chartRepo, chartDigest, creds)
-	}
-	cachedPath := filepath.Join(chartCache, filepath.Base(chartFilePath))
-	fileInfo, err := os.Stat(cachedPath)
-	switch {
-	case os.IsNotExist(err):
-		hc.log.Debug("cache miss for chart", "cachedPath", cachedPath, "URL", chartUrl, "name", chartName, "version", chartVersion, "repo", chartRepo, "digest", chartDigest)
-		return hc.pullChartToCache(chartUrl, chartName, chartVersion, chartRepo, chartDigest, creds)
-	case err != nil:
-		return "", errors.Wrap(err, errFailedToCheckIfLocalChartExists)
-	case fileInfo.IsDir():
-		return "", errors.New("expected chart file, got directory")
-	}
-
-	hc.log.Debug("cache hit for chart", "cachedPath", cachedPath, "URL", chartUrl, "name", chartName, "version", chartVersion, "repo", chartRepo, "digest", chartDigest)
-	return cachedPath, nil
 }
 
 func resolveEffectiveDigest(urlDigest, specDigest string) (string, error) {
@@ -647,8 +748,8 @@ func resolveEffectiveVersion(urlVersion, specVersion string) (string, error) {
 // by spec.forProvider.chart.version, so that the deployed chart version is
 // expected to match it. That holds only for an OCI URL without an embedded tag
 // or digest and without specDigest: a tag or digest selects the chart on its
-// own (Helm resolves a digest even when the version tag does not exist), and a
-// non-OCI URL points at a fixed package.
+// own (a digest-pinned pull ignores the version entirely), and a non-OCI URL
+// points at a fixed package.
 func URLPullsSpecVersion(chartURL, specDigest string) bool {
 	if specDigest != "" || !registry.IsOCI(chartURL) {
 		return false
@@ -674,9 +775,8 @@ func URLVersionConflict(chartURL, specVersion string) error {
 	return err
 }
 
-func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*chart.Chart, error) { //nolint:gocyclo
-	var chartFilePath, chartUrl, chartName, chartVersion, chartDigest, chartRepo string
-	var err error
+func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*chart.Chart, error) {
+	var chartUrl, chartName, chartVersion, chartDigest, chartRepo string
 
 	switch r := mg.(type) {
 	case *clusterv1beta1.Release:
@@ -708,9 +808,8 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 	}
 
 	// Validate: without a URL the chart can only be resolved from
-	// Repository + Name. This must run before any pull, including the
-	// pull-latest shortcut below, so that misconfiguration fails with a clear
-	// error instead of an opaque helm one.
+	// Repository + Name. This must run before any pull so that
+	// misconfiguration fails with a clear error instead of an opaque helm one.
 	if chartUrl == "" {
 		switch {
 		case chartName == "":
@@ -720,68 +819,12 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 		}
 	}
 
-	switch {
-	case chartUrl == "" && (chartVersion == "" || chartVersion == devel) && chartDigest == "":
-		// No URL, no version, no digest -> pull latest
-		chartFilePath, err = hc.pullChartToCache(chartUrl, chartName, chartVersion, chartRepo, chartDigest, creds)
-		if err != nil {
-			return nil, err
-		}
-	case registry.IsOCI(chartUrl):
-		u, urlVersion, urlDigest, err := resolveOCIChartVersionAndDigest(chartUrl)
-		if err != nil {
-			return nil, err
-		}
-
-		// validate
-		effectiveDigest, err := resolveEffectiveDigest(urlDigest, chartDigest)
-		if err != nil {
-			return nil, err
-		}
-		v, err := resolveEffectiveVersion(urlVersion, chartVersion)
-		if err != nil {
-			return nil, err
-		}
-
-		switch {
-		case effectiveDigest != "":
-			// Validate cached chart against the effective digest, and store any
-			// pull under the same digest-keyed name.
-			name := path.Base(u.Path)
-			chartFilePath = resolveCachedChartPathWithDigest(name, effectiveDigest)
-		case v == "":
-			// No version in URL or spec, no digest: pull latest
-			chartFilePath, err = hc.pullChartToCache(chartUrl, chartName, chartVersion, chartRepo, chartDigest, creds)
-			if err != nil {
-				return nil, err
-			}
-		default:
-			chartFilePath = resolveChartFilePath(path.Base(u.Path), v)
-		}
-	case chartUrl != "":
-		// Non-OCI URL(e.g. HTTP/HTTPS)
-		u, err := url.Parse(chartUrl)
-		if err != nil {
-			return nil, errors.Wrap(err, errFailedToParseURL)
-		}
-		chartFilePath = filepath.Join(chartCache, path.Base(u.Path))
-	default:
-		// No URL: resolve from spec Repository + Name + Version + (optionally Digest)
-		if chartDigest != "" {
-			chartFilePath = resolveCachedChartPathWithDigest(chartName, chartDigest)
-		} else {
-			chartFilePath = resolveChartFilePath(chartName, chartVersion)
-		}
-	}
-
-	chartFilePath, err = hc.ensureChartCached(chartFilePath, chartUrl, chartName, chartVersion, chartRepo, chartDigest, creds)
+	chartFilePath, err := hc.pullChart(chartUrl, chartName, chartVersion, chartRepo, chartDigest, creds)
 	if err != nil {
 		return nil, err
 	}
 
-	// Load chart from cache using safe path construction
-	realPath := safePath(chartCache, chartFilePath)
-	chart, err := loader.Load(realPath)
+	chart, err := loader.Load(chartFilePath)
 	if err != nil {
 		return nil, errors.Wrap(err, errFailedToLoadChart)
 	}
@@ -891,44 +934,10 @@ func resolveOCIChartVersionAndDigest(chartURL string) (*url.URL, string, string,
 	return ociURL, version, digest, nil
 }
 
-func resolveOCIChartVersion(chartURL string) (*url.URL, string, error) {
-	u, v, _, err := resolveOCIChartVersionAndDigest(chartURL)
-	return u, v, err
-}
-
-// resolveChartFilePath returns the expected location of a chart tarball in the
-// cache given the chart name and version. It is equivalent to
-// filepath.Join(base, fmt.Sprintf("%s-%s.tgz", name, version)) where base is
-// the directory used by the client for its cache.
-func resolveChartFilePath(name, version string) string {
-	return resolveChartFilePathWithBase(chartCache, name, version)
-}
-
-// resolveChartFilePathWithBase is a helper that mirrors resolveChartFilePath but
-// allows callers (most importantly tests) to supply an arbitrary base directory
-// instead of the package-wide chartCache variable.
-func resolveChartFilePathWithBase(base, name, version string) string {
-	filename := fmt.Sprintf("%s-%s.tgz", name, version)
-	return filepath.Join(base, filename)
-}
-
 func resolveOCIChartRef(repository, name, digest string) string {
 	ref := strings.Join([]string{strings.TrimSuffix(repository, "/"), name}, "/")
 	if d := strings.TrimSpace(digest); d != "" {
 		ref += "@" + d
 	}
 	return ref
-}
-
-func resolveCachedChartPathWithDigest(chartName, digest string) string {
-	// Cannot construct cache path without name
-	if chartName == "" {
-		return ""
-	}
-	algo, hashSum, found := strings.Cut(digest, ":")
-	if !found {
-		return ""
-	}
-	filename := fmt.Sprintf("%s@%s-%s.tgz", filepath.Base(chartName), algo, hashSum)
-	return filepath.Join(chartCache, filename)
 }
