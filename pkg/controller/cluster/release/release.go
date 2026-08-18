@@ -160,7 +160,31 @@ func withRelease(cr *v1beta1.Release) helmClient.ArgsApplier {
 		config.TakeOwnership = cr.Spec.ForProvider.TakeOwnership && !cr.Status.AtProvider.OwnershipTaken
 		config.MaxHistory = cr.Spec.ForProvider.MaxHistory
 		config.SSAForceConflicts = cr.Spec.ForProvider.SSAForceConflicts
+		config.Labels = releaseLabels(cr.Spec.ForProvider.Chart, config.TakeOwnership)
 	}
+}
+
+// releaseLabels computes the custom release labels for a deploy. The digest
+// and URL labels always carry the current spec-derived value, with the
+// deletion marker when unset so that stale values from earlier deploys are
+// removed on upgrade. The ownership label is sticky: it is only ever added,
+// recording that adoption happened so later upgrades never silently re-adopt.
+func releaseLabels(chart v1beta1.ChartSpec, takeOwnership bool) map[string]string {
+	labels := map[string]string{
+		helmClient.LabelDigestHash: labelValueOrDelete(helmClient.EncodeDigestLabel(helmClient.EffectiveChartDigest(chart.URL, chart.Digest))),
+		helmClient.LabelURLHash:    labelValueOrDelete(helmClient.EncodeURLLabel(chart.URL)),
+	}
+	if takeOwnership {
+		labels[helmClient.LabelOwnershipTaken] = "true"
+	}
+	return labels
+}
+
+func labelValueOrDelete(v string) string {
+	if v == "" {
+		return helmClient.LabelValueDelete
+	}
+	return v
 }
 
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) { //nolint:gocyclo
@@ -230,12 +254,14 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 		return managed.ExternalObservation{}, errors.New(errLastReleaseIsNil)
 	}
 
-	// Preserve the last-deployed digest from the persisted status so isUpToDate
-	// can detect spec.digest changes. generateObservation reconstructs the
-	// observation from the Helm release, which has no notion of OCI digest.
+	// generateObservation reconstructs the observation from the Helm release,
+	// which has no notion of OCI digest or ownership adoption; both are
+	// rehydrated from the labels written at deploy time, falling back to the
+	// previously persisted status for releases that predate label support.
 	lastDigest := cr.Status.AtProvider.Digest
+	lastOwnershipTaken := cr.Status.AtProvider.OwnershipTaken
 	cr.Status.AtProvider = generateObservation(rel)
-	cr.Status.AtProvider.Digest = lastDigest
+	rehydrateFromLabels(cr, rel, lastDigest, lastOwnershipTaken)
 
 	// Determining whether the release is up to date may involve reading values
 	// from secrets, configmaps, etc. This will fail if said dependencies have
@@ -259,7 +285,10 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 		if err != nil {
 			return managed.ExternalObservation{}, errors.Wrap(err, "cannot get connection details")
 		}
-		if cr.Status.AtProvider.Digest == "" {
+		// Legacy releases without a digest label: assume the deployed digest
+		// matches the spec once deployed and synced. Labeled releases carry
+		// the deployed digest themselves and never need this.
+		if _, ok := rel.Labels[helmClient.LabelDigestHash]; !ok && cr.Status.AtProvider.Digest == "" {
 			cr.Status.AtProvider.Digest = cr.Spec.ForProvider.Chart.Digest
 		}
 		cr.Status.SetConditions(xpv2.Available())
@@ -303,7 +332,11 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action d
 	shouldLateInit := len(mp) == 0 || mp.HasAny(xpv2.ManagementActionLateInitialize, xpv2.ManagementActionAll)
 
 	needsUpdate := false
-	if shouldLateInit {
+	// Late-initialize only in repository mode. In URL mode the URL is the
+	// sole source of truth: name and version are documented-ignored there,
+	// and a late-initialized version would go stale on the first URL change,
+	// making the release permanently drift against the new chart.
+	if shouldLateInit && cr.Spec.ForProvider.Chart.URL == "" {
 		if cr.Spec.ForProvider.Chart.Name == "" {
 			cr.Spec.ForProvider.Chart.Name = chart.Metadata.Name
 			needsUpdate = true
@@ -342,7 +375,7 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action d
 	cr.Status.PatchesSha = sha
 	cr.Status.AtProvider = generateObservation(rel)
 	// Store the digest in status for drift detection
-	cr.Status.AtProvider.Digest = cr.Spec.ForProvider.Chart.Digest
+	cr.Status.AtProvider.Digest = helmClient.EffectiveChartDigest(cr.Spec.ForProvider.Chart.URL, cr.Spec.ForProvider.Chart.Digest)
 	// Mark ownership as taken if TakeOwnership was used
 	if cr.Spec.ForProvider.TakeOwnership {
 		cr.Status.AtProvider.OwnershipTaken = true

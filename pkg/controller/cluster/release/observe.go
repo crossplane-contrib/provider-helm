@@ -38,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/crossplane-contrib/provider-helm/apis/cluster/release/v1beta1"
+	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
 )
 
 const (
@@ -65,6 +66,33 @@ func generateObservation(in *release.Release) v1beta1.ReleaseObservation {
 	}
 
 	return o
+}
+
+// rehydrateFromLabels restores deploy-time facts into the observation from
+// the release labels, which — unlike managed resource status, reset by
+// crossplane-runtime after a successful Create — survive on the external
+// resource itself. Releases deployed before label support have none: those
+// keep the previously persisted status values.
+func rehydrateFromLabels(cr *v1beta1.Release, rel *release.Release, lastDigest string, lastOwnershipTaken bool) {
+	if v, ok := rel.Labels[helmClient.LabelDigestHash]; ok {
+		specDigest := helmClient.EffectiveChartDigest(cr.Spec.ForProvider.Chart.URL, cr.Spec.ForProvider.Chart.Digest)
+		if v == helmClient.EncodeDigestLabel(specDigest) {
+			// The deployed digest matches the spec: surface it in full
+			// fidelity, since the label only stores a truncated encoding.
+			cr.Status.AtProvider.Digest = specDigest
+		} else {
+			// Drifted: only the encoded form of the deployed digest is known.
+			cr.Status.AtProvider.Digest = v
+		}
+	} else {
+		cr.Status.AtProvider.Digest = lastDigest
+	}
+
+	if v, ok := rel.Labels[helmClient.LabelOwnershipTaken]; ok {
+		cr.Status.AtProvider.OwnershipTaken = v == "true"
+	} else {
+		cr.Status.AtProvider.OwnershipTaken = lastOwnershipTaken
+	}
 }
 
 // normalizeConfig JSON-serializes and re-deserializes a config map to
@@ -108,7 +136,10 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 
 	in := spec.ForProvider
 
-	if in.Chart.Name != ocm.Name {
+	// In URL mode the chart name is documented-ignored and possibly stale, so
+	// comparing it against the deployed chart would loop forever after a URL
+	// change to a differently-named chart.
+	if in.Chart.URL == "" && in.Chart.Name != ocm.Name {
 		return false, nil
 	}
 
@@ -119,15 +150,46 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 		return true, nil
 	}
 
-	// Check version match only if version is specified in spec
-	// For digest-only deployments, skip version check as version is optional
-	if in.Chart.Version != "" && in.Chart.Version != ocm.Version && in.Chart.Version != devel {
-		return false, nil
+	if in.Chart.URL == "" {
+		// Check version match only if version is specified in spec
+		// For digest-only deployments, skip version check as version is optional
+		if in.Chart.Version != "" && in.Chart.Version != ocm.Version && in.Chart.Version != devel {
+			return false, nil
+		}
+	}
+	// In URL mode the deployed chart's metadata version is deliberately not
+	// compared: an OCI URL tag is an arbitrary string (e.g. :latest, :stable, a
+	// v-prefixed tag) that need not equal the chart's Chart.yaml version, so
+	// comparing them would report perpetual drift. A tag change is a URL change
+	// and is caught by the url-hash label below.
+
+	// URL drift is only detectable via the label written at deploy time;
+	// releases deployed before label support keep the previous behavior of URL
+	// changes being invisible until another field triggers an upgrade. A label
+	// that no longer matches the encoded spec URL is drift, including the URL
+	// being cleared to switch back to repository mode (encodes to "").
+	if deployedURL, ok := observed.Labels[helmClient.LabelURLHash]; ok {
+		if deployedURL != helmClient.EncodeURLLabel(in.Chart.URL) {
+			return false, nil
+		}
 	}
 
-	// Check if digest has changed - if specified, compare against last synced digest
-	// Note: Chart metadata doesn't include OCI digest, so we store it in status
-	if in.Chart.Digest != "" && s.AtProvider.Digest != "" && in.Chart.Digest != s.AtProvider.Digest {
+	// Digest drift: prefer the label written at deploy time, which makes the
+	// deployed digest observable. Releases deployed before label support fall
+	// back to the digest persisted in status.
+	specDigestEnc := helmClient.EncodeDigestLabel(helmClient.EffectiveChartDigest(in.Chart.URL, in.Chart.Digest))
+	if deployedDigest, ok := observed.Labels[helmClient.LabelDigestHash]; ok {
+		switch {
+		case specDigestEnc != "" && deployedDigest != specDigestEnc:
+			return false, nil
+		case specDigestEnc == "" && in.Chart.Digest != "":
+			// The spec pins a digest that does not resolve (it conflicts with
+			// the OCI URL's embedded digest, or the URL is malformed). The
+			// deploy rejects such specs; report drift so that error surfaces
+			// instead of masking the conflict as up-to-date.
+			return false, nil
+		}
+	} else if in.Chart.Digest != "" && s.AtProvider.Digest != "" && in.Chart.Digest != s.AtProvider.Digest {
 		return false, nil
 	}
 

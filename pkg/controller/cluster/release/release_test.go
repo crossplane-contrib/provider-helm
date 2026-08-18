@@ -900,6 +900,11 @@ func Test_withRelease(t *testing.T) {
 					InsecureSkipTLSVerify: true,
 					PlainHTTP:             true,
 					TakeOwnership:         true,
+					Labels: map[string]string{
+						helmClient.LabelDigestHash:     helmClient.LabelValueDelete,
+						helmClient.LabelURLHash:        helmClient.LabelValueDelete,
+						helmClient.LabelOwnershipTaken: "true",
+					},
 				},
 			},
 		},
@@ -913,6 +918,32 @@ func Test_withRelease(t *testing.T) {
 				args: helmClient.Args{
 					Timeout:       5 * time.Minute, // default timeout
 					TakeOwnership: false,
+					Labels: map[string]string{
+						helmClient.LabelDigestHash: helmClient.LabelValueDelete,
+						helmClient.LabelURLHash:    helmClient.LabelValueDelete,
+					},
+				},
+			},
+		},
+		"TakeOwnershipStickyWhenAlreadyTaken": {
+			// Ownership was already taken on a prior deploy: even with
+			// takeOwnership still requested, adoption is not re-exercised and the
+			// sticky ownership label is omitted so helm's upgrade label-merge
+			// preserves the existing one rather than re-writing it.
+			args: args{
+				cr: helmRelease(func(r *v1beta1.Release) {
+					r.Spec.ForProvider.TakeOwnership = true
+					r.Status.AtProvider.OwnershipTaken = true
+				}),
+			},
+			want: want{
+				args: helmClient.Args{
+					Timeout:       5 * time.Minute, // default timeout
+					TakeOwnership: false,
+					Labels: map[string]string{
+						helmClient.LabelDigestHash: helmClient.LabelValueDelete,
+						helmClient.LabelURLHash:    helmClient.LabelValueDelete,
+					},
 				},
 			},
 		},
