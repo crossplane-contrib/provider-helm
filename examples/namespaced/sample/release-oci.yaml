@@ -14,6 +14,13 @@ spec:
 #       name: oci-creds
 #     url: "oci://localhost:5000/helm-charts/wordpress:9.3.19"
 #   insecureSkipTLSVerify: true
+# If the registry serves a certificate signed by a private/internal CA,
+# trust it explicitly instead of skipping verification (see above).
+# Defaults to reading key "ca.crt" if configMapKeyRef/secretKeyRef.key is unset.
+# The ConfigMap/Secret must be in this Release's own namespace.
+#   caBundle:
+#     configMapKeyRef:
+#       name: internal-ca-bundle
 #   wait: true
 #   skipCRDs: true
     values:

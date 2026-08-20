@@ -16,6 +16,10 @@ type Args struct {
 	InsecureSkipTLSVerify bool
 	// PlainHTTP uses HTTP connections for the chart download
 	PlainHTTP bool
+	// CABundle is a PEM encoded CA bundle used to verify the chart
+	// repository or registry's TLS certificate, in addition to the system
+	// trust store. Empty means only the system trust store is used.
+	CABundle []byte
 	// TakeOwnership ignore the check for helm annotations and take ownership
 	// of the existing resources.
 	TakeOwnership bool

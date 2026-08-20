@@ -74,11 +74,14 @@ const (
 	errFailedToGetRepoCreds       = "failed to get user name and password from secret reference"
 	errFailedToComposeValues      = "failed to compose values"
 	errBuildKubeForProviderConfig = "cannot build kube client for provider config"
-	errFailedToTrackUsage         = "cannot track provider config usage"
-	errFailedToLoadPatches        = "failed to load patches"
-	errFailedToUpdatePatchSha     = "failed to update patch sha"
-	errFailedToLateInitialize     = "failed to update chart spec with late-initialized values"
-	errFailedToCreateNamespace    = "failed to create namespace for release"
+	errResolveCABundle            = "cannot resolve spec.forProvider.caBundle"
+
+	defaultCABundleKey         = "ca.crt"
+	errFailedToTrackUsage      = "cannot track provider config usage"
+	errFailedToLoadPatches     = "failed to load patches"
+	errFailedToUpdatePatchSha  = "failed to update patch sha"
+	errFailedToLateInitialize  = "failed to update chart spec with late-initialized values"
+	errFailedToCreateNamespace = "failed to create namespace for release"
 )
 
 // Setup adds a controller that reconciles Release managed resources.
@@ -163,6 +166,12 @@ func withRelease(cr *v1beta1.Release) helmClient.ArgsApplier {
 	}
 }
 
+func withCABundle(caBundle []byte) helmClient.ArgsApplier {
+	return func(config *helmClient.Args) {
+		config.CABundle = caBundle
+	}
+}
+
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) { //nolint:gocyclo
 	cr, ok := mg.(*v1beta1.Release)
 	if !ok {
@@ -181,7 +190,17 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	if err != nil {
 		return nil, errors.Wrap(err, errBuildKubeForProviderConfig)
 	}
-	h, err := c.newHelmClientFn(c.logger, rc, withRelease(cr))
+
+	appliers := []helmClient.ArgsApplier{withRelease(cr)}
+	if cr.Spec.ForProvider.CABundle != nil {
+		caBundle, err := getDataValueFromSource(ctx, c.client, *cr.Spec.ForProvider.CABundle, defaultCABundleKey)
+		if err != nil {
+			return nil, errors.Wrap(err, errResolveCABundle)
+		}
+		appliers = append(appliers, withCABundle([]byte(caBundle)))
+	}
+
+	h, err := c.newHelmClientFn(c.logger, rc, appliers...)
 	if err != nil {
 		return nil, errors.Wrap(err, errNewHelmClient)
 	}

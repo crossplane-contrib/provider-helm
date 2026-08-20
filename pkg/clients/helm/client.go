@@ -17,7 +17,10 @@ limitations under the License.
 package helm
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -66,6 +69,8 @@ const (
 	errFailedToCreateRegistryClient    = "failed to create registry client"
 	errFailedToCreateChartCacheDir     = "failed to create chart cache directory"
 	errFailedToCreateContentCacheDir   = "failed to create chart content cache directory"
+	errFailedToParseCABundle           = "failed to parse CA bundle: no PEM certificates found"
+	errFailedToWriteCABundle           = "failed to write CA bundle to a temporary file"
 	devel                              = ">0.0.0-0"
 )
 
@@ -113,7 +118,27 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 		return nil, errors.Wrap(err, errFailedToInitActionConfig)
 	}
 
-	rc, err := registry.NewClient()
+	// caFile is only set when a CABundle is supplied. It configures the
+	// classic HTTP(S) chart-repository getter (used by Pull/Install/Upgrade
+	// for non-OCI repos). The OCI registry path below does not read this
+	// field at all - it goes through its own *registry.Client - so both
+	// need to be configured for a CABundle to cover both protocols.
+	var caFile string
+	registryOpts := []registry.ClientOption{}
+	if len(args.CABundle) > 0 {
+		httpClient, err := httpClientTrustingCABundle(args.CABundle)
+		if err != nil {
+			return nil, errors.Wrap(err, errFailedToParseCABundle)
+		}
+		registryOpts = append(registryOpts, registry.ClientOptHTTPClient(httpClient))
+
+		caFile, err = writeCABundleToTempFile(args.CABundle)
+		if err != nil {
+			return nil, errors.Wrap(err, errFailedToWriteCABundle)
+		}
+	}
+
+	rc, err := registry.NewClient(registryOpts...)
 	if err != nil {
 		return nil, errors.Wrap(err, errFailedToCreateRegistryClient)
 	}
@@ -143,6 +168,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	}
 	pc.InsecureSkipTLSVerify = args.InsecureSkipTLSVerify
 	pc.PlainHTTP = args.PlainHTTP
+	pc.CaFile = caFile
 
 	gc := action.NewGet(actionConfig)
 
@@ -165,6 +191,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	ic.SkipCRDs = args.SkipCRDs
 	ic.InsecureSkipTLSVerify = args.InsecureSkipTLSVerify
 	ic.PlainHTTP = args.PlainHTTP
+	ic.CaFile = caFile
 	ic.TakeOwnership = args.TakeOwnership
 	ic.ForceConflicts = args.SSAForceConflicts
 
@@ -174,6 +201,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	uc.SkipCRDs = args.SkipCRDs
 	uc.InsecureSkipTLSVerify = args.InsecureSkipTLSVerify
 	uc.PlainHTTP = args.PlainHTTP
+	uc.CaFile = caFile
 	uc.TakeOwnership = args.TakeOwnership
 	uc.MaxHistory = args.MaxHistory
 	uc.ForceConflicts = args.SSAForceConflicts
@@ -205,6 +233,46 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 // to prevent path traversal attacks. It ensures only the base filename is used.
 func safePath(baseDir, fileName string) string {
 	return filepath.Join(baseDir, filepath.Base(fileName))
+}
+
+// httpClientTrustingCABundle returns an *http.Client whose TLS transport
+// trusts caBundle (PEM encoded) in addition to the system trust store. It's
+// used for the OCI registry client, which does not read a CA file path -
+// unlike the classic HTTP(S) chart-repository getter, it only accepts an
+// *http.Client (registry.ClientOptHTTPClient).
+func httpClientTrustingCABundle(caBundle []byte) (*http.Client, error) {
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	if ok := pool.AppendCertsFromPEM(caBundle); !ok {
+		return nil, errors.New(errFailedToParseCABundle)
+	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone() //nolint:forcetypeassert // http.DefaultTransport is always *http.Transport
+	transport.TLSClientConfig = &tls.Config{RootCAs: pool}       //nolint:gosec // caller-supplied CA bundle, not skipping verification
+
+	return &http.Client{Transport: transport}, nil
+}
+
+// writeCABundleToTempFile writes caBundle (PEM encoded) to a uniquely named
+// temporary file and returns its path, for Helm action fields (Pull/Install/
+// Upgrade's embedded ChartPathOptions.CaFile) that take a file path rather
+// than raw bytes. The file is intentionally not cleaned up here - it needs
+// to outlive this function call for the lifetime of the returned Client, and
+// this provider already leaves other per-reconcile temp state (the chart
+// cache) uncleaned between reconciles for the same reason.
+func writeCABundleToTempFile(caBundle []byte) (string, error) {
+	f, err := os.CreateTemp("", "helm-ca-bundle-*.pem")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close() //nolint:errcheck // best-effort close, write error below takes precedence
+
+	if _, err := f.Write(caBundle); err != nil {
+		return "", err
+	}
+	return f.Name(), nil
 }
 
 func getChartFileName(dir string) (string, error) {
