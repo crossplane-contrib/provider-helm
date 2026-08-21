@@ -253,6 +253,73 @@ func TestWriteCABundleToFile_SweepsStaleEntries(t *testing.T) {
 	}
 }
 
+// TestWriteCABundleToFile_RecreatesFileRemovedBetweenStatAndChtimes covers
+// the race a concurrent sweep can cause: the file exists at Stat time (so
+// the "already present" branch is taken) but is gone by the time Chtimes
+// runs. That should self-heal by recreating the file, not fail the caller.
+func TestWriteCABundleToFile_RecreatesFileRemovedBetweenStatAndChtimes(t *testing.T) {
+	caBundleCacheDir = t.TempDir()
+	ca := newTestCA(t)
+
+	// Establish the file so the Stat in writeCABundleToFile finds it.
+	path, err := writeCABundleToFile(ca.caPEM)
+	if err != nil {
+		t.Fatalf("writeCABundleToFile(...): unexpected error: %v", err)
+	}
+
+	originalChtimesFn := chtimesFn
+	chtimesFn = func(name string, atime, mtime time.Time) error {
+		// Simulate a concurrent sweep having removed it in the window
+		// between Stat and this call, then defer to the real Chtimes so
+		// any OTHER path this test doesn't care about still behaves
+		// normally.
+		if name == path {
+			if err := os.Remove(name); err != nil {
+				t.Fatalf("removing %q to simulate a concurrent sweep: %v", name, err)
+			}
+		}
+		return os.Chtimes(name, atime, mtime)
+	}
+	defer func() { chtimesFn = originalChtimesFn }()
+
+	gotPath, err := writeCABundleToFile(ca.caPEM)
+	if err != nil {
+		t.Fatalf("writeCABundleToFile(...) after simulated concurrent removal: unexpected error: %v", err)
+	}
+	if gotPath != path {
+		t.Fatalf("writeCABundleToFile(...): got path %q, want %q", gotPath, path)
+	}
+	got, err := os.ReadFile(gotPath)
+	if err != nil {
+		t.Fatalf("reading recreated CA bundle: %v", err)
+	}
+	if !bytes.Equal(got, ca.caPEM) {
+		t.Fatalf("recreated CA bundle content mismatch: got %q, want %q", got, ca.caPEM)
+	}
+}
+
+// TestSweepStaleCABundles_SkipsDirectories proves the e.IsDir() check in
+// sweepStaleCABundles actually does something - a stale-looking directory
+// under caBundleCacheDir must survive the sweep, not be removed.
+func TestSweepStaleCABundles_SkipsDirectories(t *testing.T) {
+	caBundleCacheDir = t.TempDir()
+
+	staleDir := filepath.Join(caBundleCacheDir, "not-a-bundle")
+	if err := os.Mkdir(staleDir, 0750); err != nil {
+		t.Fatalf("creating test directory: %v", err)
+	}
+	longAgo := time.Now().Add(-2 * caBundleTTL)
+	if err := os.Chtimes(staleDir, longAgo, longAgo); err != nil {
+		t.Fatalf("setting old mtime on test directory: %v", err)
+	}
+
+	sweepStaleCABundles(time.Now())
+
+	if _, err := os.Stat(staleDir); err != nil {
+		t.Fatalf("expected directory %q to survive the sweep, stat error: %v", staleDir, err)
+	}
+}
+
 // TestReadSystemCABundle covers the lookup order: $SSL_CERT_FILE first, then
 // systemCACandidates, returning nothing if neither is readable.
 func TestReadSystemCABundle(t *testing.T) {

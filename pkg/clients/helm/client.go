@@ -56,6 +56,11 @@ const (
 // mutable in tests so that they can override it with a temporary location.
 var chartCache = "/tmp/charts"
 
+// chtimesFn is os.Chtimes, indirected so tests can simulate the file having
+// vanished between writeCABundleToFile's Stat and this call (e.g. a
+// concurrent sweep) without needing a genuine data race to hit that branch.
+var chtimesFn = os.Chtimes
+
 // caBundleCacheDir is where content-addressed CA bundle files are written,
 // each keyed by the SHA-256 of its content. Unlike chartCache, which is
 // name-keyed and reused verbatim across reconciles, this exists specifically
@@ -345,14 +350,24 @@ func writeCABundleToFile(content []byte) (string, error) {
 	finalPath := filepath.Join(caBundleCacheDir, hex.EncodeToString(sum[:])+".pem")
 
 	now := time.Now()
+	needsWrite := true
 	if fi, err := os.Stat(finalPath); err == nil && !fi.IsDir() {
 		// Already present with exactly this content - that's what the hash in
 		// the filename guarantees. Just bump its mtime so the sweep below
-		// doesn't reap a bundle that's still actively in use.
-		if err := os.Chtimes(finalPath, now, now); err != nil {
+		// doesn't reap a bundle that's still actively in use. If a concurrent
+		// call's sweep removed it in the window between this Stat and the
+		// Chtimes below (only possible if it had sat unused for a full
+		// caBundleTTL), fall through to recreating it below instead of
+		// failing this reconcile over a self-healing race.
+		switch err := chtimesFn(finalPath, now, now); {
+		case err == nil:
+			needsWrite = false
+		case !os.IsNotExist(err):
 			return "", err
 		}
-	} else {
+	}
+
+	if needsWrite {
 		tmp, err := os.CreateTemp(caBundleCacheDir, ".tmp-ca-bundle-*")
 		if err != nil {
 			return "", err
