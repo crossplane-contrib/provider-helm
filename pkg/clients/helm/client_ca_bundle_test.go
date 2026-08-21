@@ -31,6 +31,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -39,6 +40,7 @@ import (
 	chart "helm.sh/helm/v4/pkg/chart/v2"
 	"helm.sh/helm/v4/pkg/chart/v2/loader"
 	chartutil "helm.sh/helm/v4/pkg/chart/v2/util"
+	"helm.sh/helm/v4/pkg/getter"
 	helmregistry "helm.sh/helm/v4/pkg/registry"
 	"k8s.io/client-go/rest"
 )
@@ -144,7 +146,7 @@ func TestHTTPClientTrustingCABundle(t *testing.T) {
 	})
 
 	t.Run("ClientTrustingCABundleSucceeds", func(t *testing.T) {
-		hc, err := httpClientTrustingCABundle(ca.caPEM)
+		hc, err := httpClientTrustingCABundle(logging.NewNopLogger(), ca.caPEM)
 		if err != nil {
 			t.Fatalf("httpClientTrustingCABundle(...): unexpected error: %v", err)
 		}
@@ -163,21 +165,27 @@ func TestHTTPClientTrustingCABundle(t *testing.T) {
 	})
 
 	t.Run("InvalidPEMReturnsError", func(t *testing.T) {
-		_, err := httpClientTrustingCABundle([]byte("not a pem certificate"))
+		_, err := httpClientTrustingCABundle(logging.NewNopLogger(), []byte("not a pem certificate"))
 		if err == nil {
 			t.Fatal("expected an error for invalid PEM input, got nil")
 		}
 	})
 }
 
-func TestWriteCABundleToTempFile(t *testing.T) {
+// TestWriteCABundleToFile covers content-addressing: this runs inside
+// NewClient, which runs on every reconcile via Connect, so calling it
+// repeatedly with the SAME content (the common case - a Release's caBundle
+// rarely changes between reconciles) must reuse one file rather than
+// accumulating a new one that nothing ever deletes.
+func TestWriteCABundleToFile(t *testing.T) {
+	caBundleCacheDir = t.TempDir()
 	ca := newTestCA(t)
+	otherCA := newTestCA(t)
 
-	path1, err := writeCABundleToTempFile(ca.caPEM)
+	path1, err := writeCABundleToFile(ca.caPEM)
 	if err != nil {
-		t.Fatalf("writeCABundleToTempFile(...): unexpected error: %v", err)
+		t.Fatalf("writeCABundleToFile(...): unexpected error: %v", err)
 	}
-	defer os.Remove(path1)
 
 	got, err := os.ReadFile(path1)
 	if err != nil {
@@ -187,15 +195,129 @@ func TestWriteCABundleToTempFile(t *testing.T) {
 		t.Fatalf("written CA bundle content mismatch: got %q, want %q", got, ca.caPEM)
 	}
 
-	path2, err := writeCABundleToTempFile(ca.caPEM)
-	if err != nil {
-		t.Fatalf("writeCABundleToTempFile(...) second call: unexpected error: %v", err)
-	}
-	defer os.Remove(path2)
+	t.Run("SameContentReusesTheSameFile", func(t *testing.T) {
+		path2, err := writeCABundleToFile(ca.caPEM)
+		if err != nil {
+			t.Fatalf("writeCABundleToFile(...) second call: unexpected error: %v", err)
+		}
+		if path1 != path2 {
+			t.Fatalf("expected repeated calls with the same content to reuse one file, got distinct paths %q and %q", path1, path2)
+		}
+	})
 
-	if path1 == path2 {
-		t.Fatalf("expected two calls to produce distinct temp files, got the same path %q twice", path1)
+	t.Run("DifferentContentGetsADifferentFile", func(t *testing.T) {
+		path3, err := writeCABundleToFile(otherCA.caPEM)
+		if err != nil {
+			t.Fatalf("writeCABundleToFile(...) for different content: unexpected error: %v", err)
+		}
+		if path3 == path1 {
+			t.Fatalf("expected different content to produce a different path, got the same path %q for both", path1)
+		}
+		got3, err := os.ReadFile(path3)
+		if err != nil {
+			t.Fatalf("reading back second CA bundle: %v", err)
+		}
+		if !bytes.Equal(got3, otherCA.caPEM) {
+			t.Fatalf("second CA bundle content mismatch: got %q, want %q", got3, otherCA.caPEM)
+		}
+	})
+}
+
+// TestWriteCABundleToFile_SweepsStaleEntries proves the opportunistic cleanup
+// actually removes files past caBundleTTL - the mechanism that bounds total
+// accumulation now that files are reused instead of created fresh every
+// reconcile.
+func TestWriteCABundleToFile_SweepsStaleEntries(t *testing.T) {
+	caBundleCacheDir = t.TempDir()
+	originalTTL := caBundleTTL
+	caBundleTTL = 50 * time.Millisecond
+	defer func() { caBundleTTL = originalTTL }()
+
+	stale := newTestCA(t)
+	fresh := newTestCA(t)
+
+	stalePath, err := writeCABundleToFile(stale.caPEM)
+	if err != nil {
+		t.Fatalf("writeCABundleToFile(...) for stale content: unexpected error: %v", err)
 	}
+
+	time.Sleep(2 * caBundleTTL)
+
+	// Writing a second, different bundle triggers the sweep as a side effect.
+	if _, err := writeCABundleToFile(fresh.caPEM); err != nil {
+		t.Fatalf("writeCABundleToFile(...) for fresh content: unexpected error: %v", err)
+	}
+
+	if _, err := os.Stat(stalePath); !os.IsNotExist(err) {
+		t.Fatalf("expected stale CA bundle file %q to have been swept, stat error: %v", stalePath, err)
+	}
+}
+
+// TestReadSystemCABundle covers the lookup order: $SSL_CERT_FILE first, then
+// systemCACandidates, returning nothing if neither is readable.
+func TestReadSystemCABundle(t *testing.T) {
+	t.Run("FindsFirstReadableCandidate", func(t *testing.T) {
+		dir := t.TempDir()
+		content := []byte("candidate bundle content")
+		candidatePath := filepath.Join(dir, "ca-bundle.crt")
+		if err := os.WriteFile(candidatePath, content, 0600); err != nil {
+			t.Fatalf("writing candidate file: %v", err)
+		}
+
+		originalCandidates := systemCACandidates
+		systemCACandidates = []string{filepath.Join(dir, "does-not-exist.crt"), candidatePath}
+		defer func() { systemCACandidates = originalCandidates }()
+		t.Setenv("SSL_CERT_FILE", "")
+
+		got, path := readSystemCABundle()
+		if path != candidatePath {
+			t.Fatalf("readSystemCABundle(): path = %q, want %q", path, candidatePath)
+		}
+		if !bytes.Equal(got, content) {
+			t.Fatalf("readSystemCABundle(): content = %q, want %q", got, content)
+		}
+	})
+
+	t.Run("SSLCertFileTakesPriorityOverCandidates", func(t *testing.T) {
+		dir := t.TempDir()
+		candidateContent := []byte("candidate content")
+		candidatePath := filepath.Join(dir, "ca-bundle.crt")
+		if err := os.WriteFile(candidatePath, candidateContent, 0600); err != nil {
+			t.Fatalf("writing candidate file: %v", err)
+		}
+
+		sslCertContent := []byte("SSL_CERT_FILE content")
+		sslCertPath := filepath.Join(dir, "ssl-cert-file.crt")
+		if err := os.WriteFile(sslCertPath, sslCertContent, 0600); err != nil {
+			t.Fatalf("writing SSL_CERT_FILE: %v", err)
+		}
+
+		originalCandidates := systemCACandidates
+		systemCACandidates = []string{candidatePath}
+		defer func() { systemCACandidates = originalCandidates }()
+		t.Setenv("SSL_CERT_FILE", sslCertPath)
+
+		got, path := readSystemCABundle()
+		if path != sslCertPath {
+			t.Fatalf("readSystemCABundle(): path = %q, want %q (SSL_CERT_FILE should take priority)", path, sslCertPath)
+		}
+		if !bytes.Equal(got, sslCertContent) {
+			t.Fatalf("readSystemCABundle(): content = %q, want %q", got, sslCertContent)
+		}
+	})
+
+	t.Run("NothingReadableReturnsEmpty", func(t *testing.T) {
+		dir := t.TempDir()
+		originalCandidates := systemCACandidates
+		systemCACandidates = []string{filepath.Join(dir, "does-not-exist.crt")}
+		defer func() { systemCACandidates = originalCandidates }()
+		t.Setenv("SSL_CERT_FILE", "")
+
+		got, path := readSystemCABundle()
+		if got != nil || path != "" {
+			t.Fatalf("readSystemCABundle(): got (%q, %q), want (nil, \"\")", got, path)
+		}
+	})
 }
 
 // TestNewClient_CABundleWiring is a white-box test (same package) verifying
@@ -210,6 +332,16 @@ func TestNewClient_CABundleWiring(t *testing.T) {
 	// non-dialable host is safe here; this test never calls an action that
 	// would actually reach the Kubernetes API.
 	restConfig := &rest.Config{Host: "http://127.0.0.1:0"}
+
+	// Neutralize the real system CA bundle lookup so CaFile's content is
+	// deterministic across machines/CI - without this, a Linux runner with
+	// a real /etc/ssl/certs/ca-certificates.crt would make CaFile contain
+	// more than just ca.caPEM, while a Mac dev machine without one wouldn't.
+	caBundleCacheDir = t.TempDir()
+	originalCandidates := systemCACandidates
+	systemCACandidates = nil
+	t.Cleanup(func() { systemCACandidates = originalCandidates })
+	t.Setenv("SSL_CERT_FILE", "")
 
 	t.Run("CABundleSetWritesCaFile", func(t *testing.T) {
 		c, err := NewClient(logging.NewNopLogger(), restConfig, func(a *Args) {
@@ -259,6 +391,43 @@ func TestNewClient_CABundleWiring(t *testing.T) {
 			t.Errorf("pullClient.CaFile = %q, want empty when no CABundle is supplied", cc.pullClient.CaFile)
 		}
 	})
+
+	// This is the trust-store-parity fix itself: with a system bundle
+	// present, the classic getter's CaFile must contain BOTH the system
+	// bundle and the user's CABundle - otherwise (per the review) OCI
+	// trusts system+bundle while classic repos trust bundle-only.
+	t.Run("SystemCABundlePresent_CaFileContainsBoth", func(t *testing.T) {
+		systemCA := newTestCA(t)
+		systemBundlePath := filepath.Join(t.TempDir(), "system-ca-bundle.crt")
+		if err := os.WriteFile(systemBundlePath, systemCA.caPEM, 0600); err != nil {
+			t.Fatalf("writing fake system CA bundle: %v", err)
+		}
+		systemCACandidates = []string{systemBundlePath}
+		defer func() { systemCACandidates = nil }()
+
+		c, err := NewClient(logging.NewNopLogger(), restConfig, func(a *Args) {
+			a.Namespace = "default"
+			a.CABundle = ca.caPEM
+		})
+		if err != nil {
+			t.Fatalf("NewClient(...): unexpected error: %v", err)
+		}
+		cc, ok := c.(*client)
+		if !ok {
+			t.Fatalf("NewClient(...) did not return a *client")
+		}
+
+		got, err := os.ReadFile(cc.pullClient.CaFile)
+		if err != nil {
+			t.Fatalf("reading pullClient.CaFile: %v", err)
+		}
+		if !bytes.Contains(got, systemCA.caPEM) {
+			t.Errorf("pullClient.CaFile does not contain the system CA bundle: %q", got)
+		}
+		if !bytes.Contains(got, ca.caPEM) {
+			t.Errorf("pullClient.CaFile does not contain the user-supplied CABundle: %q", got)
+		}
+	})
 }
 
 // TestOCIRegistryPull_WithCABundle is the end-to-end proof for the OCI
@@ -279,7 +448,7 @@ func TestOCIRegistryPull_WithCABundle(t *testing.T) {
 	host := srv.Listener.Addr().String() // 127.0.0.1:<port>
 	ref := "oci://" + host + "/charts/testchart:0.1.0"
 
-	trustingHTTPClient, err := httpClientTrustingCABundle(ca.caPEM)
+	trustingHTTPClient, err := httpClientTrustingCABundle(logging.NewNopLogger(), ca.caPEM)
 	if err != nil {
 		t.Fatalf("httpClientTrustingCABundle(...): unexpected error: %v", err)
 	}
@@ -319,7 +488,7 @@ func TestOCIRegistryPull_WithCABundle(t *testing.T) {
 	})
 
 	t.Run("WithCABundlePullSucceeds", func(t *testing.T) {
-		hc, err := httpClientTrustingCABundle(ca.caPEM)
+		hc, err := httpClientTrustingCABundle(logging.NewNopLogger(), ca.caPEM)
 		if err != nil {
 			t.Fatalf("httpClientTrustingCABundle(...): unexpected error: %v", err)
 		}
@@ -333,6 +502,63 @@ func TestOCIRegistryPull_WithCABundle(t *testing.T) {
 		}
 		if len(result.Chart.Data) == 0 {
 			t.Fatal("Pull(...) succeeded but returned no chart data")
+		}
+	})
+}
+
+// TestClassicRepoGet_TrustsSystemAndUserCABundleWhenConcatenated is the
+// end-to-end proof for the trust-store-parity fix: helm's own HTTPGetter,
+// configured via getter.WithTLSClientConfig exactly as action.Pull configures
+// it from CaFile, against a real TLS server - no mocking of the TLS
+// handshake. It proves the specific failure mode from review: a CaFile
+// containing only a bundle unrelated to the server's issuing CA (standing in
+// for "the system trust store, which doesn't happen to include this
+// private CA") fails, while the concatenation NewClient actually builds
+// (system bundle + user CABundle) succeeds - which is exactly what a real
+// system CA bundle file's content plus the user's CABundle would produce.
+func TestClassicRepoGet_TrustsSystemAndUserCABundleWhenConcatenated(t *testing.T) {
+	userCA := newTestCA(t)
+	unrelatedCA := newTestCA(t)
+
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("index.yaml content"))
+	}))
+	srv.TLS = &tls.Config{Certificates: []tls.Certificate{userCA.leafCert}}
+	srv.StartTLS()
+	defer srv.Close()
+
+	g, err := getter.NewHTTPGetter()
+	if err != nil {
+		t.Fatalf("getter.NewHTTPGetter(...): unexpected error: %v", err)
+	}
+
+	t.Run("UnrelatedBundleAloneFails", func(t *testing.T) {
+		caFile := filepath.Join(t.TempDir(), "ca.pem")
+		if err := os.WriteFile(caFile, unrelatedCA.caPEM, 0600); err != nil {
+			t.Fatalf("writing CA file: %v", err)
+		}
+		_, err := g.Get(srv.URL, getter.WithTLSClientConfig("", "", caFile))
+		if err == nil {
+			t.Fatal("expected Get(...) to fail trusting only a CA unrelated to the server's issuer, got no error")
+		}
+	})
+
+	t.Run("ConcatenatedBundleSucceeds", func(t *testing.T) {
+		// This is exactly what NewClient writes to CaFile when a system CA
+		// bundle is found: the system (here, unrelated) bundle first, then
+		// the user-supplied one.
+		combined := append(append([]byte{}, unrelatedCA.caPEM...), append([]byte("\n"), userCA.caPEM...)...)
+		caFile := filepath.Join(t.TempDir(), "ca.pem")
+		if err := os.WriteFile(caFile, combined, 0600); err != nil {
+			t.Fatalf("writing CA file: %v", err)
+		}
+		buf, err := g.Get(srv.URL, getter.WithTLSClientConfig("", "", caFile))
+		if err != nil {
+			t.Fatalf("Get(...) with concatenated CA bundle: unexpected error: %v", err)
+		}
+		if buf.String() != "index.yaml content" {
+			t.Fatalf("Get(...): got body %q, want %q", buf.String(), "index.yaml content")
 		}
 	})
 }

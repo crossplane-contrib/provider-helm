@@ -17,8 +17,10 @@ limitations under the License.
 package helm
 
 import (
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -26,6 +28,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
@@ -52,6 +55,34 @@ const (
 // chartCache is the directory where pulled chart tarballs are stored. It is
 // mutable in tests so that they can override it with a temporary location.
 var chartCache = "/tmp/charts"
+
+// caBundleCacheDir is where content-addressed CA bundle files are written,
+// each keyed by the SHA-256 of its content. Unlike chartCache, which is
+// name-keyed and reused verbatim across reconciles, this exists specifically
+// so that repeated calls with the same content reuse the same file instead
+// of accumulating a new one every time. Mutable in tests.
+var caBundleCacheDir = "/tmp/ca-bundles"
+
+// caBundleTTL is how long an unused CA bundle file is kept before an
+// opportunistic sweep removes it. It is far longer than any realistic
+// reconcile duration, so there's no correctness dependency on this value -
+// only a bound on how much a long-lived pod accumulates under /tmp. Mutable
+// in tests so they don't have to wait a day.
+var caBundleTTL = 24 * time.Hour
+
+// systemCACandidates mirrors the well-known Linux CA bundle paths crypto/x509's
+// own root_linux.go checks, since there's no public API to read back the raw
+// PEM bytes x509.SystemCertPool() used internally - only these candidate
+// paths are known to potentially exist. Checked in order, first readable one
+// wins. Mutable in tests.
+var systemCACandidates = []string{
+	"/etc/ssl/certs/ca-certificates.crt",                // Debian/Ubuntu/Gentoo etc.
+	"/etc/pki/tls/certs/ca-bundle.crt",                  // Fedora/RHEL
+	"/etc/ssl/ca-bundle.pem",                            // OpenSUSE
+	"/etc/pki/tls/cacert.pem",                           // OpenELEC
+	"/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", // CentOS/RHEL 7
+	"/etc/ssl/cert.pem",                                 // Alpine Linux
+}
 
 const (
 	errFailedToCheckIfLocalChartExists = "failed to check if cached chart file exists"
@@ -126,13 +157,33 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	var caFile string
 	registryOpts := []registry.ClientOption{}
 	if len(args.CABundle) > 0 {
-		httpClient, err := httpClientTrustingCABundle(args.CABundle)
+		httpClient, err := httpClientTrustingCABundle(log, args.CABundle)
 		if err != nil {
-			return nil, errors.Wrap(err, errFailedToParseCABundle)
+			return nil, err
 		}
 		registryOpts = append(registryOpts, registry.ClientOptHTTPClient(httpClient))
 
-		caFile, err = writeCABundleToTempFile(args.CABundle)
+		// Unlike the OCI path above (which builds its cert pool from
+		// x509.SystemCertPool(), always including the system trust store),
+		// helm's classic getter replaces its cert pool entirely with
+		// whatever CaFile contains - so writing just args.CABundle here
+		// would make classic repos trust ONLY the supplied bundle, while
+		// OCI trusts system roots plus the bundle. Concatenate the system
+		// bundle in (best-effort - there's no public API to read back the
+		// raw PEM bytes x509.SystemCertPool() used, so this reads a known
+		// file path directly) to keep both paths' trust semantics the same.
+		classicBundle := args.CABundle
+		if systemBundle, systemPath := readSystemCABundle(); len(systemBundle) > 0 {
+			classicBundle = make([]byte, 0, len(systemBundle)+1+len(args.CABundle))
+			classicBundle = append(classicBundle, systemBundle...)
+			classicBundle = append(classicBundle, '\n')
+			classicBundle = append(classicBundle, args.CABundle...)
+			log.Debug("including system CA bundle alongside the supplied CABundle for classic chart-repo TLS", "path", systemPath)
+		} else {
+			log.Info("no readable system CA bundle found; classic chart-repo TLS will trust only the supplied CABundle, not the system trust store (OCI registries are unaffected, they use crypto/x509.SystemCertPool directly)")
+		}
+
+		caFile, err = writeCABundleToFile(classicBundle)
 		if err != nil {
 			return nil, errors.Wrap(err, errFailedToWriteCABundle)
 		}
@@ -240,9 +291,10 @@ func safePath(baseDir, fileName string) string {
 // used for the OCI registry client, which does not read a CA file path -
 // unlike the classic HTTP(S) chart-repository getter, it only accepts an
 // *http.Client (registry.ClientOptHTTPClient).
-func httpClientTrustingCABundle(caBundle []byte) (*http.Client, error) {
+func httpClientTrustingCABundle(log logging.Logger, caBundle []byte) (*http.Client, error) {
 	pool, err := x509.SystemCertPool()
 	if err != nil || pool == nil {
+		log.Info("x509.SystemCertPool() unavailable, OCI registry pulls will trust only the supplied CABundle, not the system trust store", "error", err)
 		pool = x509.NewCertPool()
 	}
 	if ok := pool.AppendCertsFromPEM(caBundle); !ok {
@@ -255,24 +307,100 @@ func httpClientTrustingCABundle(caBundle []byte) (*http.Client, error) {
 	return &http.Client{Transport: transport}, nil
 }
 
-// writeCABundleToTempFile writes caBundle (PEM encoded) to a uniquely named
-// temporary file and returns its path, for Helm action fields (Pull/Install/
-// Upgrade's embedded ChartPathOptions.CaFile) that take a file path rather
-// than raw bytes. The file is intentionally not cleaned up here - it needs
-// to outlive this function call for the lifetime of the returned Client, and
-// this provider already leaves other per-reconcile temp state (the chart
-// cache) uncleaned between reconciles for the same reason.
-func writeCABundleToTempFile(caBundle []byte) (string, error) {
-	f, err := os.CreateTemp("", "helm-ca-bundle-*.pem")
-	if err != nil {
-		return "", err
+// readSystemCABundle returns the contents of the system's CA bundle file and
+// the path it was read from, checking $SSL_CERT_FILE first (matching Go's
+// own root-loading behavior, and staying composable with the SSL_CERT_FILE-
+// based workaround from issue #202) and then systemCACandidates. Returns a
+// nil slice and empty path if none is set or readable.
+func readSystemCABundle() ([]byte, string) {
+	candidates := systemCACandidates
+	if f := os.Getenv("SSL_CERT_FILE"); f != "" {
+		candidates = append([]string{f}, candidates...)
 	}
-	defer f.Close() //nolint:errcheck // best-effort close, write error below takes precedence
+	for _, p := range candidates {
+		b, err := os.ReadFile(p) //nolint:gosec // G304: p is either $SSL_CERT_FILE (operator-controlled env var, same trust boundary as the process itself) or a fixed well-known system path, never Release-supplied input
+		if err == nil && len(b) > 0 {
+			return b, p
+		}
+	}
+	return nil, ""
+}
 
-	if _, err := f.Write(caBundle); err != nil {
+// writeCABundleToFile writes content to a path under caBundleCacheDir keyed
+// by the SHA-256 of content itself, returning that path, for Helm action
+// fields (Pull/Install/Upgrade's embedded ChartPathOptions.CaFile) that take
+// a file path rather than raw bytes. Content-addressing means repeated calls
+// with the same content - the common case, since a Release's caBundle
+// rarely changes between reconciles, and NewClient (which calls this) runs
+// on every reconcile via Connect - reuse the same file instead of each call
+// creating a new one that nothing ever deletes. Also opportunistically
+// removes any entry under caBundleCacheDir whose mtime is older than
+// caBundleTTL, bounding total accumulation without a background goroutine.
+func writeCABundleToFile(content []byte) (string, error) {
+	if err := os.MkdirAll(caBundleCacheDir, 0750); err != nil {
 		return "", err
 	}
-	return f.Name(), nil
+
+	sum := sha256.Sum256(content)
+	finalPath := filepath.Join(caBundleCacheDir, hex.EncodeToString(sum[:])+".pem")
+
+	now := time.Now()
+	if fi, err := os.Stat(finalPath); err == nil && !fi.IsDir() {
+		// Already present with exactly this content - that's what the hash in
+		// the filename guarantees. Just bump its mtime so the sweep below
+		// doesn't reap a bundle that's still actively in use.
+		if err := os.Chtimes(finalPath, now, now); err != nil {
+			return "", err
+		}
+	} else {
+		tmp, err := os.CreateTemp(caBundleCacheDir, ".tmp-ca-bundle-*")
+		if err != nil {
+			return "", err
+		}
+		tmpName := tmp.Name()
+		_, writeErr := tmp.Write(content)
+		closeErr := tmp.Close()
+		if writeErr != nil {
+			_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup, writeErr takes precedence
+			return "", writeErr
+		}
+		if closeErr != nil {
+			_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup, closeErr takes precedence
+			return "", closeErr
+		}
+		// Rename is atomic on the same filesystem, and safe under concurrent
+		// reconciles racing to write the same content-addressed path: whichever
+		// wins, the result is byte-identical.
+		if err := os.Rename(tmpName, finalPath); err != nil {
+			_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup, err takes precedence
+			return "", err
+		}
+	}
+
+	sweepStaleCABundles(now)
+	return finalPath, nil
+}
+
+// sweepStaleCABundles best-effort removes entries under caBundleCacheDir
+// whose mtime is older than caBundleTTL. Errors are ignored throughout: this
+// is opportunistic housekeeping, not something a reconcile should fail over.
+func sweepStaleCABundles(now time.Time) {
+	entries, err := os.ReadDir(caBundleCacheDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if now.Sub(info.ModTime()) > caBundleTTL {
+			_ = os.Remove(filepath.Join(caBundleCacheDir, e.Name())) //nolint:errcheck // best-effort, next sweep retries
+		}
+	}
 }
 
 func getChartFileName(dir string) (string, error) {

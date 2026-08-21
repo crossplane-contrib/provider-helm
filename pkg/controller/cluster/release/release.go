@@ -192,7 +192,12 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	}
 
 	appliers := []helmClient.ArgsApplier{withRelease(cr)}
-	if cr.Spec.ForProvider.CABundle != nil {
+	// Connect runs before every operation, including uninstall - which never
+	// pulls a chart and so never needs CABundle. Skip resolving it once the
+	// Release is being deleted: if its ConfigMap/Secret source was removed
+	// first (a common ordering), resolving here would fail Connect and the
+	// Release could never be deleted, stuck on its finalizer indefinitely.
+	if cr.Spec.ForProvider.CABundle != nil && !meta.WasDeleted(cr) {
 		caBundle, err := getDataValueFromSource(ctx, c.client, *cr.Spec.ForProvider.CABundle, defaultCABundleKey)
 		if err != nil {
 			return nil, errors.Wrap(err, errResolveCABundle)

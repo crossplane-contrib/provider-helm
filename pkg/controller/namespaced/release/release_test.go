@@ -329,6 +329,66 @@ func Test_connector_Connect(t *testing.T) {
 				err: nil,
 			},
 		},
+		// A deleted Release with a CABundle pointing at a Secret that no
+		// longer exists must still connect successfully: Connect runs before
+		// every operation including uninstall, which never needs CABundle,
+		// so resolving it here would otherwise turn a routine
+		// ConfigMap/Secret cleanup ordering into a permanently stuck
+		// finalizer.
+		"CABundleResolutionSkippedWhenDeleted": {
+			args: args{
+				client: &test.MockClient{
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						switch t := obj.(type) {
+						case *helmv1beta1.ProviderConfig:
+							*t = providerConfig
+							return nil
+						case *helmv1beta1.ClusterProviderConfig:
+							*t = clusterProviderConfig
+							return nil
+						case *corev1.Secret:
+							// The CABundle's source Secret is gone - if Connect
+							// tried to resolve it, this is what it would hit.
+							return errBoom
+						default:
+							return errBoom
+						}
+					},
+					MockStatusUpdate: func(ctx context.Context, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+						return nil
+					},
+					MockScheme: func() *runtime.Scheme {
+						s := runtime.NewScheme()
+						if err := clusterapis.AddToScheme(s); err != nil {
+							t.Fatal(err)
+						}
+						if err := namespacedapis.AddToScheme(s); err != nil {
+							t.Fatal(err)
+						}
+						return s
+					},
+				},
+				clientForProvider: &test.MockClient{},
+				newHelmClientFn: func(log logging.Logger, restConfig *rest.Config, helmArgs ...helmClient.ArgsApplier) (h helmClient.Client, err error) {
+					return &MockHelmClient{}, nil
+				},
+				usage: resource.ModernTrackerFn(func(ctx context.Context, mg resource.ModernManaged) error { return nil }),
+				mg: helmRelease(
+					func(release *v1beta1.Release) {
+						release.Spec.ForProvider.CABundle = &v1beta1.ValueFromSource{
+							SecretKeyRef: &v1beta1.DataKeySelector{
+								Name: "missing-ca-secret",
+							},
+						}
+						now := metav1.Now()
+						release.SetDeletionTimestamp(&now)
+					},
+				),
+			},
+			want: want{
+				err: nil,
+			},
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
