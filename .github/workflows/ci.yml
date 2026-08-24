@@ -10,7 +10,7 @@ on:
 
 env:
   # Common versions
-  GOLANGCI_VERSION: 'v2.12.2'
+  GOLANGCI_VERSION: 'v2.13.1'
   DOCKER_BUILDX_VERSION: 'v0.36.1'
 
 jobs:
