@@ -106,6 +106,12 @@ type ReleaseParameters struct {
 	InsecureSkipTLSVerify bool `json:"insecureSkipTLSVerify,omitempty"`
 	// PlainHTTP uses insecure HTTP connections for the chart download
 	PlainHTTP bool `json:"plainHTTP,omitempty"`
+	// CABundle references a PEM encoded CA bundle used to verify the chart
+	// repository or registry's TLS certificate, for repositories signed by a
+	// private or otherwise non-system-trusted CA. Read from a Secret or
+	// ConfigMap key, defaulting to the key "ca.crt" if Key is not set.
+	// +optional
+	CABundle *ValueFromSource `json:"caBundle,omitempty"`
 	// TakeOwnership ignores Helm ownership validation and adopts pre-existing releases.
 	// This is a ONE-TIME operation: after the first successful deployment, the flag is recorded
 	// in status.atProvider.ownershipTaken and subsequent reconciles use normal Helm validation.

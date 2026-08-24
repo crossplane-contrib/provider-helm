@@ -122,6 +122,40 @@ spec:
               forProvider:
                 description: ReleaseParameters are the configurable fields of a Release.
                 properties:
+                  caBundle:
+                    description: |-
+                      CABundle references a PEM encoded CA bundle used to verify the chart
+                      repository or registry's TLS certificate, for repositories signed by a
+                      private or otherwise non-system-trusted CA. Read from a Secret or
+                      ConfigMap key, defaulting to the key "ca.crt" if Key is not set.
+                    properties:
+                      configMapKeyRef:
+                        description: DataKeySelector defines required spec to access
+                          a key of a configmap or secret
+                        properties:
+                          key:
+                            type: string
+                          name:
+                            type: string
+                          optional:
+                            type: boolean
+                        required:
+                        - name
+                        type: object
+                      secretKeyRef:
+                        description: DataKeySelector defines required spec to access
+                          a key of a configmap or secret
+                        properties:
+                          key:
+                            type: string
+                          name:
+                            type: string
+                          optional:
+                            type: boolean
+                        required:
+                        - name
+                        type: object
+                    type: object
                   chart:
                     description: A ChartSpec defines the chart spec for a Release
                     properties:
