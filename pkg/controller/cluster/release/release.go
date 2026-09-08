@@ -88,14 +88,20 @@ const (
 func Setup(mgr ctrl.Manager, o controller.Options, timeout time.Duration) error {
 	name := managed.ControllerName(v1beta1.ReleaseGroupKind)
 
+	// The scheme registers both the v1alpha1 and v1beta1 ProviderConfigUsage
+	// kinds, so the managed reconciler cannot pick one on its own and would
+	// leave the usage unprotected. Hand it the tracker the connector uses.
+	usage := resource.NewLegacyProviderConfigUsageTracker(mgr.GetClient(), &helmv1beta1.ProviderConfigUsage{})
+
 	reconcilerOptions := []managed.ReconcilerOption{
 		managed.WithExternalConnector(&connector{
 			client:          mgr.GetClient(),
 			logger:          o.Logger,
-			usage:           resource.NewLegacyProviderConfigUsageTracker(mgr.GetClient(), &helmv1beta1.ProviderConfigUsage{}),
+			usage:           usage,
 			clientBuilder:   kubeclient.NewIdentityAwareBuilder(mgr.GetClient()),
 			newHelmClientFn: helmClient.NewClient,
 		}),
+		managed.WithProviderConfigUsageCleaner(usage),
 		managed.WithPollInterval(o.PollInterval),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
