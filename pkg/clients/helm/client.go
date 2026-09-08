@@ -52,10 +52,14 @@ import (
 	namespacedv1beta1 "github.com/crossplane-contrib/provider-helm/apis/namespaced/release/v1beta1"
 )
 
-const (
-	helmDriverSecret  = "secret"
-	chartContentCache = "/tmp/content-cache"
-)
+const helmDriverSecret = "secret"
+
+// chartContentCache is the directory of helm's content-addressed chart cache:
+// entries are keyed by the digest resolved from the requesting source, so they
+// cannot collide across sources or be poisoned by charts advertising a foreign
+// name and version. It is created once at startup by EnsureContentCache and is
+// mutable in tests so that they can override it with a temporary location.
+var chartContentCache = "/tmp/content-cache"
 
 // chtimesFn is os.Chtimes, indirected so tests can simulate the file having
 // vanished between writeCABundleToFile's Stat and this call (e.g. a
@@ -154,6 +158,15 @@ type client struct {
 // ArgsApplier defines helm client arguments helper
 type ArgsApplier func(*Args)
 
+// EnsureContentCache creates the content-addressed chart cache directory. It
+// runs once at provider startup rather than lazily in NewClient: NewClient
+// runs on every reconcile, and a check-then-create there raced when many
+// Releases reconciled at once on a fresh pod, failing every reconcile but one
+// with "mkdir /tmp/content-cache: file exists" until the next requeue.
+func EnsureContentCache() error {
+	return errors.Wrap(os.MkdirAll(chartContentCache, 0750), errFailedToCreateContentCacheDir)
+}
+
 // NewClient returns a new Helm Client with provided config
 func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsApplier) (Client, error) {
 
@@ -211,16 +224,6 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 		caFile, err = writeCABundleToFile(classicBundle)
 		if err != nil {
 			return nil, errors.Wrap(err, errFailedToWriteCABundle)
-		}
-	}
-
-	// Charts are cached content-addressed: entries are keyed by the digest
-	// resolved from the requesting source, so they cannot collide across
-	// sources or be poisoned by charts advertising a foreign name and version.
-	if _, err := os.Stat(chartContentCache); os.IsNotExist(err) {
-		err = os.Mkdir(chartContentCache, 0750)
-		if err != nil {
-			return nil, errors.Wrap(err, errFailedToCreateContentCacheDir)
 		}
 	}
 
