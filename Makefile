@@ -117,6 +117,34 @@ local-deploy: build controlplane.up local.xpkg.deploy.provider.$(PROJECT_NAME)
 
 e2e: local-deploy uptest
 
+KUBECTL_VALIDATE_VERSION = v0.0.4
+KUBECTL_VALIDATE := $(TOOLS_HOST_DIR)/kubectl-validate-$(KUBECTL_VALIDATE_VERSION)
+
+$(KUBECTL_VALIDATE):
+	@$(INFO) installing kubectl-validate $(KUBECTL_VALIDATE_VERSION)
+	@mkdir -p $(TOOLS_HOST_DIR)
+	@GOBIN=$(abspath $(TOOLS_HOST_DIR)) go install sigs.k8s.io/kubectl-validate@$(KUBECTL_VALIDATE_VERSION)
+	@mv $(TOOLS_HOST_DIR)/kubectl-validate $@
+	@$(OK) installed kubectl-validate $(KUBECTL_VALIDATE_VERSION)
+
+# example-lint validates our example manifests against the CRDs we ship. A
+# few examples are intentionally excluded because they aren't provider-helm's
+# own CRDs and kubectl-validate has no schema for them: examples/cluster/in-composition/*
+# demonstrates using a Release inside a Composition via a fictional
+# example.crossplane.io XRD, and provider-incluster.yaml is a Crossplane
+# Provider package install manifest (pkg.crossplane.io).
+example-lint: $(KUBECTL_VALIDATE)
+	@$(INFO) linting example manifests
+	@failed=0; \
+	for dir in examples/cluster examples/namespaced; do \
+		files=$$(find $$dir -name '*.yaml' \
+			-not -path 'examples/cluster/in-composition/*' \
+			-not -path 'examples/cluster/provider-config/provider-incluster.yaml' \
+			-not -path 'examples/namespaced/provider-config/provider-incluster.yaml'); \
+		$(KUBECTL_VALIDATE) $$files --local-crds package/crds || failed=1; \
+	done; \
+	[ $$failed -eq 0 ] && $(OK) linted example manifests || $(FAIL)
+
 # Update the submodules, such as the common build scripts.
 submodules:
 	@git submodule sync
@@ -165,4 +193,4 @@ go.cachedir:
 go.mod.cachedir:
 	@go env GOMODCACHE
 
-.PHONY: cobertura submodules fallthrough test-integration run manifests go.cachedir go.mod.cachedir
+.PHONY: cobertura submodules fallthrough test-integration run manifests go.cachedir go.mod.cachedir example-lint
