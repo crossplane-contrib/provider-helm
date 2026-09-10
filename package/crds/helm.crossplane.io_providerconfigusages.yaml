@@ -31,10 +31,14 @@ spec:
     - jsonPath: .resourceRef.name
       name: RESOURCE-NAME
       type: string
+    deprecated: true
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: A ProviderConfigUsage indicates that a resource is using a ProviderConfig.
+        description: |-
+          A ProviderConfigUsage indicates that a resource is using a ProviderConfig.
+
+          Deprecated: v1alpha1.ProviderConfigUsage is deprecated in favor of v1beta1.ProviderConfigUsage.
         properties:
           apiVersion:
             description: |-

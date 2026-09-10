@@ -70,6 +70,12 @@ XPKG_REG_ORGS ?= xpkg.upbound.io/crossplane-contrib index.docker.io/crossplaneco
 # inferred.
 XPKG_REG_ORGS_NO_PROMOTE ?= xpkg.upbound.io/crossplane-contrib
 XPKGS = provider-helm
+# The conversion webhook config for our multi-version CRDs is injected into
+# $(OUTPUT_DIR)/package by the kustomize-crds target below, so we build the
+# package from there instead of from the repo's package/ directory. The
+# kustomize config files themselves aren't part of the package.
+XPKG_DIR = $(OUTPUT_DIR)/package
+XPKG_IGNORE = kustomize/kustomization.yaml,kustomize/splitter.yaml,kustomize/webhook.yaml
 -include build/makelib/xpkg.mk
 
 # We force image building to happen prior to xpkg build so that we ensure image
@@ -119,6 +125,22 @@ submodules:
 # We must ensure up is installed in tool cache prior to build as including the
 # k8s_tools machinery prior to the xpkg machinery sets UP to point to tool cache.
 build.init: $(CROSSPLANE_CLI)
+
+build.init: kustomize-crds
+
+# Injects the conversion webhook configuration into the CRDs that are served
+# in more than one version. This can't be done with controller-gen, so we
+# patch it in with kustomize, following the same approach kubebuilder uses.
+# Can be removed once we drop support for the deprecated v1alpha1 APIs.
+kustomize-crds: output.init $(KUSTOMIZE) $(YQ)
+	@$(INFO) Kustomizing CRDs
+	@rm -fr $(OUTPUT_DIR)/package || $(FAIL)
+	@cp -R package $(OUTPUT_DIR) || $(FAIL)
+	@export YQ=$(YQ) && \
+		XDG_CONFIG_HOME=$(PWD)/package $(KUSTOMIZE) build --enable-alpha-plugins --load-restrictor=LoadRestrictionsNone $(OUTPUT_DIR)/package/kustomize -o $(OUTPUT_DIR)/package/crds.yaml || $(FAIL)
+	@$(OK) Kustomizing CRDs
+
+.PHONY: kustomize-crds
 
 # This is for running out-of-cluster locally, and is for convenience. Running
 # this make target will print out the command which was used. For more control,

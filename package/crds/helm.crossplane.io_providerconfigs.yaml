@@ -26,11 +26,14 @@ spec:
       name: SECRET-NAME
       priority: 1
       type: string
+    deprecated: true
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: A ProviderConfig configures a Helm 'provider', i.e. a connection
-          to a particular
+        description: |-
+          A ProviderConfig configures a Helm 'provider', i.e. a connection to a particular
+
+          Deprecated: v1alpha1.ProviderConfig is deprecated in favor of v1beta1.ProviderConfig.
         properties:
           apiVersion:
             description: |-
