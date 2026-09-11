@@ -77,6 +77,9 @@ func composeValuesFromSpec(ctx context.Context, kube client.Client, spec v1beta1
 		}
 
 		if v == "" {
+			if optionalValueFrom(s.ValueFrom) {
+				continue
+			}
 			return nil, errors.New(errMissingValueForSet)
 		}
 
@@ -86,6 +89,18 @@ func composeValuesFromSpec(ctx context.Context, kube client.Client, spec v1beta1
 	}
 
 	return base, nil
+}
+
+func optionalValueFrom(vf *v1beta1.ValueFromSource) bool {
+	switch {
+	case vf == nil:
+		return false
+	case vf.SecretKeyRef != nil:
+		return vf.SecretKeyRef.Optional
+	case vf.ConfigMapKeyRef != nil:
+		return vf.ConfigMapKeyRef.Optional
+	}
+	return false
 }
 
 // Copied from helm cli
