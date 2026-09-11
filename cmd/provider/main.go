@@ -61,11 +61,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	clusterapis "github.com/crossplane-contrib/provider-helm/apis/cluster"
+	releasev1alpha1cluster "github.com/crossplane-contrib/provider-helm/apis/cluster/release/v1alpha1"
 	namespacedapis "github.com/crossplane-contrib/provider-helm/apis/namespaced"
 	"github.com/crossplane-contrib/provider-helm/internal/bootcheck"
 	clustercontroller "github.com/crossplane-contrib/provider-helm/pkg/controller/cluster"
 	namespacedcontroller "github.com/crossplane-contrib/provider-helm/pkg/controller/namespaced"
 	"github.com/crossplane-contrib/provider-helm/pkg/version"
+)
+
+const (
+	// webhookTLSCertDirEnvVar is set by older Crossplane versions.
+	webhookTLSCertDirEnvVar = "WEBHOOK_TLS_CERT_DIR"
+	// tlsServerCertDirEnvVar is set by newer Crossplane versions.
+	tlsServerCertDirEnvVar = "TLS_SERVER_CERTS_DIR"
+	tlsServerCertDir       = "/tls/server"
 )
 
 func init() {
@@ -119,6 +128,18 @@ func main() {
 		}
 	}
 
+	// Get the TLS certs directory from the environment variable if set. In
+	// older Crossplane versions we used WEBHOOK_TLS_CERT_DIR, in newer
+	// versions we use TLS_SERVER_CERTS_DIR. If neither are set, use the
+	// default.
+	certDir := os.Getenv(webhookTLSCertDirEnvVar)
+	if certDir == "" {
+		certDir = os.Getenv(tlsServerCertDirEnvVar)
+		if certDir == "" {
+			certDir = tlsServerCertDir
+		}
+	}
+
 	scheme := runtime.NewScheme()
 	kingpin.FatalIfError(clientgoscheme.AddToScheme(scheme), "Cannot add clientgo scheme")
 	kingpin.FatalIfError(clusterapis.AddToScheme(scheme), "Cannot add cluster-scoped Helm APIs to scheme")
@@ -137,7 +158,8 @@ func main() {
 			},
 		},
 		WebhookServer: webhook.NewServer(webhook.Options{
-			Port: *webhookPort,
+			Port:    *webhookPort,
+			CertDir: certDir,
 		}),
 		Metrics: metricsserver.Options{
 			BindAddress: *metricsBindAddress,
@@ -158,6 +180,14 @@ func main() {
 		RenewDeadline:              func() *time.Duration { d := 50 * time.Second; return &d }(),
 	})
 	kingpin.FatalIfError(err, "Cannot create controller manager")
+
+	// Register the conversion webhook for the deprecated cluster-scoped
+	// Release v1alpha1 API. It doesn't matter which version of Release is
+	// used to register the "/convert" handler, so we use v1alpha1 here
+	// since it will be easy to notice and remove when we drop support for
+	// v1alpha1.
+	kingpin.FatalIfError(ctrl.NewWebhookManagedBy(mgr, &releasev1alpha1cluster.Release{}).Complete(), "Cannot create Release webhook") //nolint:staticcheck // registering conversion webhook for deprecated api
+	kingpin.FatalIfError(mgr.AddReadyzCheck("webhook", mgr.GetWebhookServer().StartedChecker()), "Cannot add webhook server readyz checker to controller manager")
 
 	mm := managed.NewMRMetricRecorder()
 	sm := statemetrics.NewMRStateMetrics()

@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2026 The Crossplane Authors <https://crossplane.io>
+#
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Release is the only CRD served in more than one version, so it's the only
+# one that needs a conversion webhook. ProviderConfig and
+# ProviderConfigUsage's v1alpha1 and v1beta1 schemas are compatible enough
+# (no renamed/retyped/removed fields) that they don't need one.
+resources:
+  - ../crds/helm.crossplane.io_releases.yaml
+
+patches:
+- path: webhook.yaml
+  target:
+    group: apiextensions.k8s.io
+    kind: CustomResourceDefinition
+
+transformers:
+  - splitter.yaml

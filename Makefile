@@ -70,6 +70,12 @@ XPKG_REG_ORGS ?= xpkg.upbound.io/crossplane-contrib index.docker.io/crossplaneco
 # inferred.
 XPKG_REG_ORGS_NO_PROMOTE ?= xpkg.upbound.io/crossplane-contrib
 XPKGS = provider-helm
+# The conversion webhook config for our multi-version CRDs is injected into
+# $(OUTPUT_DIR)/package by the kustomize-crds target below, so we build the
+# package from there instead of from the repo's package/ directory. The
+# kustomize config files themselves aren't part of the package.
+XPKG_DIR = $(OUTPUT_DIR)/package
+XPKG_IGNORE = kustomize/kustomization.yaml,kustomize/splitter.yaml,kustomize/webhook.yaml
 -include build/makelib/xpkg.mk
 
 # We force image building to happen prior to xpkg build so that we ensure image
@@ -111,6 +117,34 @@ local-deploy: build controlplane.up local.xpkg.deploy.provider.$(PROJECT_NAME)
 
 e2e: local-deploy uptest
 
+KUBECTL_VALIDATE_VERSION = v0.0.4
+KUBECTL_VALIDATE := $(TOOLS_HOST_DIR)/kubectl-validate-$(KUBECTL_VALIDATE_VERSION)
+
+$(KUBECTL_VALIDATE):
+	@$(INFO) installing kubectl-validate $(KUBECTL_VALIDATE_VERSION)
+	@mkdir -p $(TOOLS_HOST_DIR)
+	@GOBIN=$(abspath $(TOOLS_HOST_DIR)) go install sigs.k8s.io/kubectl-validate@$(KUBECTL_VALIDATE_VERSION)
+	@mv $(TOOLS_HOST_DIR)/kubectl-validate $@
+	@$(OK) installed kubectl-validate $(KUBECTL_VALIDATE_VERSION)
+
+# example-lint validates our example manifests against the CRDs we ship. A
+# few examples are intentionally excluded because they aren't provider-helm's
+# own CRDs and kubectl-validate has no schema for them: examples/cluster/in-composition/*
+# demonstrates using a Release inside a Composition via a fictional
+# example.crossplane.io XRD, and provider-incluster.yaml is a Crossplane
+# Provider package install manifest (pkg.crossplane.io).
+example-lint: $(KUBECTL_VALIDATE)
+	@$(INFO) linting example manifests
+	@failed=0; \
+	for dir in examples/cluster examples/namespaced; do \
+		files=$$(find $$dir -name '*.yaml' \
+			-not -path 'examples/cluster/in-composition/*' \
+			-not -path 'examples/cluster/provider-config/provider-incluster.yaml' \
+			-not -path 'examples/namespaced/provider-config/provider-incluster.yaml'); \
+		$(KUBECTL_VALIDATE) $$files --local-crds package/crds || failed=1; \
+	done; \
+	[ $$failed -eq 0 ] && $(OK) linted example manifests || $(FAIL)
+
 # Update the submodules, such as the common build scripts.
 submodules:
 	@git submodule sync
@@ -119,6 +153,22 @@ submodules:
 # We must ensure up is installed in tool cache prior to build as including the
 # k8s_tools machinery prior to the xpkg machinery sets UP to point to tool cache.
 build.init: $(CROSSPLANE_CLI)
+
+build.init: kustomize-crds
+
+# Injects the conversion webhook configuration into the CRDs that are served
+# in more than one version. This can't be done with controller-gen, so we
+# patch it in with kustomize, following the same approach kubebuilder uses.
+# Can be removed once we drop support for the deprecated v1alpha1 APIs.
+kustomize-crds: output.init $(KUSTOMIZE) $(YQ)
+	@$(INFO) Kustomizing CRDs
+	@rm -fr $(OUTPUT_DIR)/package || $(FAIL)
+	@cp -R package $(OUTPUT_DIR) || $(FAIL)
+	@export YQ=$(YQ) && \
+		XDG_CONFIG_HOME=$(PWD)/package $(KUSTOMIZE) build --enable-alpha-plugins --load-restrictor=LoadRestrictionsNone $(OUTPUT_DIR)/package/kustomize -o $(OUTPUT_DIR)/package/crds.yaml || $(FAIL)
+	@$(OK) Kustomizing CRDs
+
+.PHONY: kustomize-crds
 
 # This is for running out-of-cluster locally, and is for convenience. Running
 # this make target will print out the command which was used. For more control,
@@ -143,4 +193,4 @@ go.cachedir:
 go.mod.cachedir:
 	@go env GOMODCACHE
 
-.PHONY: cobertura submodules fallthrough test-integration run manifests go.cachedir go.mod.cachedir
+.PHONY: cobertura submodules fallthrough test-integration run manifests go.cachedir go.mod.cachedir example-lint

@@ -113,6 +113,9 @@ type ReleaseStatus struct {
 // +kubebuilder:printcolumn:name="DESCRIPTION",type="string",JSONPath=".status.atProvider.releaseDescription"
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:resource:scope=Cluster,categories={crossplane,managed,helm}
+// +kubebuilder:deprecatedversion
+//
+// Deprecated: v1alpha1.Release is deprecated in favor of v1beta1.Release.
 type Release struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

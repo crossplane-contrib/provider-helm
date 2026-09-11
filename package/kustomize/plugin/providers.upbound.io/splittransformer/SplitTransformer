@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+set -aeuo pipefail
+
+# SPDX-FileCopyrightText: 2024 The Crossplane Authors <https://crossplane.io>
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# skip the config directory argument
+shift
+output_dir="$1"
+
+cd "${output_dir}"
+# prepend the YAML doc separator to the stdin
+{ echo "---"; cat; } | ${YQ} --split-exp '.spec.group + "_" + .spec.names.plural + ".yaml"' -
