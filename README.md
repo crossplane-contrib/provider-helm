@@ -14,12 +14,13 @@ has the following functionality:
 
 ## Install
 
-If you would like to install `provider-helm` without modifications, you may do
+If you would like to install the latest version of `provider-helm` without modifications, you may do
 so using the Crossplane CLI in a Kubernetes cluster where Crossplane is
 installed:
 
-```console
-crossplane xpkg install provider xpkg.crossplane.io/crossplane-contrib/provider-helm:v1.2.0
+```shell
+latest_tag=$(crane ls xpkg.crossplane.io/crossplane-contrib/provider-helm | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+crossplane xpkg install provider xpkg.crossplane.io/crossplane-contrib/provider-helm:$latest_tag
 ```
 
 Then you will need to create a `ProviderConfig` that specifies the credentials
