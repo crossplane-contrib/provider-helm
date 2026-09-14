@@ -250,6 +250,9 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	ic.CaFile = caFile
 	ic.TakeOwnership = args.TakeOwnership
 	ic.ForceConflicts = args.SSAForceConflicts
+	// Install stores labels verbatim; only upgrade's label merge understands
+	// the "null" deletion convention, so those entries must not reach install.
+	ic.Labels = withoutDeletedLabels(args.Labels)
 
 	uc := action.NewUpgrade(actionConfig)
 	uc.WaitStrategy = waitStrategy
@@ -261,6 +264,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	uc.TakeOwnership = args.TakeOwnership
 	uc.MaxHistory = args.MaxHistory
 	uc.ForceConflicts = args.SSAForceConflicts
+	uc.Labels = args.Labels
 
 	uic := action.NewUninstall(actionConfig)
 	uic.WaitStrategy = waitStrategy
@@ -416,6 +420,23 @@ func sweepStaleCABundles(now time.Time) {
 			_ = os.Remove(filepath.Join(caBundleCacheDir, e.Name())) //nolint:errcheck // best-effort, next sweep retries
 		}
 	}
+}
+
+// withoutDeletedLabels returns labels minus the entries carrying the
+// LabelValueDelete marker. Returns nil when nothing remains so that actions
+// treat it as "no custom labels".
+func withoutDeletedLabels(labels map[string]string) map[string]string {
+	var out map[string]string
+	for k, v := range labels {
+		if v == LabelValueDelete {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]string)
+		}
+		out[k] = v
+	}
+	return out
 }
 
 func getChartFileName(dir string) (string, error) {
