@@ -179,26 +179,20 @@ func withCABundle(caBundle []byte) helmClient.ArgsApplier {
 }
 
 // releaseLabels computes the custom release labels for a deploy. The digest
-// and URL labels always carry the current spec-derived value, with the
-// deletion marker when unset so that stale values from earlier deploys are
-// removed on upgrade. The ownership label is sticky: it is only ever added,
-// recording that adoption happened so later upgrades never silently re-adopt.
+// and URL labels always carry the current spec-derived value, empty when the
+// spec has none, so that every release this provider deployed carries them
+// and a later pin, unpin or URL change is detected as drift against them. The
+// ownership label is sticky: it is only ever added, recording that adoption
+// happened so later upgrades never silently re-adopt.
 func releaseLabels(chart v1beta1.ChartSpec, takeOwnership bool) map[string]string {
 	labels := map[string]string{
-		helmClient.LabelDigestHash: labelValueOrDelete(helmClient.EncodeDigestLabel(helmClient.EffectiveChartDigest(chart.URL, chart.Digest))),
-		helmClient.LabelURLHash:    labelValueOrDelete(helmClient.EncodeURLLabel(chart.URL)),
+		helmClient.LabelDigestHash: helmClient.EncodeDigestLabel(helmClient.EffectiveChartDigest(chart.URL, chart.Digest)),
+		helmClient.LabelURLHash:    helmClient.EncodeURLLabel(chart.URL),
 	}
 	if takeOwnership {
 		labels[helmClient.LabelOwnershipTaken] = "true"
 	}
 	return labels
-}
-
-func labelValueOrDelete(v string) string {
-	if v == "" {
-		return helmClient.LabelValueDelete
-	}
-	return v
 }
 
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) { //nolint:gocyclo

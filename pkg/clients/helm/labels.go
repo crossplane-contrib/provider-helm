@@ -32,22 +32,20 @@ import (
 // they live on the external resource itself.
 const (
 	// LabelDigestHash carries the encoded chart digest the release was
-	// deployed from. Absent when the deploy was not digest-pinned or the
-	// release predates label support.
+	// deployed from. Empty when the deploy was not digest-pinned, so that a
+	// digest pinned later is detected as drift; absent only when the release
+	// predates label support.
 	LabelDigestHash = "release.helm.crossplane.io/digest-hash"
 	// LabelURLHash carries the encoded chart URL the release was deployed
-	// from. Absent when the deploy did not use spec.forProvider.chart.url or
-	// the release predates label support.
+	// from. Empty when the deploy did not use spec.forProvider.chart.url, so
+	// that a URL set later is detected as drift; absent only when the release
+	// predates label support.
 	LabelURLHash = "release.helm.crossplane.io/url-hash"
 	// LabelOwnershipTaken records that takeOwnership was exercised for this
 	// release. It is sticky: once written it is never removed, so the
 	// provider can suppress silent re-adoption on later upgrades even after
 	// spec.forProvider.takeOwnership is unset.
 	LabelOwnershipTaken = "release.helm.crossplane.io/ownership-taken"
-
-	// LabelValueDelete is helm's upgrade-time convention for removing a
-	// label: mergeCustomLabels drops keys whose desired value is "null".
-	LabelValueDelete = "null"
 
 	// labelHashHexLen is how many hex characters of a hash fit in a label
 	// value next to a "sha256-" style algorithm prefix: Kubernetes caps label

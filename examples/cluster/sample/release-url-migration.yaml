@@ -1,0 +1,15 @@
+apiVersion: helm.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: url-migration-cluster
+  annotations:
+    uptest.upbound.io/post-assert-hook: testhooks/url-migration.sh
+spec:
+  forProvider:
+    chart:
+      name: podinfo
+      repository: oci://ghcr.io/stefanprodan/charts
+      version: 6.10.1
+    namespace: crossplane-system
+  providerConfigRef:
+    name: helm-provider

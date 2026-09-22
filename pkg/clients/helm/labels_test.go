@@ -137,39 +137,3 @@ func TestEffectiveChartDigest(t *testing.T) {
 		})
 	}
 }
-
-func TestWithoutDeletedLabels(t *testing.T) {
-	cases := map[string]struct {
-		labels map[string]string
-		want   map[string]string
-	}{
-		"Nil": {
-			labels: nil,
-			want:   nil,
-		},
-		"AllDeleted": {
-			labels: map[string]string{LabelDigestHash: LabelValueDelete},
-			want:   nil,
-		},
-		"Mixed": {
-			labels: map[string]string{
-				LabelDigestHash:     "sha256-" + strings.Repeat("a", 56),
-				LabelURLHash:        LabelValueDelete,
-				LabelOwnershipTaken: "true",
-			},
-			want: map[string]string{
-				LabelDigestHash:     "sha256-" + strings.Repeat("a", 56),
-				LabelOwnershipTaken: "true",
-			},
-		},
-	}
-
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			got := withoutDeletedLabels(tc.labels)
-			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("withoutDeletedLabels() -want, +got:\n%s", diff)
-			}
-		})
-	}
-}

@@ -34,8 +34,7 @@ type Args struct {
 	// field conflicts ("become sole manager") on install, upgrade, and
 	// rollback.
 	SSAForceConflicts bool
-	// Labels are custom release labels written on install and upgrade. A
-	// value of LabelValueDelete removes the label on upgrade; such entries
-	// are dropped on install, which stores labels verbatim.
+	// Labels are custom release labels written on install and upgrade. On
+	// upgrade helm merges them over the previous release's labels.
 	Labels map[string]string
 }

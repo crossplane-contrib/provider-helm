@@ -948,8 +948,8 @@ func Test_withRelease(t *testing.T) {
 					PlainHTTP:             true,
 					TakeOwnership:         true,
 					Labels: map[string]string{
-						helmClient.LabelDigestHash:     helmClient.LabelValueDelete,
-						helmClient.LabelURLHash:        helmClient.LabelValueDelete,
+						helmClient.LabelDigestHash:     "",
+						helmClient.LabelURLHash:        "",
 						helmClient.LabelOwnershipTaken: "true",
 					},
 				},
@@ -966,8 +966,8 @@ func Test_withRelease(t *testing.T) {
 					Timeout:       5 * time.Minute, // default timeout
 					TakeOwnership: false,
 					Labels: map[string]string{
-						helmClient.LabelDigestHash: helmClient.LabelValueDelete,
-						helmClient.LabelURLHash:    helmClient.LabelValueDelete,
+						helmClient.LabelDigestHash: "",
+						helmClient.LabelURLHash:    "",
 					},
 				},
 			},
@@ -988,8 +988,8 @@ func Test_withRelease(t *testing.T) {
 					Timeout:       5 * time.Minute, // default timeout
 					TakeOwnership: false,
 					Labels: map[string]string{
-						helmClient.LabelDigestHash: helmClient.LabelValueDelete,
-						helmClient.LabelURLHash:    helmClient.LabelValueDelete,
+						helmClient.LabelDigestHash: "",
+						helmClient.LabelURLHash:    "",
 					},
 				},
 			},
