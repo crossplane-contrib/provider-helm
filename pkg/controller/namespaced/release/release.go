@@ -163,18 +163,29 @@ func withRelease(cr *v1beta1.Release) helmClient.ArgsApplier {
 		config.SkipCRDs = cr.Spec.ForProvider.SkipCRDs
 		config.InsecureSkipTLSVerify = cr.Spec.ForProvider.InsecureSkipTLSVerify
 		config.PlainHTTP = cr.Spec.ForProvider.PlainHTTP
-		// Only use TakeOwnership if requested AND not already used
-		// This prevents silent adoption of resources during upgrades after initial adoption
-		config.TakeOwnership = cr.Spec.ForProvider.TakeOwnership && !cr.Status.AtProvider.OwnershipTaken
 		config.MaxHistory = cr.Spec.ForProvider.MaxHistory
 		config.SSAForceConflicts = cr.Spec.ForProvider.SSAForceConflicts
-		config.Labels = releaseLabels(cr.Spec.ForProvider.Chart, config.TakeOwnership)
 	}
 }
 
 func withCABundle(caBundle []byte) helmClient.ArgsApplier {
 	return func(config *helmClient.Args) {
 		config.CABundle = caBundle
+	}
+}
+
+// deployOptions decides the per-deploy inputs from the Release as it stands at
+// deploy time rather than at Connect: Observe has already rehydrated
+// status.atProvider from the release labels on this same object, so this sees
+// that ownership was already taken even on the reconcile right after Create,
+// when crossplane-runtime has reverted the status written there.
+func deployOptions(cr *v1beta1.Release) helmClient.DeployOptions {
+	// Only take ownership if requested AND not already taken. This prevents
+	// silent adoption of resources during upgrades after the initial adoption.
+	takeOwnership := cr.Spec.ForProvider.TakeOwnership && !cr.Status.AtProvider.OwnershipTaken
+	return helmClient.DeployOptions{
+		TakeOwnership: takeOwnership,
+		Labels:        releaseLabels(cr.Spec.ForProvider.Chart, takeOwnership),
 	}
 }
 
@@ -326,7 +337,7 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 	}, nil
 }
 
-type deployAction func(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error)
+type deployAction func(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch, opts helmClient.DeployOptions) (*release.Release, error)
 
 func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action deployAction) error { //nolint:gocyclo // easier to follow as a unit
 	cv, err := composeValuesFromSpec(ctx, e.localKube, cr.Spec.ForProvider.ValuesSpec, cr.Namespace)
@@ -385,7 +396,7 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action d
 		}
 	}
 
-	rel, err := action(meta.GetExternalName(cr), chart, cv, p)
+	rel, err := action(meta.GetExternalName(cr), chart, cv, p, deployOptions(cr))
 
 	if err != nil {
 		return err

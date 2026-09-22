@@ -25,16 +25,10 @@ type Args struct {
 	// (or $SSL_CERT_FILE if set) - if none is found, only CABundle is
 	// trusted for that path.
 	CABundle []byte
-	// TakeOwnership ignore the check for helm annotations and take ownership
-	// of the existing resources.
-	TakeOwnership bool
 	// MaxHistory limits the maximum number of revisions saved per release. Use 0 for no limit.
 	MaxHistory int
 	// SSAForceConflicts forces Kubernetes server-side apply to overwrite
 	// field conflicts ("become sole manager") on install, upgrade, and
 	// rollback.
 	SSAForceConflicts bool
-	// Labels are custom release labels written on install and upgrade. On
-	// upgrade helm merges them over the previous release's labels.
-	Labels map[string]string
 }
