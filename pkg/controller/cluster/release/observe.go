@@ -194,7 +194,10 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 			// The spec pins a digest that does not resolve (it conflicts with
 			// the OCI URL's embedded digest, or the URL is malformed). The
 			// deploy rejects such specs; report drift so that error surfaces
-			// instead of masking the conflict as up-to-date.
+			// instead of masking the conflict as up-to-date. A URL-embedded
+			// digest that does not fit a label is deliberately not covered:
+			// the deploy accepts it and records it as unpinned, so reporting
+			// drift here would upgrade forever.
 			return false, nil
 		}
 	} else if in.Chart.Digest != "" && s.AtProvider.Digest != "" && in.Chart.Digest != s.AtProvider.Digest {

@@ -57,8 +57,11 @@ const (
 // asLabelValue returns v when it is a valid Kubernetes label value, otherwise
 // "". The encoders guarantee 63-char, valid-charset output for the digests and
 // URLs seen in practice; this is a final guard so that an unexpected input
-// (e.g. a digest with an algorithm prefix longer than "sha256") degrades to
-// "no label" rather than producing a value the API server rejects at deploy.
+// (e.g. a digest with an algorithm prefix longer than "sha256") is written as
+// the empty value, i.e. recorded as not digest-pinned, rather than producing a
+// value the API server rejects at deploy. Only a digest embedded in an OCI URL
+// can reach it, as the spec digest is pattern-validated; the URL label still
+// detects any change to such a URL.
 func asLabelValue(v string) string {
 	if len(validation.IsValidLabelValue(v)) != 0 {
 		return ""
@@ -70,7 +73,8 @@ func asLabelValue(v string) string {
 // Kubernetes label value of the form "sha256-<first 56 hex>". The truncation
 // is imposed by the 63-character label value limit; the encoded value is used
 // for equality-based drift detection only, while pull-time verification always
-// uses the full digest. Returns "" for an empty, malformed, or over-long digest.
+// uses the full digest. Returns "" for an empty or malformed digest, or one
+// whose algorithm prefix does not fit a label value (see asLabelValue).
 func EncodeDigestLabel(digest string) string {
 	algo, hash, found := strings.Cut(digest, ":")
 	if !found || algo == "" || hash == "" {
