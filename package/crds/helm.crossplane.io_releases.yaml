@@ -602,7 +602,8 @@ spec:
                       digest:
                         description: |-
                           Digest is the OCI image digest in the format "sha256:abc123..."
-                          Only supported for OCI registries. When specified, the chart will be pulled by digest.
+                          Only supported for OCI registries: an oci:// URL, or an oci:// Repository when URL is
+                          not set. When specified, the chart will be pulled by digest.
                           Can be used alone or in combination with Version. Optional.
                         pattern: ^sha256:[a-f0-9]{64}$
                         type: string
@@ -657,11 +658,11 @@ spec:
                       rule: (has(self.url) && self.url != "") || ((has(self.name)
                         && self.name != "") && (has(self.repository) && self.repository
                         != ""))
-                    - message: digest is only supported for OCI registries (oci://
-                        url or repository)
-                      rule: '!(has(self.digest) && self.digest != "") || (has(self.url)
-                        && self.url.startsWith(''oci://'')) || (has(self.repository)
-                        && self.repository.startsWith(''oci://''))'
+                    - message: digest is only supported for OCI registries (an oci://
+                        url, or an oci:// repository when url is not set)
+                      rule: '!(has(self.digest) && self.digest != "") || ((has(self.url)
+                        && self.url != "") ? self.url.startsWith(''oci://'') : (has(self.repository)
+                        && self.repository.startsWith(''oci://'')))'
                   insecureSkipTLSVerify:
                     description: InsecureSkipTLSVerify skips tls certificate checks
                       for the chart download

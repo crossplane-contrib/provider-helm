@@ -645,10 +645,14 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 		return nil, errors.New("This object must be *clusterv1beta1.Release or *namespacedv1beta1.Release")
 	}
 
-	// Validate: Digest only works with OCI registries
+	// Validate: Digest only works with OCI registries. A set URL is the sole
+	// pull source, so an OCI Repository next to a non-OCI URL does not count.
 	if chartDigest != "" {
-		isOCI := registry.IsOCI(chartUrl) || registry.IsOCI(chartRepo)
-		if !isOCI {
+		digestSource := chartUrl
+		if digestSource == "" {
+			digestSource = chartRepo
+		}
+		if !registry.IsOCI(digestSource) {
 			return nil, errors.New(errDigestNotSupportedForNonOCI)
 		}
 	}

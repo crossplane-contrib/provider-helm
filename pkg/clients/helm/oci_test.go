@@ -651,6 +651,16 @@ func TestPullAndLoadChart_Validation(t *testing.T) {
 			},
 			wantErr: errDigestNotSupportedForNonOCI,
 		},
+		"DigestWithNonOCIURLAndOCIRepository": {
+			// The URL is the sole pull source when set, so an OCI Repository
+			// next to it does not make the digest applicable.
+			chart: clusterv1beta1.ChartSpec{
+				URL:        "https://charts.example.com/mychart-1.0.0.tgz",
+				Repository: "oci://registry.example.com/charts",
+				Digest:     digest,
+			},
+			wantErr: errDigestNotSupportedForNonOCI,
+		},
 		"DigestWithNoURLOrRepository": {
 			chart: clusterv1beta1.ChartSpec{
 				Name:   "mychart",

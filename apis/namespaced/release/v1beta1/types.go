@@ -27,7 +27,7 @@ import (
 
 // A ChartSpec defines the chart spec for a Release
 // +kubebuilder:validation:XValidation:rule="(has(self.url) && self.url != \"\") || ((has(self.name) && self.name != \"\") && (has(self.repository) && self.repository != \"\"))",message="chart name and repository are required when url is not set"
-// +kubebuilder:validation:XValidation:rule="!(has(self.digest) && self.digest != \"\") || (has(self.url) && self.url.startsWith('oci://')) || (has(self.repository) && self.repository.startsWith('oci://'))",message="digest is only supported for OCI registries (oci:// url or repository)"
+// +kubebuilder:validation:XValidation:rule="!(has(self.digest) && self.digest != \"\") || ((has(self.url) && self.url != \"\") ? self.url.startsWith('oci://') : (has(self.repository) && self.repository.startsWith('oci://')))",message="digest is only supported for OCI registries (an oci:// url, or an oci:// repository when url is not set)"
 type ChartSpec struct {
 	// Repository: Helm repository URL, required if ChartSpec.URL not set.
 	// Ignored when URL is set: the URL is then the sole pull source and also
@@ -50,7 +50,8 @@ type ChartSpec struct {
 	// URL to chart package (typically .tgz), optional and overrides others fields in the spec
 	URL string `json:"url,omitempty"`
 	// Digest is the OCI image digest in the format "sha256:abc123..."
-	// Only supported for OCI registries. When specified, the chart will be pulled by digest.
+	// Only supported for OCI registries: an oci:// URL, or an oci:// Repository when URL is
+	// not set. When specified, the chart will be pulled by digest.
 	// Can be used alone or in combination with Version. Optional.
 	// +kubebuilder:validation:Pattern=`^sha256:[a-f0-9]{64}$`
 	// +optional

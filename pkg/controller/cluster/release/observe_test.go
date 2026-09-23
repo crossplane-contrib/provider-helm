@@ -1265,6 +1265,52 @@ func Test_isUpToDate(t *testing.T) {
 				err: nil,
 			},
 		},
+		"NotUpToDate_DigestWithNonOCIURL": {
+			// A digest next to a non-OCI URL is never applied, and the deploy
+			// rejects the spec. A release deployed before that was enforced
+			// carries the spec digest in its label; reporting drift surfaces
+			// the rejection instead of the label vouching for a pin that never
+			// happened.
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							URL:        "https://charts.example.com/mychart-1.0.0.tgz",
+							Repository: "oci://registry.example.com/charts",
+							Digest:     "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Raw: nil,
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: testVersion,
+						},
+					},
+					Config: testReleaseConfig,
+					Labels: map[string]string{
+						helmClient.LabelURLHash:    helmClient.EncodeURLLabel("https://charts.example.com/mychart-1.0.0.tgz"),
+						helmClient.LabelDigestHash: helmClient.EncodeDigestLabel("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+					},
+				},
+				status: v1beta1.ReleaseStatus{},
+			},
+			want: want{
+				out: false,
+				err: nil,
+			},
+		},
 		"UpToDate_NonOCIURLIgnoresSpecVersion": {
 			// Version alongside an HTTPS URL is documented-ignored and must
 			// not cause a perpetual upgrade loop.
