@@ -38,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/crossplane-contrib/provider-helm/apis/cluster/release/v1beta1"
+	helmClient "github.com/crossplane-contrib/provider-helm/pkg/clients/helm"
 )
 
 const (
@@ -65,6 +66,33 @@ func generateObservation(in *release.Release) v1beta1.ReleaseObservation {
 	}
 
 	return o
+}
+
+// rehydrateFromLabels restores deploy-time facts into the observation from
+// the release labels, which survive on the external resource itself, unlike
+// managed resource status, which crossplane-runtime reverts after a successful
+// Create. Releases deployed before label support have none: those keep the
+// previously persisted status values.
+func rehydrateFromLabels(cr *v1beta1.Release, rel *release.Release, lastDigest string, lastOwnershipTaken bool) {
+	// status.atProvider.digest only ever holds a full digest, while the label
+	// stores a truncated encoding. The label therefore confirms that the spec
+	// digest is what was deployed, which is then surfaced in full; when it
+	// does not confirm (drift about to be upgraded, or no label at all) the
+	// last persisted digest is the full digest of the last successful deploy,
+	// or empty when unknown.
+	cr.Status.AtProvider.Digest = lastDigest
+	if v, ok := rel.Labels[helmClient.LabelDigestHash]; ok {
+		specDigest := helmClient.EffectiveChartDigest(cr.Spec.ForProvider.Chart.URL, cr.Spec.ForProvider.Chart.Digest)
+		if v == helmClient.EncodeDigestLabel(specDigest) {
+			cr.Status.AtProvider.Digest = specDigest
+		}
+	}
+
+	if v, ok := rel.Labels[helmClient.LabelOwnershipTaken]; ok {
+		cr.Status.AtProvider.OwnershipTaken = v == "true"
+	} else {
+		cr.Status.AtProvider.OwnershipTaken = lastOwnershipTaken
+	}
 }
 
 // normalizeConfig JSON-serializes and re-deserializes a config map to
@@ -108,7 +136,10 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 
 	in := spec.ForProvider
 
-	if in.Chart.Name != ocm.Name {
+	// In URL mode the chart name is documented-ignored and possibly stale, so
+	// comparing it against the deployed chart would loop forever after a URL
+	// change to a differently-named chart.
+	if in.Chart.URL == "" && in.Chart.Name != ocm.Name {
 		return false, nil
 	}
 
@@ -119,15 +150,57 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 		return true, nil
 	}
 
-	// Check version match only if version is specified in spec
-	// For digest-only deployments, skip version check as version is optional
-	if in.Chart.Version != "" && in.Chart.Version != ocm.Version && in.Chart.Version != devel {
+	// In URL mode the deployed chart's metadata version is deliberately not
+	// compared: an OCI URL tag is an arbitrary string (e.g. :latest, :stable, a
+	// v-prefixed tag) that need not equal the chart's Chart.yaml version, so
+	// comparing them would report perpetual drift. A tag change is a URL change
+	// and is caught by the url-hash label below.
+	if in.Chart.URL == "" && versionDrifted(in.Chart.Version, ocm.Version) {
 		return false, nil
 	}
 
-	// Check if digest has changed - if specified, compare against last synced digest
-	// Note: Chart metadata doesn't include OCI digest, so we store it in status
-	if in.Chart.Digest != "" && s.AtProvider.Digest != "" && in.Chart.Digest != s.AtProvider.Digest {
+	// URL drift is detected via the label written at deploy time. Every release
+	// this provider deployed carries it, empty when no URL was used, so any
+	// difference from the encoded spec URL is drift: the URL changed, a URL was
+	// added to a repository-mode release, or the URL was cleared to switch back
+	// to repository mode (both encode to "").
+	if deployedURL, ok := observed.Labels[helmClient.LabelURLHash]; ok {
+		if deployedURL != helmClient.EncodeURLLabel(in.Chart.URL) {
+			return false, nil
+		}
+	} else if in.Chart.URL != "" && versionDrifted(in.Chart.Version, ocm.Version) {
+		// Releases deployed before label support carry no URL signal: a URL
+		// change on them stays invisible until another field triggers an
+		// upgrade, as before. The spec version is still compared for them so
+		// that a version bump keeps forcing the upgrade it always did, which
+		// is how a repository-mode release gets migrated to a URL. The upgrade
+		// writes the label, which takes over from then on, so an OCI tag that
+		// differs from the chart version cannot loop here.
+		return false, nil
+	}
+
+	// Digest drift is detected via the label written at deploy time, which
+	// makes the deployed digest observable. Every release this provider
+	// deployed carries it, empty when the deploy was not pinned, so any
+	// difference from the encoded spec digest is drift: pinned to another
+	// digest, pinned where none was, or unpinned. Releases deployed before
+	// label support fall back to the digest persisted in status.
+	specDigestEnc := helmClient.EncodeDigestLabel(helmClient.EffectiveChartDigest(in.Chart.URL, in.Chart.Digest))
+	if deployedDigest, ok := observed.Labels[helmClient.LabelDigestHash]; ok {
+		if deployedDigest != specDigestEnc {
+			return false, nil
+		}
+		if specDigestEnc == "" && in.Chart.Digest != "" {
+			// The spec pins a digest that does not resolve (it conflicts with
+			// the OCI URL's embedded digest, or the URL is malformed). The
+			// deploy rejects such specs; report drift so that error surfaces
+			// instead of masking the conflict as up-to-date. A URL-embedded
+			// digest that does not fit a label is deliberately not covered:
+			// the deploy accepts it and records it as unpinned, so reporting
+			// drift here would upgrade forever.
+			return false, nil
+		}
+	} else if in.Chart.Digest != "" && s.AtProvider.Digest != "" && in.Chart.Digest != s.AtProvider.Digest {
 		return false, nil
 	}
 
@@ -159,6 +232,13 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 	}
 
 	return true, nil
+}
+
+// versionDrifted reports whether the spec pins a chart version other than the
+// deployed one. An empty spec version (digest-only deployments, or not yet
+// late-initialized) and the devel range pin nothing.
+func versionDrifted(specVersion, deployedVersion string) bool {
+	return specVersion != "" && specVersion != deployedVersion && specVersion != devel
 }
 
 func isPending(s common.Status) bool {

@@ -75,7 +75,7 @@ data:
 		"affinity": map[string]interface{}{
 			"nodeAffinity": map[string]interface{}{},
 		},
-	}, nil)
+	}, nil, DeployOptions{})
 	if err != nil {
 		t.Fatalf("expected install to resolve HTTP schema reference: %v", err)
 	}

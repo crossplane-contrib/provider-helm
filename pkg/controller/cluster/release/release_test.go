@@ -69,8 +69,8 @@ func helmRelease(rm ...helmReleaseModifier) *v1beta1.Release {
 }
 
 type MockGetLastReleaseFn func(release string) (*release.Release, error)
-type MockInstallFn func(release string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (*release.Release, error)
-type MockUpgradeFn func(release string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (*release.Release, error)
+type MockInstallFn func(release string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (*release.Release, error)
+type MockUpgradeFn func(release string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (*release.Release, error)
 type MockRollBackFn func(release string) error
 type MockUninstallFn func(release string) error
 type MockPullAndLoadChartFn func(mg resource.Managed, creds *helmClient.RepoCreds) (*chart.Chart, error)
@@ -88,12 +88,12 @@ func (c *MockHelmClient) GetLastRelease(release string) (*release.Release, error
 	return c.MockGetLastRelease(release)
 }
 
-func (c *MockHelmClient) Install(release string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (*release.Release, error) {
-	return c.MockInstall(release, chart, vals, patches)
+func (c *MockHelmClient) Install(release string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (*release.Release, error) {
+	return c.MockInstall(release, chart, vals, patches, opts)
 }
 
-func (c *MockHelmClient) Upgrade(release string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (*release.Release, error) {
-	return c.MockUpgrade(release, chart, vals, patches)
+func (c *MockHelmClient) Upgrade(release string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (*release.Release, error) {
+	return c.MockUpgrade(release, chart, vals, patches, opts)
 }
 
 func (c *MockHelmClient) Rollback(release string) error {
@@ -554,7 +554,7 @@ func Test_helmExternal_Create(t *testing.T) {
 		"InstalledFailed": {
 			args: args{
 				helm: &MockHelmClient{
-					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
+					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
 						return nil, errBoom
 					},
 				},
@@ -581,7 +581,7 @@ func Test_helmExternal_Create(t *testing.T) {
 		"InstalledButLastReleaseIsNil": {
 			args: args{
 				helm: &MockHelmClient{
-					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
+					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
 						return nil, nil
 					},
 				},
@@ -597,7 +597,7 @@ func Test_helmExternal_Create(t *testing.T) {
 		"Success": {
 			args: args{
 				helm: &MockHelmClient{
-					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
+					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
 						return &release.Release{}, nil
 					},
 				},
@@ -613,7 +613,7 @@ func Test_helmExternal_Create(t *testing.T) {
 		"SuccessNamespaceExists": {
 			args: args{
 				helm: &MockHelmClient{
-					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
+					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
 						return &release.Release{}, nil
 					},
 				},
@@ -629,7 +629,7 @@ func Test_helmExternal_Create(t *testing.T) {
 		"SuccessSkipCreateNamespace": {
 			args: args{
 				helm: &MockHelmClient{
-					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
+					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
 						return &release.Release{}, nil
 					},
 				},
@@ -645,7 +645,7 @@ func Test_helmExternal_Create(t *testing.T) {
 		"LatestVersion": {
 			args: args{
 				helm: &MockHelmClient{
-					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
+					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
 						return &release.Release{}, nil
 					},
 					MockPullAndLoadChart: func(mg resource.Managed, creds *helmClient.RepoCreds) (*chart.Chart, error) {
@@ -705,7 +705,8 @@ func Test_helmExternal_Update(t *testing.T) {
 		mg        resource.Managed
 	}
 	type want struct {
-		err error
+		err            error
+		ownershipTaken bool
 	}
 	cases := map[string]struct {
 		args
@@ -792,10 +793,108 @@ func Test_helmExternal_Update(t *testing.T) {
 				err: nil,
 			},
 		},
+		"UpgradeDoesNotReAdoptOnceOwnershipTaken": {
+			// Observe rehydrated ownershipTaken from the release label on this
+			// same object before Update ran, so the upgrade must not exercise
+			// takeOwnership again even though the spec still requests it. The
+			// Connect-time view of status cannot be relied on for this: the
+			// runtime reverts status written during Create.
+			args: args{
+				helm: &MockHelmClient{
+					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
+						want := helmClient.DeployOptions{
+							Labels: map[string]string{
+								helmClient.LabelDigestHash:     "",
+								helmClient.LabelURLHash:        "",
+								helmClient.LabelOwnershipTaken: "true",
+							},
+						}
+						if diff := cmp.Diff(want, opts); diff != "" {
+							t.Errorf("Upgrade(...) options: -want, +got: %s", diff)
+						}
+						return &release.Release{}, nil
+					},
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					r.Spec.ForProvider.TakeOwnership = true
+					r.Status.AtProvider.OwnershipTaken = true
+				}),
+			},
+			want: want{
+				ownershipTaken: true,
+			},
+		},
+		"LateInitDoesNotReAdoptOnceOwnershipTaken": {
+			// Late-initialization's Update decodes the persisted status back
+			// into the object, dropping the ownership Observe rehydrated from
+			// the release label, so ownership must be decided before it.
+			args: args{
+				localKube: &test.MockClient{
+					MockUpdate: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+						obj.(*v1beta1.Release).Status = v1beta1.ReleaseStatus{}
+						return nil
+					},
+				},
+				helm: &MockHelmClient{
+					MockPullAndLoadChart: func(mg resource.Managed, creds *helmClient.RepoCreds) (*chart.Chart, error) {
+						return &chart.Chart{Metadata: &chart.Metadata{Name: testChart, Version: testVersion}}, nil
+					},
+					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
+						want := helmClient.DeployOptions{
+							Labels: map[string]string{
+								helmClient.LabelDigestHash:     "",
+								helmClient.LabelURLHash:        "",
+								helmClient.LabelOwnershipTaken: "true",
+							},
+						}
+						if diff := cmp.Diff(want, opts); diff != "" {
+							t.Errorf("Upgrade(...) options: -want, +got: %s", diff)
+						}
+						return &release.Release{}, nil
+					},
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					r.Spec.ForProvider.Chart.Version = ""
+					r.Spec.ForProvider.TakeOwnership = true
+					r.Status.AtProvider.OwnershipTaken = true
+				}),
+			},
+			want: want{
+				ownershipTaken: true,
+			},
+		},
+		"OwnershipKeptWhenTakeOwnershipUnset": {
+			// Adoption happened on an earlier deploy: unsetting takeOwnership
+			// neither forgets it nor skips the label, which back-fills it on
+			// releases adopted before label support.
+			args: args{
+				helm: &MockHelmClient{
+					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
+						want := helmClient.DeployOptions{
+							Labels: map[string]string{
+								helmClient.LabelDigestHash:     "",
+								helmClient.LabelURLHash:        "",
+								helmClient.LabelOwnershipTaken: "true",
+							},
+						}
+						if diff := cmp.Diff(want, opts); diff != "" {
+							t.Errorf("Upgrade(...) options: -want, +got: %s", diff)
+						}
+						return &release.Release{}, nil
+					},
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					r.Status.AtProvider.OwnershipTaken = true
+				}),
+			},
+			want: want{
+				ownershipTaken: true,
+			},
+		},
 		"UpgradeFailed": {
 			args: args{
 				helm: &MockHelmClient{
-					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
+					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
 						return nil, errBoom
 					},
 				},
@@ -808,7 +907,7 @@ func Test_helmExternal_Update(t *testing.T) {
 		"UpgradedButLastReleaseIsNil": {
 			args: args{
 				helm: &MockHelmClient{
-					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
+					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
 						return nil, nil
 					},
 				},
@@ -821,7 +920,7 @@ func Test_helmExternal_Update(t *testing.T) {
 		"Success": {
 			args: args{
 				helm: &MockHelmClient{
-					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch) (hr *release.Release, err error) {
+					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
 						return &release.Release{}, nil
 					},
 				},
@@ -844,6 +943,11 @@ func Test_helmExternal_Update(t *testing.T) {
 			_, gotErr := e.Update(context.Background(), tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
 				t.Fatalf("e.Update(...): -want error, +got error: %s", diff)
+			}
+			if cr, ok := tc.args.mg.(*v1beta1.Release); ok {
+				if diff := cmp.Diff(tc.want.ownershipTaken, cr.Status.AtProvider.OwnershipTaken); diff != "" {
+					t.Errorf("e.Update(...): -want status.atProvider.ownershipTaken, +got: %s", diff)
+				}
 			}
 		})
 	}
@@ -935,7 +1039,6 @@ func Test_withRelease(t *testing.T) {
 					r.Spec.ForProvider.SkipCRDs = true
 					r.Spec.ForProvider.InsecureSkipTLSVerify = true
 					r.Spec.ForProvider.PlainHTTP = true
-					r.Spec.ForProvider.TakeOwnership = true
 				}),
 			},
 			want: want{
@@ -946,20 +1049,20 @@ func Test_withRelease(t *testing.T) {
 					SkipCRDs:              true,
 					InsecureSkipTLSVerify: true,
 					PlainHTTP:             true,
-					TakeOwnership:         true,
 				},
 			},
 		},
-		"TakeOwnershipFalse": {
+		"Defaults": {
+			// Ownership and labels are not Connect-time arguments: they are
+			// decided per deploy by deployOptions.
 			args: args{
 				cr: helmRelease(func(r *v1beta1.Release) {
-					r.Spec.ForProvider.TakeOwnership = false
+					r.Spec.ForProvider.TakeOwnership = true
 				}),
 			},
 			want: want{
 				args: helmClient.Args{
-					Timeout:       5 * time.Minute, // default timeout
-					TakeOwnership: false,
+					Timeout: 5 * time.Minute, // default timeout
 				},
 			},
 		},
@@ -971,6 +1074,105 @@ func Test_withRelease(t *testing.T) {
 			applier(got)
 			if diff := cmp.Diff(tc.want.args, *got); diff != "" {
 				t.Fatalf("withRelease(...): -want args, +got args: %s", diff)
+			}
+		})
+	}
+}
+
+func Test_deployOptions(t *testing.T) {
+	const (
+		chartURL = "oci://registry.example.com/charts/mychart:1.2.3"
+		digest   = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	)
+	type args struct {
+		cr *v1beta1.Release
+	}
+	type want struct {
+		opts helmClient.DeployOptions
+	}
+	cases := map[string]struct {
+		args
+		want
+	}{
+		"RepositoryModeWithoutOwnership": {
+			// The digest and URL labels are written empty rather than omitted,
+			// so that this release stays distinguishable from one deployed
+			// before label support and a later pin or URL is detected as drift.
+			args: args{
+				cr: helmRelease(),
+			},
+			want: want{
+				opts: helmClient.DeployOptions{
+					Labels: map[string]string{
+						helmClient.LabelDigestHash: "",
+						helmClient.LabelURLHash:    "",
+					},
+				},
+			},
+		},
+		"URLAndDigestWithOwnership": {
+			args: args{
+				cr: helmRelease(func(r *v1beta1.Release) {
+					r.Spec.ForProvider.Chart.URL = chartURL
+					r.Spec.ForProvider.Chart.Digest = digest
+					r.Spec.ForProvider.TakeOwnership = true
+				}),
+			},
+			want: want{
+				opts: helmClient.DeployOptions{
+					TakeOwnership: true,
+					Labels: map[string]string{
+						helmClient.LabelDigestHash:     helmClient.EncodeDigestLabel(digest),
+						helmClient.LabelURLHash:        helmClient.EncodeURLLabel(chartURL),
+						helmClient.LabelOwnershipTaken: "true",
+					},
+				},
+			},
+		},
+		"OwnershipStickyWhenAlreadyTaken": {
+			// Ownership was already taken on a prior deploy: even with
+			// takeOwnership still requested, adoption is not re-exercised, while
+			// the ownership label keeps recording it.
+			args: args{
+				cr: helmRelease(func(r *v1beta1.Release) {
+					r.Spec.ForProvider.TakeOwnership = true
+					r.Status.AtProvider.OwnershipTaken = true
+				}),
+			},
+			want: want{
+				opts: helmClient.DeployOptions{
+					Labels: map[string]string{
+						helmClient.LabelDigestHash:     "",
+						helmClient.LabelURLHash:        "",
+						helmClient.LabelOwnershipTaken: "true",
+					},
+				},
+			},
+		},
+		"OwnershipLabelBackfilledFromStatus": {
+			// A release adopted before label support has only the persisted
+			// status as a record: the label is written even with takeOwnership
+			// unset, so the record survives the status.
+			args: args{
+				cr: helmRelease(func(r *v1beta1.Release) {
+					r.Status.AtProvider.OwnershipTaken = true
+				}),
+			},
+			want: want{
+				opts: helmClient.DeployOptions{
+					Labels: map[string]string{
+						helmClient.LabelDigestHash:     "",
+						helmClient.LabelURLHash:        "",
+						helmClient.LabelOwnershipTaken: "true",
+					},
+				},
+			},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if diff := cmp.Diff(tc.want.opts, deployOptions(tc.args.cr)); diff != "" {
+				t.Errorf("deployOptions(...): -want, +got: %s", diff)
 			}
 		})
 	}

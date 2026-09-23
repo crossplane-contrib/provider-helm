@@ -110,11 +110,24 @@ const (
 	devel                              = ">0.0.0-0"
 )
 
+// DeployOptions are the per-deploy inputs to Install and Upgrade. Unlike Args,
+// which configure the client once per Connect, these depend on what the
+// controller observed in the same reconcile: which labels describe this deploy
+// and whether ownership of pre-existing resources still has to be taken.
+type DeployOptions struct {
+	// TakeOwnership ignores the check for helm annotations and takes ownership
+	// of the existing resources.
+	TakeOwnership bool
+	// Labels are custom release labels stored with the release. On upgrade
+	// helm merges them over the previous release's labels.
+	Labels map[string]string
+}
+
 // Client is the interface to interact with Helm
 type Client interface {
 	GetLastRelease(release string) (*release.Release, error)
-	Install(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error)
-	Upgrade(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error)
+	Install(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch, opts DeployOptions) (*release.Release, error)
+	Upgrade(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch, opts DeployOptions) (*release.Release, error)
 	Rollback(release string) error
 	Uninstall(release string) error
 	PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*chart.Chart, error)
@@ -248,7 +261,6 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	ic.InsecureSkipTLSVerify = args.InsecureSkipTLSVerify
 	ic.PlainHTTP = args.PlainHTTP
 	ic.CaFile = caFile
-	ic.TakeOwnership = args.TakeOwnership
 	ic.ForceConflicts = args.SSAForceConflicts
 
 	uc := action.NewUpgrade(actionConfig)
@@ -258,7 +270,6 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	uc.InsecureSkipTLSVerify = args.InsecureSkipTLSVerify
 	uc.PlainHTTP = args.PlainHTTP
 	uc.CaFile = caFile
-	uc.TakeOwnership = args.TakeOwnership
 	uc.MaxHistory = args.MaxHistory
 	uc.ForceConflicts = args.SSAForceConflicts
 
@@ -672,8 +683,10 @@ func (hc *client) GetLastRelease(name string) (*release.Release, error) {
 	return rel, nil
 }
 
-func (hc *client) Install(name string, chrt *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error) {
+func (hc *client) Install(name string, chrt *chart.Chart, vals map[string]interface{}, patches []ktype.Patch, opts DeployOptions) (*release.Release, error) {
 	hc.installClient.ReleaseName = name
+	hc.installClient.TakeOwnership = opts.TakeOwnership
+	hc.installClient.Labels = opts.Labels
 
 	if len(patches) > 0 {
 		hc.installClient.PostRenderer = &KustomizationRender{
@@ -693,9 +706,11 @@ func (hc *client) Install(name string, chrt *chart.Chart, vals map[string]interf
 	return rel, nil
 }
 
-func (hc *client) Upgrade(name string, chrt *chart.Chart, vals map[string]interface{}, patches []ktype.Patch) (*release.Release, error) {
+func (hc *client) Upgrade(name string, chrt *chart.Chart, vals map[string]interface{}, patches []ktype.Patch, opts DeployOptions) (*release.Release, error) {
 	// Reset values so that source of truth for desired state is always the CR itself
 	hc.upgradeClient.ResetValues = true
+	hc.upgradeClient.TakeOwnership = opts.TakeOwnership
+	hc.upgradeClient.Labels = opts.Labels
 
 	if len(patches) > 0 {
 		hc.upgradeClient.PostRenderer = &KustomizationRender{
