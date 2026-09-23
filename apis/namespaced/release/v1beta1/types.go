@@ -42,9 +42,11 @@ type ChartSpec struct {
 	// When URL is set, Version is not late initialized. For an OCI URL without a tag or
 	// digest, Version selects the chart and changing it triggers an upgrade. Otherwise the
 	// URL (and its tag) or Digest selects the chart and changing Version does not trigger an
-	// upgrade: change those instead. A Version conflicting with the URL tag is rejected at
-	// deploy time. Avoid floating tags (e.g. :latest, or no tag and no Version): a new chart
-	// pushed under the same tag is not detected.
+	// upgrade: change those instead. A Version conflicting with the URL tag is rejected, so
+	// when switching a Release to a tagged URL, set Version to the tag or remove it: one left
+	// from repository mode, including a late-initialized one, would conflict. Avoid floating
+	// tags (e.g. :latest, or no tag and no Version): a new chart pushed under the same tag is
+	// not detected.
 	// The actual deployed version is always available in status.atProvider.version for observability.
 	Version string `json:"version,omitempty"`
 	// URL to chart package (typically .tgz), optional and overrides others fields in the spec
