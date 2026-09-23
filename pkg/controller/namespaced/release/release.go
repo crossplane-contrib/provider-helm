@@ -185,8 +185,16 @@ func deployOptions(cr *v1beta1.Release) helmClient.DeployOptions {
 	takeOwnership := cr.Spec.ForProvider.TakeOwnership && !cr.Status.AtProvider.OwnershipTaken
 	return helmClient.DeployOptions{
 		TakeOwnership: takeOwnership,
-		Labels:        releaseLabels(cr.Spec.ForProvider.Chart, takeOwnership),
+		Labels:        releaseLabels(cr.Spec.ForProvider.Chart, ownershipTaken(cr)),
 	}
+}
+
+// ownershipTaken reports whether adoption has happened for the release once a
+// deploy of cr succeeds: on an earlier deploy or on this one. Recording it on
+// every such deploy also back-fills the label on releases adopted before label
+// support, whose only record of it is the persisted status.
+func ownershipTaken(cr *v1beta1.Release) bool {
+	return cr.Status.AtProvider.OwnershipTaken || cr.Spec.ForProvider.TakeOwnership
 }
 
 // releaseLabels computes the custom release labels for a deploy. The digest
@@ -195,12 +203,12 @@ func deployOptions(cr *v1beta1.Release) helmClient.DeployOptions {
 // and a later pin, unpin or URL change is detected as drift against them. The
 // ownership label is sticky: it is only ever added, recording that adoption
 // happened so later upgrades never silently re-adopt.
-func releaseLabels(chart v1beta1.ChartSpec, takeOwnership bool) map[string]string {
+func releaseLabels(chart v1beta1.ChartSpec, ownershipTaken bool) map[string]string {
 	labels := map[string]string{
 		helmClient.LabelDigestHash: helmClient.EncodeDigestLabel(helmClient.EffectiveChartDigest(chart.URL, chart.Digest)),
 		helmClient.LabelURLHash:    helmClient.EncodeURLLabel(chart.URL),
 	}
-	if takeOwnership {
+	if ownershipTaken {
 		labels[helmClient.LabelOwnershipTaken] = "true"
 	}
 	return labels
@@ -396,6 +404,7 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action d
 		}
 	}
 
+	taken := ownershipTaken(cr)
 	rel, err := action(meta.GetExternalName(cr), chart, cv, p, deployOptions(cr))
 
 	if err != nil {
@@ -414,10 +423,7 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action d
 	cr.Status.AtProvider = generateObservation(rel)
 	// Store the digest in status for drift detection
 	cr.Status.AtProvider.Digest = helmClient.EffectiveChartDigest(cr.Spec.ForProvider.Chart.URL, cr.Spec.ForProvider.Chart.Digest)
-	// Mark ownership as taken if TakeOwnership was used
-	if cr.Spec.ForProvider.TakeOwnership {
-		cr.Status.AtProvider.OwnershipTaken = true
-	}
+	cr.Status.AtProvider.OwnershipTaken = taken
 
 	return nil
 }

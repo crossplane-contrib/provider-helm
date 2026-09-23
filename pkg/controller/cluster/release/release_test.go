@@ -705,7 +705,8 @@ func Test_helmExternal_Update(t *testing.T) {
 		mg        resource.Managed
 	}
 	type want struct {
-		err error
+		err            error
+		ownershipTaken bool
 	}
 	cases := map[string]struct {
 		args
@@ -803,8 +804,9 @@ func Test_helmExternal_Update(t *testing.T) {
 					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
 						want := helmClient.DeployOptions{
 							Labels: map[string]string{
-								helmClient.LabelDigestHash: "",
-								helmClient.LabelURLHash:    "",
+								helmClient.LabelDigestHash:     "",
+								helmClient.LabelURLHash:        "",
+								helmClient.LabelOwnershipTaken: "true",
 							},
 						}
 						if diff := cmp.Diff(want, opts); diff != "" {
@@ -819,7 +821,35 @@ func Test_helmExternal_Update(t *testing.T) {
 				}),
 			},
 			want: want{
-				err: nil,
+				ownershipTaken: true,
+			},
+		},
+		"OwnershipKeptWhenTakeOwnershipUnset": {
+			// Adoption happened on an earlier deploy: unsetting takeOwnership
+			// neither forgets it nor skips the label, which back-fills it on
+			// releases adopted before label support.
+			args: args{
+				helm: &MockHelmClient{
+					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
+						want := helmClient.DeployOptions{
+							Labels: map[string]string{
+								helmClient.LabelDigestHash:     "",
+								helmClient.LabelURLHash:        "",
+								helmClient.LabelOwnershipTaken: "true",
+							},
+						}
+						if diff := cmp.Diff(want, opts); diff != "" {
+							t.Errorf("Upgrade(...) options: -want, +got: %s", diff)
+						}
+						return &release.Release{}, nil
+					},
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					r.Status.AtProvider.OwnershipTaken = true
+				}),
+			},
+			want: want{
+				ownershipTaken: true,
 			},
 		},
 		"UpgradeFailed": {
@@ -874,6 +904,11 @@ func Test_helmExternal_Update(t *testing.T) {
 			_, gotErr := e.Update(context.Background(), tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
 				t.Fatalf("e.Update(...): -want error, +got error: %s", diff)
+			}
+			if cr, ok := tc.args.mg.(*v1beta1.Release); ok {
+				if diff := cmp.Diff(tc.want.ownershipTaken, cr.Status.AtProvider.OwnershipTaken); diff != "" {
+					t.Errorf("e.Update(...): -want status.atProvider.ownershipTaken, +got: %s", diff)
+				}
 			}
 		})
 	}
@@ -1057,9 +1092,8 @@ func Test_deployOptions(t *testing.T) {
 		},
 		"OwnershipStickyWhenAlreadyTaken": {
 			// Ownership was already taken on a prior deploy: even with
-			// takeOwnership still requested, adoption is not re-exercised and the
-			// sticky ownership label is omitted so helm's upgrade label-merge
-			// preserves the existing one rather than re-writing it.
+			// takeOwnership still requested, adoption is not re-exercised, while
+			// the ownership label keeps recording it.
 			args: args{
 				cr: helmRelease(func(r *v1beta1.Release) {
 					r.Spec.ForProvider.TakeOwnership = true
@@ -1069,8 +1103,28 @@ func Test_deployOptions(t *testing.T) {
 			want: want{
 				opts: helmClient.DeployOptions{
 					Labels: map[string]string{
-						helmClient.LabelDigestHash: "",
-						helmClient.LabelURLHash:    "",
+						helmClient.LabelDigestHash:     "",
+						helmClient.LabelURLHash:        "",
+						helmClient.LabelOwnershipTaken: "true",
+					},
+				},
+			},
+		},
+		"OwnershipLabelBackfilledFromStatus": {
+			// A release adopted before label support has only the persisted
+			// status as a record: the label is written even with takeOwnership
+			// unset, so the record survives the status.
+			args: args{
+				cr: helmRelease(func(r *v1beta1.Release) {
+					r.Status.AtProvider.OwnershipTaken = true
+				}),
+			},
+			want: want{
+				opts: helmClient.DeployOptions{
+					Labels: map[string]string{
+						helmClient.LabelDigestHash:     "",
+						helmClient.LabelURLHash:        "",
+						helmClient.LabelOwnershipTaken: "true",
 					},
 				},
 			},
