@@ -596,6 +596,20 @@ func resolveEffectiveVersion(urlVersion, specVersion string) (string, error) {
 	return specVersion, nil
 }
 
+// URLPullsSpecVersion reports whether a deploy from chartURL selects the chart
+// by spec.forProvider.chart.version, so that the deployed chart version is
+// expected to match it. That holds only for an OCI URL without an embedded tag
+// or digest and without specDigest: a tag or digest selects the chart on its
+// own (Helm resolves a digest even when the version tag does not exist), and a
+// non-OCI URL points at a fixed package.
+func URLPullsSpecVersion(chartURL, specDigest string) bool {
+	if specDigest != "" || !registry.IsOCI(chartURL) {
+		return false
+	}
+	_, urlVersion, urlDigest, err := resolveOCIChartVersionAndDigest(chartURL)
+	return err == nil && urlVersion == "" && urlDigest == ""
+}
+
 func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*chart.Chart, error) { //nolint:gocyclo
 	var chartFilePath, chartUrl, chartName, chartVersion, chartDigest, chartRepo string
 	var err error

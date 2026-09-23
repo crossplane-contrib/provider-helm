@@ -764,6 +764,58 @@ func TestResolveEffectiveVersion(t *testing.T) {
 	}
 }
 
+func TestURLPullsSpecVersion(t *testing.T) {
+	type args struct {
+		chartURL   string
+		specDigest string
+	}
+	cases := map[string]struct {
+		args args
+		want bool
+	}{
+		"BareOCIURL": {
+			args: args{chartURL: "oci://registry.example.com/charts/mychart"},
+			want: true,
+		},
+		"BareOCIURLWithRegistryPort": {
+			args: args{chartURL: "oci://registry.example.com:5000/charts/mychart"},
+			want: true,
+		},
+		"TaggedOCIURL": {
+			args: args{chartURL: "oci://registry.example.com/charts/mychart:1.2.3"},
+			want: false,
+		},
+		"DigestPinnedOCIURL": {
+			args: args{chartURL: "oci://registry.example.com/charts/mychart@sha256:c56f4d760bc9da702f231f37fcec89c66b0993f0cb91446f86d014b133c6693f"},
+			want: false,
+		},
+		"BareOCIURLWithSpecDigest": {
+			args: args{
+				chartURL:   "oci://registry.example.com/charts/mychart",
+				specDigest: "sha256:c56f4d760bc9da702f231f37fcec89c66b0993f0cb91446f86d014b133c6693f",
+			},
+			want: false,
+		},
+		"NonOCIURL": {
+			args: args{chartURL: "https://charts.example.com/mychart-1.2.3.tgz"},
+			want: false,
+		},
+		"NoURL": {
+			args: args{},
+			want: false,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := URLPullsSpecVersion(tc.args.chartURL, tc.args.specDigest)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("URLPullsSpecVersion(...): -want, +got:\n%s", diff)
+			}
+		})
+	}
+}
+
 // TestDigestCacheRoundTrip proves the store/lookup key agreement for
 // digest-pinned charts: the path resolveCachedChartPathWithDigest constructs
 // matches the filename Helm writes for a digest pull, so a chart pulled on one

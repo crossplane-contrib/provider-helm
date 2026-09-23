@@ -154,12 +154,14 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 		return true, nil
 	}
 
-	// In URL mode the deployed chart's metadata version is deliberately not
-	// compared: an OCI URL tag is an arbitrary string (e.g. :latest, :stable, a
-	// v-prefixed tag) that need not equal the chart's Chart.yaml version, so
-	// comparing them would report perpetual drift. A tag change is a URL change
-	// and is caught by the url-hash label below.
-	if in.Chart.URL == "" && versionDrifted(in.Chart.Version, ocm.Version) {
+	// The deployed chart's metadata version is compared only when the deploy
+	// selects the chart by the spec version: in repository mode and for an OCI
+	// URL without a tag or digest. An OCI URL tag is an arbitrary string (e.g.
+	// :latest, :stable, a v-prefixed tag) that need not equal the chart's
+	// Chart.yaml version, so comparing it would report perpetual drift; a tag
+	// change is a URL change and is caught by the url-hash label below.
+	pullsSpecVersion := in.Chart.URL == "" || helmClient.URLPullsSpecVersion(in.Chart.URL, in.Chart.Digest)
+	if pullsSpecVersion && versionDrifted(in.Chart.Version, ocm.Version) {
 		return false, nil
 	}
 
