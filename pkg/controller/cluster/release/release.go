@@ -364,6 +364,11 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action d
 		return err
 	}
 
+	// Decided before late-initialization: its Update decodes the persisted
+	// status back into cr, dropping what Observe rehydrated from the labels.
+	opts := deployOptions(cr)
+	taken := ownershipTaken(cr)
+
 	// Check if LateInitialize is allowed by management policies
 	mp := sets.New[xpv2.ManagementAction](cr.Spec.ManagementPolicies...)
 	shouldLateInit := len(mp) == 0 || mp.HasAny(xpv2.ManagementActionLateInitialize, xpv2.ManagementActionAll)
@@ -395,8 +400,7 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action d
 		}
 	}
 
-	taken := ownershipTaken(cr)
-	rel, err := action(meta.GetExternalName(cr), chart, cv, p, deployOptions(cr))
+	rel, err := action(meta.GetExternalName(cr), chart, cv, p, opts)
 
 	if err != nil {
 		return err

@@ -824,6 +824,45 @@ func Test_helmExternal_Update(t *testing.T) {
 				ownershipTaken: true,
 			},
 		},
+		"LateInitDoesNotReAdoptOnceOwnershipTaken": {
+			// Late-initialization's Update decodes the persisted status back
+			// into the object, dropping the ownership Observe rehydrated from
+			// the release label, so ownership must be decided before it.
+			args: args{
+				localKube: &test.MockClient{
+					MockUpdate: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+						obj.(*v1beta1.Release).Status = v1beta1.ReleaseStatus{}
+						return nil
+					},
+				},
+				helm: &MockHelmClient{
+					MockPullAndLoadChart: func(mg resource.Managed, creds *helmClient.RepoCreds) (*chart.Chart, error) {
+						return &chart.Chart{Metadata: &chart.Metadata{Name: testChart, Version: testVersion}}, nil
+					},
+					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
+						want := helmClient.DeployOptions{
+							Labels: map[string]string{
+								helmClient.LabelDigestHash:     "",
+								helmClient.LabelURLHash:        "",
+								helmClient.LabelOwnershipTaken: "true",
+							},
+						}
+						if diff := cmp.Diff(want, opts); diff != "" {
+							t.Errorf("Upgrade(...) options: -want, +got: %s", diff)
+						}
+						return &release.Release{}, nil
+					},
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					r.Spec.ForProvider.Chart.Version = ""
+					r.Spec.ForProvider.TakeOwnership = true
+					r.Status.AtProvider.OwnershipTaken = true
+				}),
+			},
+			want: want{
+				ownershipTaken: true,
+			},
+		},
 		"OwnershipKeptWhenTakeOwnershipUnset": {
 			// Adoption happened on an earlier deploy: unsetting takeOwnership
 			// neither forgets it nor skips the label, which back-fills it on
