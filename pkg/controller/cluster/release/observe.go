@@ -161,6 +161,14 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 		return false, nil
 	}
 
+	// A version embedded in an OCI URL that conflicts with the spec version is
+	// rejected at deploy time. Report drift so that the error surfaces instead
+	// of the conflict passing as up to date; both values come from the spec, so
+	// this cannot loop against the deployed chart.
+	if helmClient.URLVersionConflicts(in.Chart.URL, in.Chart.Version) {
+		return false, nil
+	}
+
 	// URL drift is detected via the label written at deploy time. Every release
 	// this provider deployed carries it, empty when no URL was used, so any
 	// difference from the encoded spec URL is drift: the URL changed, a URL was

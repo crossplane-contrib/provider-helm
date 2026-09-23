@@ -867,3 +867,59 @@ func TestDigestCacheRoundTrip(t *testing.T) {
 		t.Errorf("ensureChartCached() = %q, want cache hit at %q", gotPath, cachePath)
 	}
 }
+
+func TestURLVersionConflicts(t *testing.T) {
+	type args struct {
+		chartURL    string
+		specVersion string
+	}
+	cases := map[string]struct {
+		args args
+		want bool
+	}{
+		"TagConflictsWithSpecVersion": {
+			args: args{chartURL: "oci://registry.example.com/charts/mychart:1.2.3", specVersion: "2.0.0"},
+			want: true,
+		},
+		"TagAndDigestConflictWithSpecVersion": {
+			args: args{
+				chartURL:    "oci://registry.example.com/charts/mychart:1.2.3@sha256:c56f4d760bc9da702f231f37fcec89c66b0993f0cb91446f86d014b133c6693f",
+				specVersion: "2.0.0",
+			},
+			want: true,
+		},
+		"TagMatchesSpecVersion": {
+			args: args{chartURL: "oci://registry.example.com/charts/mychart:1.2.3", specVersion: "1.2.3"},
+			want: false,
+		},
+		"TagWithoutSpecVersion": {
+			args: args{chartURL: "oci://registry.example.com/charts/mychart:1.2.3"},
+			want: false,
+		},
+		"TagWithDevelSpecVersion": {
+			args: args{chartURL: "oci://registry.example.com/charts/mychart:1.2.3", specVersion: devel},
+			want: false,
+		},
+		"BareOCIURLWithSpecVersion": {
+			args: args{chartURL: "oci://registry.example.com/charts/mychart", specVersion: "2.0.0"},
+			want: false,
+		},
+		"NonOCIURLWithSpecVersion": {
+			args: args{chartURL: "https://charts.example.com/mychart-1.2.3.tgz", specVersion: "2.0.0"},
+			want: false,
+		},
+		"NoURL": {
+			args: args{specVersion: "2.0.0"},
+			want: false,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := URLVersionConflicts(tc.args.chartURL, tc.args.specVersion)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("URLVersionConflicts(...): -want, +got:\n%s", diff)
+			}
+		})
+	}
+}

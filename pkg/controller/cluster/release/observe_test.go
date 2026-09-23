@@ -1018,10 +1018,10 @@ func Test_isUpToDate(t *testing.T) {
 				err: nil,
 			},
 		},
-		"UpToDate_OCIURLVersionConflictDeferredToDeploy": {
-			// A same-URL OCI version conflict is no longer drift: the URL-mode
-			// version comparison was removed, so the conflict is surfaced at
-			// deploy time instead of looping here.
+		"NotUpToDate_OCIURLVersionConflict": {
+			// The URL tag conflicts with the spec version, which the deploy
+			// rejects; reporting drift surfaces that error instead of passing
+			// the conflict as up to date.
 			args: args{
 				kube: &test.MockClient{
 					MockGet: nil,
@@ -1056,7 +1056,7 @@ func Test_isUpToDate(t *testing.T) {
 				status: v1beta1.ReleaseStatus{},
 			},
 			want: want{
-				out: true,
+				out: false,
 				err: nil,
 			},
 		},

@@ -610,6 +610,20 @@ func URLPullsSpecVersion(chartURL, specDigest string) bool {
 	return err == nil && urlVersion == "" && urlDigest == ""
 }
 
+// URLVersionConflicts reports whether chartURL is an OCI URL embedding a
+// version that conflicts with specVersion, a spec every deploy rejects.
+func URLVersionConflicts(chartURL, specVersion string) bool {
+	if !registry.IsOCI(chartURL) {
+		return false
+	}
+	_, urlVersion, _, err := resolveOCIChartVersionAndDigest(chartURL)
+	if err != nil {
+		return false
+	}
+	_, err = resolveEffectiveVersion(urlVersion, specVersion)
+	return err != nil
+}
+
 func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*chart.Chart, error) { //nolint:gocyclo
 	var chartFilePath, chartUrl, chartName, chartVersion, chartDigest, chartRepo string
 	var err error
