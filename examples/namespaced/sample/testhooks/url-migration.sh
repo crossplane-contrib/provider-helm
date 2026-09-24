@@ -4,11 +4,14 @@ set -euo pipefail
 # A release deployed in repository mode carries an empty url-hash label, which
 # distinguishes it from a release deployed before label support. Setting
 # spec.forProvider.chart.url on it afterwards must be detected as drift against
-# that label and roll the release to the chart the URL pins, even though name
-# and version are not compared in URL mode.
+# that label and roll the release to the chart the URL pins. The version moves
+# to the URL tag in the same patch, since a leftover repository-mode version
+# that conflicts with the tag is rejected. A tagged URL does not compare the
+# version, so the url-hash label is still what triggers the upgrade.
 
 RESOURCE="release.helm.m.crossplane.io/url-migration-namespaced"
-NEW_URL="oci://ghcr.io/stefanprodan/charts/podinfo:6.10.2"
+NEW_VERSION="6.10.2"
+NEW_URL="oci://ghcr.io/stefanprodan/charts/podinfo:${NEW_VERSION}"
 
 deployed_version() {
   ${KUBECTL} -n crossplane-system get "${RESOURCE}" -o jsonpath='{.status.atProvider.version}'
@@ -24,12 +27,12 @@ echo "release secret carrying the url-hash label: ${SECRET}"
 URL_HASH=$(${KUBECTL} -n crossplane-system get "${SECRET}" -o jsonpath='{.metadata.labels.release\.helm\.crossplane\.io/url-hash}')
 [ -z "${URL_HASH}" ]
 
-${KUBECTL} -n crossplane-system patch "${RESOURCE}" --type=merge -p "{\"spec\":{\"forProvider\":{\"chart\":{\"url\":\"${NEW_URL}\"}}}}"
+${KUBECTL} -n crossplane-system patch "${RESOURCE}" --type=merge -p "{\"spec\":{\"forProvider\":{\"chart\":{\"url\":\"${NEW_URL}\",\"version\":\"${NEW_VERSION}\"}}}}"
 
 for _ in $(seq 1 60); do
-  if [ "$(deployed_version)" = "6.10.2" ]; then
+  if [ "$(deployed_version)" = "${NEW_VERSION}" ]; then
     revision=$(${KUBECTL} -n crossplane-system get "${RESOURCE}" -o jsonpath='{.status.atProvider.revision}')
-    echo "upgraded to 6.10.2 (helm revision ${revision})"
+    echo "upgraded to ${NEW_VERSION} (helm revision ${revision})"
     [ "${revision}" -ge 2 ]
     exit 0
   fi

@@ -651,6 +651,16 @@ func TestPullAndLoadChart_Validation(t *testing.T) {
 			},
 			wantErr: errDigestNotSupportedForNonOCI,
 		},
+		"DigestWithNonOCIURLAndOCIRepository": {
+			// The URL is the sole pull source when set, so an OCI Repository
+			// next to it does not make the digest applicable.
+			chart: clusterv1beta1.ChartSpec{
+				URL:        "https://charts.example.com/mychart-1.0.0.tgz",
+				Repository: "oci://registry.example.com/charts",
+				Digest:     digest,
+			},
+			wantErr: errDigestNotSupportedForNonOCI,
+		},
 		"DigestWithNoURLOrRepository": {
 			chart: clusterv1beta1.ChartSpec{
 				Name:   "mychart",
@@ -659,8 +669,6 @@ func TestPullAndLoadChart_Validation(t *testing.T) {
 			wantErr: errDigestNotSupportedForNonOCI,
 		},
 		"NoURLMissingChartName": {
-			// version set so we skip the "pull latest" branch and reach the
-			// no-URL resolution branch that validates name/repository.
 			chart: clusterv1beta1.ChartSpec{
 				Repository: "https://charts.example.com",
 				Version:    "1.0.0",
@@ -674,6 +682,32 @@ func TestPullAndLoadChart_Validation(t *testing.T) {
 			},
 			wantErr: errNoChartRepository,
 		},
+		"NoURLNoVersionMissingChartName": {
+			// No version and no digest previously short-circuited into the
+			// "pull latest" branch, past name/repository validation, and failed
+			// with an opaque helm error.
+			chart: clusterv1beta1.ChartSpec{
+				Repository: "https://charts.example.com",
+			},
+			wantErr: errNoChartName,
+		},
+		"NoURLNoVersionMissingRepository": {
+			chart: clusterv1beta1.ChartSpec{
+				Name: "mychart",
+			},
+			wantErr: errNoChartRepository,
+		},
+		"AllEmpty": {
+			chart:   clusterv1beta1.ChartSpec{},
+			wantErr: errNoChartName,
+		},
+		"OCIURLVersionConflictsWithSpecVersion": {
+			chart: clusterv1beta1.ChartSpec{
+				URL:     "oci://registry.example.com/charts/mychart:1.2.3",
+				Version: "2.0.0",
+			},
+			wantErr: fmt.Sprintf(errVersionMismatchTmpl, "1.2.3", "2.0.0"),
+		},
 	}
 
 	for name, tc := range cases {
@@ -684,6 +718,109 @@ func TestPullAndLoadChart_Validation(t *testing.T) {
 			}
 			if err.Error() != tc.wantErr {
 				t.Errorf("PullAndLoadChart() error = %q, want %q", err.Error(), tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestResolveEffectiveVersion(t *testing.T) {
+	cases := map[string]struct {
+		urlVersion  string
+		specVersion string
+		want        string
+		wantErr     error
+	}{
+		"BothEmpty": {
+			want: "",
+		},
+		"URLOnly": {
+			urlVersion: "1.2.3",
+			want:       "1.2.3",
+		},
+		"SpecOnly": {
+			specVersion: "1.2.3",
+			want:        "1.2.3",
+		},
+		"BothMatch": {
+			urlVersion:  "1.2.3",
+			specVersion: "1.2.3",
+			want:        "1.2.3",
+		},
+		"Conflict": {
+			urlVersion:  "1.2.3",
+			specVersion: "2.0.0",
+			wantErr:     errors.Errorf(errVersionMismatchTmpl, "1.2.3", "2.0.0"),
+		},
+		"DevelSpecTreatedAsUnset": {
+			urlVersion:  "1.2.3",
+			specVersion: devel,
+			want:        "1.2.3",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got, err := resolveEffectiveVersion(tc.urlVersion, tc.specVersion)
+			if diff := cmp.Diff(tc.wantErr, err, test.EquateErrors()); diff != "" {
+				t.Fatalf("resolveEffectiveVersion() error: -want, +got:\n%s", diff)
+			}
+			if err != nil {
+				return
+			}
+			if got != tc.want {
+				t.Errorf("resolveEffectiveVersion() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestURLPullsSpecVersion(t *testing.T) {
+	type args struct {
+		chartURL   string
+		specDigest string
+	}
+	cases := map[string]struct {
+		args args
+		want bool
+	}{
+		"BareOCIURL": {
+			args: args{chartURL: "oci://registry.example.com/charts/mychart"},
+			want: true,
+		},
+		"BareOCIURLWithRegistryPort": {
+			args: args{chartURL: "oci://registry.example.com:5000/charts/mychart"},
+			want: true,
+		},
+		"TaggedOCIURL": {
+			args: args{chartURL: "oci://registry.example.com/charts/mychart:1.2.3"},
+			want: false,
+		},
+		"DigestPinnedOCIURL": {
+			args: args{chartURL: "oci://registry.example.com/charts/mychart@sha256:c56f4d760bc9da702f231f37fcec89c66b0993f0cb91446f86d014b133c6693f"},
+			want: false,
+		},
+		"BareOCIURLWithSpecDigest": {
+			args: args{
+				chartURL:   "oci://registry.example.com/charts/mychart",
+				specDigest: "sha256:c56f4d760bc9da702f231f37fcec89c66b0993f0cb91446f86d014b133c6693f",
+			},
+			want: false,
+		},
+		"NonOCIURL": {
+			args: args{chartURL: "https://charts.example.com/mychart-1.2.3.tgz"},
+			want: false,
+		},
+		"NoURL": {
+			args: args{},
+			want: false,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := URLPullsSpecVersion(tc.args.chartURL, tc.args.specDigest)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("URLPullsSpecVersion(...): -want, +got:\n%s", diff)
 			}
 		})
 	}
@@ -738,5 +875,61 @@ func TestDigestCacheRoundTrip(t *testing.T) {
 	}
 	if gotPath != cachePath {
 		t.Errorf("ensureChartCached() = %q, want cache hit at %q", gotPath, cachePath)
+	}
+}
+
+func TestURLVersionConflicts(t *testing.T) {
+	type args struct {
+		chartURL    string
+		specVersion string
+	}
+	cases := map[string]struct {
+		args args
+		want bool
+	}{
+		"TagConflictsWithSpecVersion": {
+			args: args{chartURL: "oci://registry.example.com/charts/mychart:1.2.3", specVersion: "2.0.0"},
+			want: true,
+		},
+		"TagAndDigestConflictWithSpecVersion": {
+			args: args{
+				chartURL:    "oci://registry.example.com/charts/mychart:1.2.3@sha256:c56f4d760bc9da702f231f37fcec89c66b0993f0cb91446f86d014b133c6693f",
+				specVersion: "2.0.0",
+			},
+			want: true,
+		},
+		"TagMatchesSpecVersion": {
+			args: args{chartURL: "oci://registry.example.com/charts/mychart:1.2.3", specVersion: "1.2.3"},
+			want: false,
+		},
+		"TagWithoutSpecVersion": {
+			args: args{chartURL: "oci://registry.example.com/charts/mychart:1.2.3"},
+			want: false,
+		},
+		"TagWithDevelSpecVersion": {
+			args: args{chartURL: "oci://registry.example.com/charts/mychart:1.2.3", specVersion: devel},
+			want: false,
+		},
+		"BareOCIURLWithSpecVersion": {
+			args: args{chartURL: "oci://registry.example.com/charts/mychart", specVersion: "2.0.0"},
+			want: false,
+		},
+		"NonOCIURLWithSpecVersion": {
+			args: args{chartURL: "https://charts.example.com/mychart-1.2.3.tgz", specVersion: "2.0.0"},
+			want: false,
+		},
+		"NoURL": {
+			args: args{specVersion: "2.0.0"},
+			want: false,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := URLVersionConflicts(tc.args.chartURL, tc.args.specVersion)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("URLVersionConflicts(...): -want, +got:\n%s", diff)
+			}
+		})
 	}
 }

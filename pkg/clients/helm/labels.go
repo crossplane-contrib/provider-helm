@@ -100,12 +100,15 @@ func EncodeURLLabel(url string) string {
 
 // EffectiveChartDigest returns the digest a deploy of the given chart source
 // would be pinned to: the digest embedded in an OCI URL wins, otherwise the
-// spec digest. Returns "" when the two conflict or the URL cannot be parsed —
-// the deploy itself rejects those specs before any release is written, so no
-// label value applies.
+// spec digest. Returns "" when the two conflict, the URL cannot be parsed, or
+// a spec digest accompanies a non-OCI URL: the deploy itself rejects those
+// specs before any release is written, so no label value applies.
 func EffectiveChartDigest(chartURL, specDigest string) string {
-	if !registry.IsOCI(chartURL) {
+	if chartURL == "" {
 		return specDigest
+	}
+	if !registry.IsOCI(chartURL) {
+		return ""
 	}
 	_, _, urlDigest, err := resolveOCIChartVersionAndDigest(chartURL)
 	if err != nil {

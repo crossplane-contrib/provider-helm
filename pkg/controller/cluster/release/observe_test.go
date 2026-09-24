@@ -1018,10 +1018,10 @@ func Test_isUpToDate(t *testing.T) {
 				err: nil,
 			},
 		},
-		"UpToDate_OCIURLVersionConflictDeferredToDeploy": {
-			// A same-URL OCI version conflict is no longer drift: the URL-mode
-			// version comparison was removed, so the conflict is surfaced at
-			// deploy time instead of looping here.
+		"NotUpToDate_OCIURLVersionConflict": {
+			// The URL tag conflicts with the spec version, which the deploy
+			// rejects; reporting drift surfaces that error instead of passing
+			// the conflict as up to date.
 			args: args{
 				kube: &test.MockClient{
 					MockGet: nil,
@@ -1056,7 +1056,7 @@ func Test_isUpToDate(t *testing.T) {
 				status: v1beta1.ReleaseStatus{},
 			},
 			want: want{
-				out: true,
+				out: false,
 				err: nil,
 			},
 		},
@@ -1265,6 +1265,52 @@ func Test_isUpToDate(t *testing.T) {
 				err: nil,
 			},
 		},
+		"NotUpToDate_DigestWithNonOCIURL": {
+			// A digest next to a non-OCI URL is never applied, and the deploy
+			// rejects the spec. A release deployed before that was enforced
+			// carries the spec digest in its label; reporting drift surfaces
+			// the rejection instead of the label vouching for a pin that never
+			// happened.
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							URL:        "https://charts.example.com/mychart-1.0.0.tgz",
+							Repository: "oci://registry.example.com/charts",
+							Digest:     "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Raw: nil,
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: testVersion,
+						},
+					},
+					Config: testReleaseConfig,
+					Labels: map[string]string{
+						helmClient.LabelURLHash:    helmClient.EncodeURLLabel("https://charts.example.com/mychart-1.0.0.tgz"),
+						helmClient.LabelDigestHash: helmClient.EncodeDigestLabel("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+					},
+				},
+				status: v1beta1.ReleaseStatus{},
+			},
+			want: want{
+				out: false,
+				err: nil,
+			},
+		},
 		"UpToDate_NonOCIURLIgnoresSpecVersion": {
 			// Version alongside an HTTPS URL is documented-ignored and must
 			// not cause a perpetual upgrade loop.
@@ -1297,6 +1343,129 @@ func Test_isUpToDate(t *testing.T) {
 					Config: testReleaseConfig,
 					Labels: map[string]string{
 						helmClient.LabelURLHash: helmClient.EncodeURLLabel("https://charts.example.com/mychart-1.0.0.tgz"),
+					},
+				},
+				status: v1beta1.ReleaseStatus{},
+			},
+			want: want{
+				out: true,
+				err: nil,
+			},
+		},
+		"NotUpToDate_BareOCIURLVersionBumped": {
+			// A bare OCI URL deploys the spec version, so bumping it must drift
+			// although the URL still matches the deploy-time label.
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							URL:     "oci://registry.example.com/charts/mychart",
+							Version: "2.0.0",
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Raw: nil,
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: testVersion,
+						},
+					},
+					Config: testReleaseConfig,
+					Labels: map[string]string{
+						helmClient.LabelURLHash: helmClient.EncodeURLLabel("oci://registry.example.com/charts/mychart"),
+					},
+				},
+				status: v1beta1.ReleaseStatus{},
+			},
+			want: want{
+				out: false,
+				err: nil,
+			},
+		},
+		"UpToDate_BareOCIURLVersionMatchesDeployed": {
+			// A bare OCI URL whose spec version was deployed is up to date.
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							URL:     "oci://registry.example.com/charts/mychart",
+							Version: testVersion,
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Raw: nil,
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: testVersion,
+						},
+					},
+					Config: testReleaseConfig,
+					Labels: map[string]string{
+						helmClient.LabelURLHash: helmClient.EncodeURLLabel("oci://registry.example.com/charts/mychart"),
+					},
+				},
+				status: v1beta1.ReleaseStatus{},
+			},
+			want: want{
+				out: true,
+				err: nil,
+			},
+		},
+		"UpToDate_DigestPinnedOCIURLIgnoresSpecVersion": {
+			// A digest selects the chart on its own, so a spec version that
+			// differs from the deployed chart must not loop.
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							URL:     "oci://registry.example.com/charts/mychart@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+							Version: "9.9.9",
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Raw: nil,
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: testVersion,
+						},
+					},
+					Config: testReleaseConfig,
+					Labels: map[string]string{
+						helmClient.LabelURLHash:    helmClient.EncodeURLLabel("oci://registry.example.com/charts/mychart@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+						helmClient.LabelDigestHash: helmClient.EncodeDigestLabel("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
 					},
 				},
 				status: v1beta1.ReleaseStatus{},

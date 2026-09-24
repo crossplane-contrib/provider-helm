@@ -150,12 +150,22 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 		return true, nil
 	}
 
-	// In URL mode the deployed chart's metadata version is deliberately not
-	// compared: an OCI URL tag is an arbitrary string (e.g. :latest, :stable, a
-	// v-prefixed tag) that need not equal the chart's Chart.yaml version, so
-	// comparing them would report perpetual drift. A tag change is a URL change
-	// and is caught by the url-hash label below.
-	if in.Chart.URL == "" && versionDrifted(in.Chart.Version, ocm.Version) {
+	// The deployed chart's metadata version is compared only when the deploy
+	// selects the chart by the spec version: in repository mode and for an OCI
+	// URL without a tag or digest. An OCI URL tag is an arbitrary string (e.g.
+	// :latest, :stable, a v-prefixed tag) that need not equal the chart's
+	// Chart.yaml version, so comparing it would report perpetual drift; a tag
+	// change is a URL change and is caught by the url-hash label below.
+	pullsSpecVersion := in.Chart.URL == "" || helmClient.URLPullsSpecVersion(in.Chart.URL, in.Chart.Digest)
+	if pullsSpecVersion && versionDrifted(in.Chart.Version, ocm.Version) {
+		return false, nil
+	}
+
+	// A version embedded in an OCI URL that conflicts with the spec version is
+	// rejected at deploy time. Report drift so that the error surfaces instead
+	// of the conflict passing as up to date; both values come from the spec, so
+	// this cannot loop against the deployed chart.
+	if helmClient.URLVersionConflicts(in.Chart.URL, in.Chart.Version) {
 		return false, nil
 	}
 
@@ -192,12 +202,12 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 		}
 		if specDigestEnc == "" && in.Chart.Digest != "" {
 			// The spec pins a digest that does not resolve (it conflicts with
-			// the OCI URL's embedded digest, or the URL is malformed). The
-			// deploy rejects such specs; report drift so that error surfaces
-			// instead of masking the conflict as up-to-date. A URL-embedded
-			// digest that does not fit a label is deliberately not covered:
-			// the deploy accepts it and records it as unpinned, so reporting
-			// drift here would upgrade forever.
+			// the OCI URL's embedded digest, accompanies a non-OCI URL, or the
+			// URL is malformed). The deploy rejects such specs; report drift
+			// so that error surfaces instead of masking the conflict as
+			// up-to-date. A URL-embedded digest that does not fit a label is
+			// deliberately not covered: the deploy accepts it and records it
+			// as unpinned, so reporting drift here would upgrade forever.
 			return false, nil
 		}
 	} else if in.Chart.Digest != "" && s.AtProvider.Digest != "" && in.Chart.Digest != s.AtProvider.Digest {

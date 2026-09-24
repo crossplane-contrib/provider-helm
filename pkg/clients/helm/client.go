@@ -99,6 +99,7 @@ const (
 	errUnexpectedOCIUrlTmpl            = "url not prefixed with oci://, got [%s]"
 	errDigestNotSupportedForNonOCI     = "digest is only supported for OCI registries"
 	errDigestMismatchTmpl              = "conflicting digest input: URL contains @%s but spec.forProvider.chart.digest is %s"
+	errVersionMismatchTmpl             = "conflicting version input: URL contains :%s but spec.forProvider.chart.version is %s"
 	errNoChartName                     = "spec.forProvider.chart.name must be specified when URL is empty"
 	errNoChartRepository               = "spec.forProvider.chart.repository must be specified when URL is empty"
 	errFailedToInitActionConfig        = "failed to initialize helm action configuration"
@@ -496,7 +497,11 @@ func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo, chartD
 		}
 		pc.Version = chartVersion
 	} else if registry.IsOCI(chartUrl) {
-		ociURL, version, urlDigest, err := resolveOCIChartVersionAndDigest(chartUrl)
+		ociURL, urlVersion, urlDigest, err := resolveOCIChartVersionAndDigest(chartUrl)
+		if err != nil {
+			return err
+		}
+		version, err := resolveEffectiveVersion(urlVersion, chartVersion)
 		if err != nil {
 			return err
 		}
@@ -585,6 +590,52 @@ func resolveEffectiveDigest(urlDigest, specDigest string) (string, error) {
 	return specDigest, nil
 }
 
+// resolveEffectiveVersion reconciles the version embedded in an OCI chart URL
+// with spec.forProvider.chart.version, mirroring resolveEffectiveDigest.
+// Conflicting values are rejected rather than silently resolved in favor of
+// the URL. A devel spec version is treated as unset since it does not pin a
+// concrete version.
+func resolveEffectiveVersion(urlVersion, specVersion string) (string, error) {
+	if specVersion == devel {
+		specVersion = ""
+	}
+	if specVersion != "" && urlVersion != "" && urlVersion != specVersion {
+		return "", errors.Errorf(errVersionMismatchTmpl, urlVersion, specVersion)
+	}
+	if urlVersion != "" {
+		return urlVersion, nil
+	}
+	return specVersion, nil
+}
+
+// URLPullsSpecVersion reports whether a deploy from chartURL selects the chart
+// by spec.forProvider.chart.version, so that the deployed chart version is
+// expected to match it. That holds only for an OCI URL without an embedded tag
+// or digest and without specDigest: a tag or digest selects the chart on its
+// own (Helm resolves a digest even when the version tag does not exist), and a
+// non-OCI URL points at a fixed package.
+func URLPullsSpecVersion(chartURL, specDigest string) bool {
+	if specDigest != "" || !registry.IsOCI(chartURL) {
+		return false
+	}
+	_, urlVersion, urlDigest, err := resolveOCIChartVersionAndDigest(chartURL)
+	return err == nil && urlVersion == "" && urlDigest == ""
+}
+
+// URLVersionConflicts reports whether chartURL is an OCI URL embedding a
+// version that conflicts with specVersion, a spec every deploy rejects.
+func URLVersionConflicts(chartURL, specVersion string) bool {
+	if !registry.IsOCI(chartURL) {
+		return false
+	}
+	_, urlVersion, _, err := resolveOCIChartVersionAndDigest(chartURL)
+	if err != nil {
+		return false
+	}
+	_, err = resolveEffectiveVersion(urlVersion, specVersion)
+	return err != nil
+}
+
 func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*chart.Chart, error) { //nolint:gocyclo
 	var chartFilePath, chartUrl, chartName, chartVersion, chartDigest, chartRepo string
 	var err error
@@ -606,11 +657,28 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 		return nil, errors.New("This object must be *clusterv1beta1.Release or *namespacedv1beta1.Release")
 	}
 
-	// Validate: Digest only works with OCI registries
+	// Validate: Digest only works with OCI registries. A set URL is the sole
+	// pull source, so an OCI Repository next to a non-OCI URL does not count.
 	if chartDigest != "" {
-		isOCI := registry.IsOCI(chartUrl) || registry.IsOCI(chartRepo)
-		if !isOCI {
+		digestSource := chartUrl
+		if digestSource == "" {
+			digestSource = chartRepo
+		}
+		if !registry.IsOCI(digestSource) {
 			return nil, errors.New(errDigestNotSupportedForNonOCI)
+		}
+	}
+
+	// Validate: without a URL the chart can only be resolved from
+	// Repository + Name. This must run before any pull, including the
+	// pull-latest shortcut below, so that misconfiguration fails with a clear
+	// error instead of an opaque helm one.
+	if chartUrl == "" {
+		switch {
+		case chartName == "":
+			return nil, errors.New(errNoChartName)
+		case chartRepo == "":
+			return nil, errors.New(errNoChartRepository)
 		}
 	}
 
@@ -622,13 +690,17 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 			return nil, err
 		}
 	case registry.IsOCI(chartUrl):
-		u, v, urlDigest, err := resolveOCIChartVersionAndDigest(chartUrl)
+		u, urlVersion, urlDigest, err := resolveOCIChartVersionAndDigest(chartUrl)
 		if err != nil {
 			return nil, err
 		}
 
 		// validate
 		effectiveDigest, err := resolveEffectiveDigest(urlDigest, chartDigest)
+		if err != nil {
+			return nil, err
+		}
+		v, err := resolveEffectiveVersion(urlVersion, chartVersion)
 		if err != nil {
 			return nil, err
 		}
@@ -640,7 +712,7 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 			name := path.Base(u.Path)
 			chartFilePath = resolveCachedChartPathWithDigest(name, effectiveDigest)
 		case v == "":
-			// No version or digest in URL: pull latest
+			// No version in URL or spec, no digest: pull latest
 			chartFilePath, err = hc.pullChartToCache(chartUrl, chartName, chartVersion, chartRepo, chartDigest, creds)
 			if err != nil {
 				return nil, err
@@ -657,14 +729,9 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 		chartFilePath = filepath.Join(chartCache, path.Base(u.Path))
 	default:
 		// No URL: resolve from spec Repository + Name + Version + (optionally Digest)
-		switch {
-		case chartName == "":
-			return nil, errors.New(errNoChartName)
-		case chartRepo == "":
-			return nil, errors.New(errNoChartRepository)
-		case chartDigest != "":
+		if chartDigest != "" {
 			chartFilePath = resolveCachedChartPathWithDigest(chartName, chartDigest)
-		default:
+		} else {
 			chartFilePath = resolveChartFilePath(chartName, chartVersion)
 		}
 	}
