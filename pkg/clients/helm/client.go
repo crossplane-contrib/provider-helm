@@ -272,6 +272,13 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	uc.CaFile = caFile
 	uc.MaxHistory = args.MaxHistory
 	uc.ForceConflicts = args.SSAForceConflicts
+	if args.SSAForceConflicts {
+		// Helm's default "auto" keeps client-side apply for releases whose
+		// last revision used it (e.g. installed by Helm v3), and Helm rejects
+		// ForceConflicts without server-side apply. Force server-side apply
+		// so such releases migrate instead of failing.
+		uc.ServerSideApply = "true"
+	}
 
 	uic := action.NewUninstall(actionConfig)
 	uic.WaitStrategy = waitStrategy
@@ -281,6 +288,11 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	rb.WaitStrategy = waitStrategy
 	rb.Timeout = args.Timeout
 	rb.ForceConflicts = args.SSAForceConflicts
+	if args.SSAForceConflicts {
+		// A rollback uses the apply method of the revision it rolls back to,
+		// which may predate server-side apply; see the upgrade client above.
+		rb.ServerSideApply = "true"
+	}
 
 	lc := action.NewRegistryLogin(actionConfig)
 
