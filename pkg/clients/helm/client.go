@@ -167,20 +167,19 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 		return nil, errors.Wrap(err, errFailedToInitActionConfig)
 	}
 
+	rc, err := newRegistryClient(log, args)
+	if err != nil {
+		return nil, err
+	}
+	actionConfig.RegistryClient = rc
+
 	// caFile is only set when a CABundle is supplied. It configures the
 	// classic HTTP(S) chart-repository getter (used by Pull/Install/Upgrade
-	// for non-OCI repos). The OCI registry path below does not read this
+	// for non-OCI repos). The OCI registry path above does not read this
 	// field at all - it goes through its own *registry.Client - so both
 	// need to be configured for a CABundle to cover both protocols.
 	var caFile string
-	registryOpts := []registry.ClientOption{}
 	if len(args.CABundle) > 0 {
-		httpClient, err := httpClientTrustingCABundle(log, args.CABundle)
-		if err != nil {
-			return nil, err
-		}
-		registryOpts = append(registryOpts, registry.ClientOptHTTPClient(httpClient))
-
 		// Unlike the OCI path above (which builds its cert pool from
 		// x509.SystemCertPool(), always including the system trust store),
 		// helm's classic getter replaces its cert pool entirely with
@@ -206,12 +205,6 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 			return nil, errors.Wrap(err, errFailedToWriteCABundle)
 		}
 	}
-
-	rc, err := registry.NewClient(registryOpts...)
-	if err != nil {
-		return nil, errors.Wrap(err, errFailedToCreateRegistryClient)
-	}
-	actionConfig.RegistryClient = rc
 
 	pc := action.NewPull(action.WithConfig(actionConfig))
 
@@ -314,23 +307,61 @@ func safePath(baseDir, fileName string) string {
 	return filepath.Join(baseDir, filepath.Base(fileName))
 }
 
+// newRegistryClient builds the OCI registry client that every pull shares
+// (actionConfig.RegistryClient). Helm v4's OCI getter uses a preset registry
+// client as-is, so the Pull action's PlainHTTP and InsecureSkipTLSVerify
+// never reach it: they are applied here, together with the CABundle.
+func newRegistryClient(log logging.Logger, args *Args) (*registry.Client, error) {
+	opts := []registry.ClientOption{}
+	if args.PlainHTTP {
+		opts = append(opts, registry.ClientOptPlainHTTP())
+	}
+	if len(args.CABundle) > 0 || args.InsecureSkipTLSVerify {
+		httpClient, err := registryHTTPClient(log, args.CABundle, args.InsecureSkipTLSVerify)
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, registry.ClientOptHTTPClient(httpClient))
+	}
+	rc, err := registry.NewClient(opts...)
+	if err != nil {
+		return nil, errors.Wrap(err, errFailedToCreateRegistryClient)
+	}
+	return rc, nil
+}
+
 // httpClientTrustingCABundle returns an *http.Client whose TLS transport
 // trusts caBundle (PEM encoded) in addition to the system trust store. It's
 // used for the OCI registry client, which does not read a CA file path -
 // unlike the classic HTTP(S) chart-repository getter, it only accepts an
 // *http.Client (registry.ClientOptHTTPClient).
 func httpClientTrustingCABundle(log logging.Logger, caBundle []byte) (*http.Client, error) {
-	pool, err := x509.SystemCertPool()
-	if err != nil || pool == nil {
-		log.Info("x509.SystemCertPool() unavailable, OCI registry pulls will trust only the supplied CABundle, not the system trust store", "error", err)
-		pool = x509.NewCertPool()
-	}
-	if ok := pool.AppendCertsFromPEM(caBundle); !ok {
-		return nil, errors.New(errFailedToParseCABundle)
+	return registryHTTPClient(log, caBundle, false)
+}
+
+// registryHTTPClient returns the *http.Client for the OCI registry client.
+// With a caBundle (PEM encoded), its TLS transport trusts the bundle in
+// addition to the system trust store; with insecureSkipVerify, it skips
+// certificate verification (spec.forProvider.insecureSkipTLSVerify).
+func registryHTTPClient(log logging.Logger, caBundle []byte, insecureSkipVerify bool) (*http.Client, error) {
+	var pool *x509.CertPool
+	if len(caBundle) > 0 {
+		var err error
+		pool, err = x509.SystemCertPool()
+		if err != nil || pool == nil {
+			log.Info("x509.SystemCertPool() unavailable, OCI registry pulls will trust only the supplied CABundle, not the system trust store", "error", err)
+			pool = x509.NewCertPool()
+		}
+		if ok := pool.AppendCertsFromPEM(caBundle); !ok {
+			return nil, errors.New(errFailedToParseCABundle)
+		}
 	}
 
 	transport := http.DefaultTransport.(*http.Transport).Clone() //nolint:forcetypeassert // http.DefaultTransport is always *http.Transport
-	transport.TLSClientConfig = &tls.Config{RootCAs: pool}       //nolint:gosec // caller-supplied CA bundle, not skipping verification
+	transport.TLSClientConfig = &tls.Config{
+		RootCAs:            pool,               // nil means the system trust store
+		InsecureSkipVerify: insecureSkipVerify, //nolint:gosec // only when the Release asks for insecureSkipTLSVerify
+	}
 
 	return &http.Client{Transport: transport}, nil
 }
