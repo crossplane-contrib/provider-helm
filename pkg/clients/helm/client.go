@@ -549,7 +549,7 @@ func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo, chartD
 	pc.DestDir = chartDir
 
 	if creds.Username != "" && creds.Password != "" {
-		err := hc.login(chartUrl, chartRepo, creds, pc.InsecureSkipTLSVerify)
+		err := hc.login(chartUrl, chartRepo, creds, pc.InsecureSkipTLSVerify, pc.PlainHTTP)
 		if err != nil {
 			return err
 		}
@@ -563,7 +563,11 @@ func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo, chartD
 	return nil
 }
 
-func (hc *client) login(chartUrl, chartRepo string, creds *RepoCreds, insecure bool) error {
+// login logs in to an OCI registry before a pull. Helm v4's RegistryLogin.Run
+// always sets the shared registry client's plainHTTP from WithPlainHTTPLogin,
+// so plainHTTP must be passed here too: otherwise the login goes over HTTPS
+// and the pull that follows does as well.
+func (hc *client) login(chartUrl, chartRepo string, creds *RepoCreds, insecure, plainHTTP bool) error {
 	ociURL := chartUrl
 	if chartUrl == "" {
 		ociURL = chartRepo
@@ -576,7 +580,7 @@ func (hc *client) login(chartUrl, chartRepo string, creds *RepoCreds, insecure b
 		return errors.Wrap(err, errFailedToParseURL)
 	}
 	var out strings.Builder
-	err = hc.loginClient.Run(&out, parsedURL.Host, creds.Username, creds.Password, action.WithInsecure(insecure))
+	err = hc.loginClient.Run(&out, parsedURL.Host, creds.Username, creds.Password, action.WithInsecure(insecure), action.WithPlainHTTPLogin(plainHTTP))
 	hc.log.Debug(out.String())
 	return errors.Wrap(err, errFailedToLogin)
 }

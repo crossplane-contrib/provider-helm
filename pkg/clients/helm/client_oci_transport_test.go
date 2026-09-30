@@ -18,6 +18,7 @@ package helm
 
 import (
 	"crypto/tls"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
@@ -54,6 +55,27 @@ func pushTestChart(t *testing.T, rc *helmregistry.Client, host string) {
 // Release does: through NewClient and pullChart, with the given Args.
 func pullWithArgs(t *testing.T, host string, apply ArgsApplier) error {
 	t.Helper()
+	return pullWithCreds(t, host, &RepoCreds{}, apply)
+}
+
+// isolateRegistryCredentials gives Helm and Docker empty configs and hides
+// any docker-credential-* helper. Login stores credentials in Helm's registry
+// config, or in the OS keychain when a native helper is on PATH (the Helm
+// registry client auto-detects one), so without this a test would write to
+// the user's keychain and later pulls could reuse the stored credentials.
+func isolateRegistryCredentials(t *testing.T) {
+	t.Helper()
+	t.Setenv("HELM_CONFIG_HOME", t.TempDir())
+	t.Setenv("DOCKER_CONFIG", t.TempDir())
+	t.Setenv("PATH", t.TempDir())
+}
+
+// pullWithCreds is pullWithArgs with registry credentials, which make
+// pullChart log in first. Every pull starts from empty credential stores, so
+// a pull without credentials can't reuse an earlier login.
+func pullWithCreds(t *testing.T, host string, creds *RepoCreds, apply ArgsApplier) error {
+	t.Helper()
+	isolateRegistryCredentials(t)
 	originalCache := chartCache
 	chartCache = t.TempDir()
 	t.Cleanup(func() { chartCache = originalCache })
@@ -68,7 +90,19 @@ func pullWithArgs(t *testing.T, host string, apply ArgsApplier) error {
 	if !ok {
 		t.Fatalf("NewClient(...) did not return a *client")
 	}
-	return cc.pullChart("", "testchart", "0.1.0", "oci://"+host+"/charts", "", &RepoCreds{}, t.TempDir())
+	return cc.pullChart("", "testchart", "0.1.0", "oci://"+host+"/charts", "", creds, t.TempDir())
+}
+
+// requireBasicAuth puts HTTP basic auth in front of h.
+func requireBasicAuth(h http.Handler, username, password string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if u, p, ok := r.BasicAuth(); !ok || u != username || p != password {
+			w.Header().Set("WWW-Authenticate", `Basic realm="test"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 // TestOCIRegistryPull_PlainHTTP: spec.forProvider.plainHTTP must reach the
@@ -136,5 +170,63 @@ func TestOCIRegistryPull_InsecureSkipTLSVerify(t *testing.T) {
 		if err := pullWithArgs(t, host, func(a *Args) { a.CABundle = ca.caPEM }); err != nil {
 			t.Fatalf("pullChart(...) with CABundle: unexpected error: %v", err)
 		}
+	})
+}
+
+// TestOCIRegistryPull_WithLogin: with credentials, pullChart logs in before
+// the pull. The login must honor plainHTTP too, and must not undo the
+// registry client's plainHTTP and insecureSkipTLSVerify for the pull.
+func TestOCIRegistryPull_WithLogin(t *testing.T) {
+	const username, password = "user", "secret"
+	creds := &RepoCreds{Username: username, Password: password}
+	isolateRegistryCredentials(t)
+
+	t.Run("PlainHTTP", func(t *testing.T) {
+		srv := httptest.NewServer(requireBasicAuth(registry.New(), username, password))
+		defer srv.Close()
+		host := srv.Listener.Addr().String()
+
+		pushClient, err := helmregistry.NewClient(helmregistry.ClientOptPlainHTTP(), helmregistry.ClientOptBasicAuth(username, password))
+		if err != nil {
+			t.Fatalf("helmregistry.NewClient(...) for push setup: unexpected error: %v", err)
+		}
+		pushTestChart(t, pushClient, host)
+
+		t.Run("WithCredentialsPullSucceeds", func(t *testing.T) {
+			if err := pullWithCreds(t, host, creds, func(a *Args) { a.PlainHTTP = true }); err != nil {
+				t.Fatalf("pullChart(...) with PlainHTTP and credentials: unexpected error: %v", err)
+			}
+		})
+
+		t.Run("WithoutCredentialsPullFails", func(t *testing.T) {
+			if err := pullWithArgs(t, host, func(a *Args) { a.PlainHTTP = true }); err == nil {
+				t.Fatal("expected pullChart(...) without credentials from a registry that requires them to fail, got nil")
+			}
+		})
+	})
+
+	t.Run("InsecureSkipTLSVerify", func(t *testing.T) {
+		ca := newTestCA(t)
+		srv := httptest.NewUnstartedServer(requireBasicAuth(registry.New(), username, password))
+		srv.TLS = &tls.Config{Certificates: []tls.Certificate{ca.leafCert}}
+		srv.StartTLS()
+		defer srv.Close()
+		host := srv.Listener.Addr().String()
+
+		trusting, err := httpClientTrustingCABundle(logging.NewNopLogger(), ca.caPEM)
+		if err != nil {
+			t.Fatalf("httpClientTrustingCABundle(...): unexpected error: %v", err)
+		}
+		pushClient, err := helmregistry.NewClient(helmregistry.ClientOptHTTPClient(trusting), helmregistry.ClientOptBasicAuth(username, password))
+		if err != nil {
+			t.Fatalf("helmregistry.NewClient(...) for push setup: unexpected error: %v", err)
+		}
+		pushTestChart(t, pushClient, host)
+
+		t.Run("WithCredentialsPullSucceeds", func(t *testing.T) {
+			if err := pullWithCreds(t, host, creds, func(a *Args) { a.InsecureSkipTLSVerify = true }); err != nil {
+				t.Fatalf("pullChart(...) with InsecureSkipTLSVerify and credentials: unexpected error: %v", err)
+			}
+		})
 	})
 }
