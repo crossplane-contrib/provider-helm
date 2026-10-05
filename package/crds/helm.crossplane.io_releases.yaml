@@ -651,6 +651,9 @@ spec:
                           from repository mode, including a late-initialized one, would conflict. Avoid floating
                           tags (e.g. :latest, or no tag and no Version): a new chart pushed under the same tag is
                           not detected.
+                          Version is compared with the deployed chart's version as semver when both parse, so
+                          v1.2.3 matches a chart whose Chart.yaml says 1.2.3; a range or any other value must
+                          match verbatim.
                           The actual deployed version is always available in status.atProvider.version for observability.
                         type: string
                     type: object

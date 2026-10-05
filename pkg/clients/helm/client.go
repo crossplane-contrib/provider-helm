@@ -610,18 +610,21 @@ func URLPullsSpecVersion(chartURL, specDigest string) bool {
 	return err == nil && urlVersion == "" && urlDigest == ""
 }
 
-// URLVersionConflicts reports whether chartURL is an OCI URL embedding a
-// version that conflicts with specVersion, a spec every deploy rejects.
-func URLVersionConflicts(chartURL, specVersion string) bool {
+// URLVersionConflict returns the error a deploy fails with when chartURL is an
+// OCI URL embedding a version that conflicts with specVersion, and nil
+// otherwise. Helm rejects such a pull itself ("chart reference and version
+// mismatch"), so the spec can never deploy. A URL that does not parse is left
+// to the deploy, which reports its own error.
+func URLVersionConflict(chartURL, specVersion string) error {
 	if !registry.IsOCI(chartURL) {
-		return false
+		return nil
 	}
 	_, urlVersion, _, err := resolveOCIChartVersionAndDigest(chartURL)
 	if err != nil {
-		return false
+		return nil //nolint:nilerr // the deploy reports its own error for a URL that does not parse
 	}
 	_, err = resolveEffectiveVersion(urlVersion, specVersion)
-	return err != nil
+	return err
 }
 
 func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*chart.Chart, error) { //nolint:gocyclo

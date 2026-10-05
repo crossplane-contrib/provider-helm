@@ -976,6 +976,48 @@ func Test_isUpToDate(t *testing.T) {
 				err: nil,
 			},
 		},
+		"UpToDate_BareOCIURLVPrefixedVersion": {
+			// A v-prefixed registry needs a v-prefixed spec version, which pulls
+			// a chart whose Chart.yaml version has no prefix. The two compare
+			// equal as semver, so the Release must not drift every poll.
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							URL:     "oci://registry.example.com/charts/mychart",
+							Version: "v2.0.0",
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Raw: nil,
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: "2.0.0",
+						},
+					},
+					Config: testReleaseConfig,
+					Labels: map[string]string{
+						helmClient.LabelURLHash: helmClient.EncodeURLLabel("oci://registry.example.com/charts/mychart"),
+					},
+				},
+				status: v1beta1.ReleaseStatus{},
+			},
+			want: want{
+				out: true,
+				err: nil,
+			},
+		},
 		"UpToDate_BareOCIURLVersionMatchesDeployed": {
 			// A bare OCI URL whose spec version was deployed is up to date.
 			args: args{
@@ -1182,10 +1224,10 @@ func Test_isUpToDate(t *testing.T) {
 				err: nil,
 			},
 		},
-		"NotUpToDate_OCIURLVersionConflict": {
-			// The URL tag conflicts with the spec version, which the deploy
-			// rejects; reporting drift surfaces that error instead of passing
-			// the conflict as up to date.
+		"Error_OCIURLVersionConflict": {
+			// The URL tag conflicts with the spec version, a spec Helm itself
+			// refuses to pull. Observing fails with the conflict so that it
+			// surfaces as a reconcile error before any deploy is attempted.
 			args: args{
 				kube: &test.MockClient{
 					MockGet: nil,
@@ -1221,7 +1263,7 @@ func Test_isUpToDate(t *testing.T) {
 			},
 			want: want{
 				out: false,
-				err: nil,
+				err: errors.New("conflicting version input: URL contains :1.2.3 but spec.forProvider.chart.version is 2.0.0"),
 			},
 		},
 		"UpToDate_OCIFloatingTagLatestNoLoop": {
@@ -1475,6 +1517,51 @@ func Test_isUpToDate(t *testing.T) {
 				err: nil,
 			},
 		},
+		"UpToDate_RepositoryDigestPinnedIgnoresSpecVersion": {
+			// In repository mode a digest selects the chart on its own as well:
+			// Helm pulls it even when no tag matches the spec version, so a
+			// spec version that differs from the deployed chart must not loop.
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							Name:       testChart,
+							Repository: "oci://registry.example.com/charts",
+							Digest:     "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+							Version:    "9.9.9",
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Raw: nil,
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: testVersion,
+						},
+					},
+					Config: testReleaseConfig,
+					Labels: map[string]string{
+						helmClient.LabelURLHash:    helmClient.EncodeURLLabel(""),
+						helmClient.LabelDigestHash: helmClient.EncodeDigestLabel("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+					},
+				},
+				status: v1beta1.ReleaseStatus{},
+			},
+			want: want{
+				out: true,
+				err: nil,
+			},
+		},
 		"SuccessUpToDate": {
 			args: args{
 				kube: &test.MockClient{
@@ -1592,6 +1679,38 @@ func Test_isUpToDate(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.want.out, got); diff != "" {
 				t.Errorf("isUpToDate(...): -want result, +got result: %s", diff)
+			}
+		})
+	}
+}
+
+func Test_versionDrifted(t *testing.T) {
+	type args struct {
+		specVersion     string
+		deployedVersion string
+	}
+	cases := map[string]struct {
+		args args
+		want bool
+	}{
+		"EmptySpecPinsNothing":              {args: args{specVersion: "", deployedVersion: "1.2.3"}, want: false},
+		"DevelPinsNothing":                  {args: args{specVersion: devel, deployedVersion: "1.2.3"}, want: false},
+		"Equal":                             {args: args{specVersion: "1.2.3", deployedVersion: "1.2.3"}, want: false},
+		"VPrefixedSpecEqualsDeployed":       {args: args{specVersion: "v1.2.3", deployedVersion: "1.2.3"}, want: false},
+		"VPrefixedDeployedEqualsSpec":       {args: args{specVersion: "1.2.3", deployedVersion: "v1.2.3"}, want: false},
+		"PatchDiffers":                      {args: args{specVersion: "1.2.4", deployedVersion: "1.2.3"}, want: true},
+		"PrereleaseDiffers":                 {args: args{specVersion: "1.2.3-rc.1", deployedVersion: "1.2.3"}, want: true},
+		"MetadataDiffers":                   {args: args{specVersion: "1.2.3+build.1", deployedVersion: "1.2.3+build.2"}, want: true},
+		"MetadataOnlyOnOneSide":             {args: args{specVersion: "1.2.3", deployedVersion: "1.2.3+build.1"}, want: true},
+		"RangeComparedVerbatim":             {args: args{specVersion: ">=1.0.0", deployedVersion: "1.2.3"}, want: true},
+		"NonSemverDeployedComparedVerbatim": {args: args{specVersion: "1.2.3", deployedVersion: "latest"}, want: true},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := versionDrifted(tc.args.specVersion, tc.args.deployedVersion)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("versionDrifted(...): -want, +got:\n%s", diff)
 			}
 		})
 	}

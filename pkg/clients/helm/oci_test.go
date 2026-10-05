@@ -878,57 +878,57 @@ func TestDigestCacheRoundTrip(t *testing.T) {
 	}
 }
 
-func TestURLVersionConflicts(t *testing.T) {
+func TestURLVersionConflict(t *testing.T) {
 	type args struct {
 		chartURL    string
 		specVersion string
 	}
 	cases := map[string]struct {
 		args args
-		want bool
+		want error
 	}{
 		"TagConflictsWithSpecVersion": {
 			args: args{chartURL: "oci://registry.example.com/charts/mychart:1.2.3", specVersion: "2.0.0"},
-			want: true,
+			want: errors.Errorf(errVersionMismatchTmpl, "1.2.3", "2.0.0"),
 		},
 		"TagAndDigestConflictWithSpecVersion": {
 			args: args{
 				chartURL:    "oci://registry.example.com/charts/mychart:1.2.3@sha256:c56f4d760bc9da702f231f37fcec89c66b0993f0cb91446f86d014b133c6693f",
 				specVersion: "2.0.0",
 			},
-			want: true,
+			want: errors.Errorf(errVersionMismatchTmpl, "1.2.3", "2.0.0"),
 		},
 		"TagMatchesSpecVersion": {
 			args: args{chartURL: "oci://registry.example.com/charts/mychart:1.2.3", specVersion: "1.2.3"},
-			want: false,
+			want: nil,
 		},
 		"TagWithoutSpecVersion": {
 			args: args{chartURL: "oci://registry.example.com/charts/mychart:1.2.3"},
-			want: false,
+			want: nil,
 		},
 		"TagWithDevelSpecVersion": {
 			args: args{chartURL: "oci://registry.example.com/charts/mychart:1.2.3", specVersion: devel},
-			want: false,
+			want: nil,
 		},
 		"BareOCIURLWithSpecVersion": {
 			args: args{chartURL: "oci://registry.example.com/charts/mychart", specVersion: "2.0.0"},
-			want: false,
+			want: nil,
 		},
 		"NonOCIURLWithSpecVersion": {
 			args: args{chartURL: "https://charts.example.com/mychart-1.2.3.tgz", specVersion: "2.0.0"},
-			want: false,
+			want: nil,
 		},
 		"NoURL": {
 			args: args{specVersion: "2.0.0"},
-			want: false,
+			want: nil,
 		},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got := URLVersionConflicts(tc.args.chartURL, tc.args.specVersion)
-			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("URLVersionConflicts(...): -want, +got:\n%s", diff)
+			got := URLVersionConflict(tc.args.chartURL, tc.args.specVersion)
+			if diff := cmp.Diff(tc.want, got, test.EquateErrors()); diff != "" {
+				t.Errorf("URLVersionConflict(...): -want, +got:\n%s", diff)
 			}
 		})
 	}
