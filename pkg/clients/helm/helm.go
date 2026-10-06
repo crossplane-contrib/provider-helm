@@ -88,7 +88,7 @@ func resolveProviderConfigModern(ctx context.Context, crClient kclient.Client, m
 	var pcSpec kconfig.ProviderConfigSpec
 	switch pc := pcObj.(type) {
 	case *namespacedv1beta1.ProviderConfig:
-		enrichLocalSecretRefs(pc, mg)
+		EnrichLocalSecretRefs(pc, mg.GetNamespace())
 		pcSpec = pc.Spec
 	case *namespacedv1beta1.ClusterProviderConfig:
 		pcSpec = pc.Spec
@@ -118,8 +118,12 @@ func legacyToModernProviderConfigSpec(pc *clusterv1beta1.ProviderConfig) (*kconf
 	return &mSpec, err
 }
 
-func enrichLocalSecretRefs(pc *namespacedv1beta1.ProviderConfig, mg resource.Managed) {
+// EnrichLocalSecretRefs points the credentials Secret reference of a
+// namespaced ProviderConfig at the supplied namespace, the one the
+// ProviderConfig and the resources using it live in: its credentials are read
+// from there whatever namespace the reference names.
+func EnrichLocalSecretRefs(pc *namespacedv1beta1.ProviderConfig, namespace string) {
 	if pc != nil && pc.Spec.Credentials.SecretRef != nil {
-		pc.Spec.Credentials.SecretRef.Namespace = mg.GetNamespace()
+		pc.Spec.Credentials.SecretRef.Namespace = namespace
 	}
 }

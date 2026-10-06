@@ -55,6 +55,7 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 
 	"github.com/alecthomas/kingpin/v2"
+	kubeclient "github.com/crossplane-contrib/provider-kubernetes/pkg/kube/client"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -184,6 +185,15 @@ func main() {
 	})
 	kingpin.FatalIfError(err, "Cannot create controller manager")
 
+	// The manager client reads through informers that only start with the
+	// manager, so the startup listing goes straight to the API server.
+	sizingClient, err := client.New(mgr.GetConfig(), client.Options{HTTPClient: mgr.GetHTTPClient(), Scheme: mgr.GetScheme(), Mapper: mgr.GetRESTMapper()})
+	kingpin.FatalIfError(err, "Cannot create client to size the client cache")
+	sizingCtx, cancelSizing := context.WithTimeout(context.Background(), clientCacheSizeTimeout)
+	cacheSize, err := clientCacheSize(sizingCtx, log, sizingClient)
+	cancelSizing()
+	kingpin.FatalIfError(err, "Cannot calculate the client cache size")
+
 	// Register the conversion webhook for the deprecated cluster-scoped
 	// Release v1alpha1 API. It doesn't matter which version of Release is
 	// used to register the "/convert" handler, so we use v1alpha1 here
@@ -194,9 +204,18 @@ func main() {
 
 	mm := managed.NewMRMetricRecorder()
 	sm := statemetrics.NewMRStateMetrics()
+	cm := kubeclient.NewClientCacheMetrics("provider_helm")
 
 	metrics.Registry.MustRegister(mm)
 	metrics.Registry.MustRegister(sm)
+	metrics.Registry.MustRegister(cm)
+
+	// One builder serves the Release controllers of both scopes so that they
+	// share its client cache.
+	clientBuilder := kubeclient.NewIdentityAwareBuilder(mgr.GetClient(),
+		kubeclient.WithLogger(log),
+		kubeclient.WithClientCacheSize(cacheSize),
+		kubeclient.WithClientCacheMetrics(cm))
 
 	mo := controller.MetricOptions{
 		PollStateMetricInterval: *pollStateMetricInterval,
@@ -253,12 +272,12 @@ func main() {
 		clusterOpts.Gate = crdGate
 		namespacedOpts.Gate = crdGate
 		kingpin.FatalIfError(customresourcesgate.Setup(mgr, namespacedOpts), "Cannot setup CRD gate")
-		kingpin.FatalIfError(clustercontroller.SetupGated(mgr, clusterOpts, *timeout), "Cannot setup cluster-scoped AzureAD controllers")
-		kingpin.FatalIfError(namespacedcontroller.SetupGated(mgr, namespacedOpts, *timeout), "Cannot setup namespaced AzureAD controllers")
+		kingpin.FatalIfError(clustercontroller.SetupGated(mgr, clusterOpts, *timeout, clientBuilder), "Cannot setup cluster-scoped AzureAD controllers")
+		kingpin.FatalIfError(namespacedcontroller.SetupGated(mgr, namespacedOpts, *timeout, clientBuilder), "Cannot setup namespaced AzureAD controllers")
 	} else {
 		log.Info("Provider has missing RBAC permissions for watching CRDs, controller SafeStart capability will be disabled")
-		kingpin.FatalIfError(clustercontroller.Setup(mgr, clusterOpts, *timeout), "Cannot setup cluster-scoped AzureAD controllers")
-		kingpin.FatalIfError(namespacedcontroller.Setup(mgr, namespacedOpts, *timeout), "Cannot setup namespaced AzureAD controllers")
+		kingpin.FatalIfError(clustercontroller.Setup(mgr, clusterOpts, *timeout, clientBuilder), "Cannot setup cluster-scoped AzureAD controllers")
+		kingpin.FatalIfError(namespacedcontroller.Setup(mgr, namespacedOpts, *timeout, clientBuilder), "Cannot setup namespaced AzureAD controllers")
 	}
 
 	// Setup health probes

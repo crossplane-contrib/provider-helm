@@ -61,6 +61,7 @@ const (
 )
 
 const (
+	errNilClientBuilder           = "a client builder is required"
 	errNotRelease                 = "managed resource is not a Release custom resource"
 	errGetProviderConfig          = "cannot get provider config"
 	errNewHelmClient              = "cannot create new Helm client"
@@ -84,7 +85,10 @@ const (
 )
 
 // Setup adds a controller that reconciles Release managed resources.
-func Setup(mgr ctrl.Manager, o controller.Options, timeout time.Duration) error {
+func Setup(mgr ctrl.Manager, o controller.Options, timeout time.Duration, clientBuilder kubeclient.Builder) error {
+	if clientBuilder == nil {
+		return errors.New(errNilClientBuilder)
+	}
 	name := managed.ControllerName(v1beta1.ReleaseGroupKind)
 
 	reconcilerOptions := []managed.ReconcilerOption{
@@ -92,7 +96,7 @@ func Setup(mgr ctrl.Manager, o controller.Options, timeout time.Duration) error 
 			client:          mgr.GetClient(),
 			logger:          o.Logger,
 			usage:           resource.NewProviderConfigUsageTracker(mgr.GetClient(), &namespacedv1beta1.ProviderConfigUsage{}),
-			clientBuilder:   kubeclient.NewIdentityAwareBuilder(mgr.GetClient()),
+			clientBuilder:   clientBuilder,
 			newHelmClientFn: helmClient.NewClient,
 		}),
 		managed.WithPollInterval(o.PollInterval),
@@ -131,9 +135,12 @@ func Setup(mgr ctrl.Manager, o controller.Options, timeout time.Duration) error 
 
 // SetupGated adds a controller that reconciles ProviderConfigs by accounting for
 // their current usage.
-func SetupGated(mgr ctrl.Manager, o controller.Options, timeout time.Duration) error {
+func SetupGated(mgr ctrl.Manager, o controller.Options, timeout time.Duration, clientBuilder kubeclient.Builder) error {
+	if clientBuilder == nil {
+		return errors.New(errNilClientBuilder)
+	}
 	o.Gate.Register(func() {
-		if err := Setup(mgr, o, timeout); err != nil {
+		if err := Setup(mgr, o, timeout, clientBuilder); err != nil {
 			mgr.GetLogger().Error(err, "unable to setup reconciler", "gvk", v1beta1.ReleaseGroupVersionKind.String())
 		}
 	}, v1beta1.ReleaseGroupVersionKind)
