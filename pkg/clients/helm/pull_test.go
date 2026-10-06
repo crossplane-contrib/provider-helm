@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -340,8 +341,9 @@ func TestPullChart_OCIDigestServedFromCache(t *testing.T) {
 }
 
 // serveChartRepository serves a classic chart repository holding one tarball
-// of chart name per version and returns its URL.
-func serveChartRepository(t *testing.T, name string, versions []string) string {
+// of chart name per version. The returned function reports the Accept header
+// of the last tarball request.
+func serveChartRepository(t *testing.T, name string, versions []string) (string, func() string) {
 	t.Helper()
 	dir := t.TempDir()
 	for _, v := range versions {
@@ -356,16 +358,30 @@ func serveChartRepository(t *testing.T, name string, versions []string) string {
 		t.Fatalf("writing index.yaml: %v", err)
 	}
 
-	srv := httptest.NewServer(http.FileServer(http.Dir(dir)))
+	var mu sync.Mutex
+	accept := ""
+	files := http.FileServer(http.Dir(dir))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".tgz") {
+			mu.Lock()
+			accept = r.Header.Get("Accept")
+			mu.Unlock()
+		}
+		files.ServeHTTP(w, r)
+	}))
 	t.Cleanup(srv.Close)
 
-	return srv.URL
+	return srv.URL, func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		return accept
+	}
 }
 
 // TestPullChart_ClassicRepository resolves charts through a real repository
 // index: the spec version selects among the index entries as it does in helm,
 // including the devel range, the only way to get a pre-release without naming
-// it.
+// it, and the tarball is requested the way helm's downloader requests it.
 func TestPullChart_ClassicRepository(t *testing.T) {
 	released := []string{"1.0.0", "1.1.0", "2.0.0-rc.1"}
 
@@ -374,7 +390,8 @@ func TestPullChart_ClassicRepository(t *testing.T) {
 		version  string
 	}
 	type want struct {
-		Chart string
+		Chart  string
+		Accept string
 	}
 	cases := map[string]struct {
 		args args
@@ -382,35 +399,35 @@ func TestPullChart_ClassicRepository(t *testing.T) {
 	}{
 		"ExactVersion": {
 			args: args{versions: released, version: "1.0.0"},
-			want: want{Chart: "mychart-1.0.0"},
+			want: want{Chart: "mychart-1.0.0", Accept: chartAcceptHeader},
 		},
 		"NoVersionSelectsLatestStable": {
 			args: args{versions: released},
-			want: want{Chart: "mychart-1.1.0"},
+			want: want{Chart: "mychart-1.1.0", Accept: chartAcceptHeader},
 		},
 		"RangeSelectsHighestMatch": {
 			args: args{versions: released, version: "<1.1.0"},
-			want: want{Chart: "mychart-1.0.0"},
+			want: want{Chart: "mychart-1.0.0", Accept: chartAcceptHeader},
 		},
 		"DevelRangeSelectsPreRelease": {
 			args: args{versions: released, version: devel},
-			want: want{Chart: "mychart-2.0.0-rc.1"},
+			want: want{Chart: "mychart-2.0.0-rc.1", Accept: chartAcceptHeader},
 		},
 		"DevelRangeOnPreReleaseOnlyRepository": {
 			args: args{versions: []string{"0.1.0-dev.1", "0.1.0-dev.2"}, version: devel},
-			want: want{Chart: "mychart-0.1.0-dev.2"},
+			want: want{Chart: "mychart-0.1.0-dev.2", Accept: chartAcceptHeader},
 		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			repoURL := serveChartRepository(t, "mychart", tc.args.versions)
+			repoURL, tarballAccept := serveChartRepository(t, "mychart", tc.args.versions)
 
 			path, err := newPullClient(t, t.TempDir()).pullChart("", "mychart", tc.args.version, repoURL, "", &RepoCreds{})
 			if err != nil {
 				t.Fatalf("pullChart(...): unexpected error: %v", err)
 			}
 
-			got := want{Chart: chartID(t, path)}
+			got := want{Chart: chartID(t, path), Accept: tarballAccept()}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("pullChart(...): -want, +got:\n%s", diff)
 			}

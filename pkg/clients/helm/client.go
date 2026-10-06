@@ -53,7 +53,12 @@ import (
 	namespacedv1beta1 "github.com/crossplane-contrib/provider-helm/apis/namespaced/release/v1beta1"
 )
 
-const helmDriverSecret = "secret"
+const (
+	helmDriverSecret = "secret"
+	// chartAcceptHeader is the Accept header helm's downloader sends when it
+	// downloads a chart tarball.
+	chartAcceptHeader = "application/gzip,application/octet-stream"
+)
 
 // chartContentCache is the directory of helm's content-addressed chart cache:
 // entries are keyed by the digest resolved from the requesting source, so they
@@ -675,10 +680,11 @@ func (hc *client) fetchURLToCache(dl *downloader.ChartDownloader, chartURL, dige
 		return "", errors.Wrap(err, errFailedToPullChart)
 	}
 	// WithURL marks chartURL as the URL the basic auth credentials belong to;
-	// without it the http getter withholds them from every request. This
-	// mirrors what helm's downloader sets for a ref without an owning
-	// repositories.yaml entry.
-	data, err := g.Get(chartURL, append(dl.Options, getter.WithURL(chartURL))...)
+	// without it the http getter withholds them from every request. This and
+	// the Accept header mirror what helm's downloader sets for a ref without
+	// an owning repositories.yaml entry; servers that negotiate on Accept
+	// answer with something other than the tarball when it is missing.
+	data, err := g.Get(chartURL, append(dl.Options, getter.WithURL(chartURL), getter.WithAcceptHeader(chartAcceptHeader))...)
 	if err != nil {
 		return "", errors.Wrap(err, errFailedToPullChart)
 	}
