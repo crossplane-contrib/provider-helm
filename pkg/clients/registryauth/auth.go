@@ -90,34 +90,18 @@ func NewResolver(kube client.Client) *Resolver {
 
 // ResolveNamespaced resolves registry credentials for a namespaced Release
 func (r *Resolver) ResolveNamespaced(ctx context.Context, release *namespacedv1beta1.Release) (*helmClient.RepoCreds, error) {
-	registryURL := release.Spec.ForProvider.Chart.Repository
-	if registryURL == "" {
-		registryURL = release.Spec.ForProvider.Chart.URL
-	}
-
 	// If PullSecretRef is provided, use it
 	if release.Spec.ForProvider.Chart.PullSecretRef.Name != "" {
 		return r.resolveSecretCredentials(ctx, release.Namespace, release.Spec.ForProvider.Chart.PullSecretRef.Name)
 	}
 
-	// Build full repository path by combining registry URL and chart name
-	chartName := release.Spec.ForProvider.Chart.Name
-	fullRepoURL := registryURL
-	if chartName != "" && !strings.HasSuffix(registryURL, chartName) {
-		fullRepoURL = strings.TrimSuffix(registryURL, "/") + "/" + chartName
-	}
-
 	// Otherwise, use default credential chain (AWS IRSA, Azure/GCP Workload Identity, etc.)
-	return r.resolveKeychainAuth(ctx, fullRepoURL)
+	return r.resolveKeychainAuth(ctx, keychainScope(release.Spec.ForProvider.Chart.URL,
+		release.Spec.ForProvider.Chart.Repository, release.Spec.ForProvider.Chart.Name))
 }
 
 // ResolveCluster resolves registry credentials for a cluster-scoped Release
 func (r *Resolver) ResolveCluster(ctx context.Context, release *clusterv1beta1.Release) (*helmClient.RepoCreds, error) {
-	registryURL := release.Spec.ForProvider.Chart.Repository
-	if registryURL == "" {
-		registryURL = release.Spec.ForProvider.Chart.URL
-	}
-
 	// If PullSecretRef is provided, use it
 	if release.Spec.ForProvider.Chart.PullSecretRef.Name != "" {
 		if release.Spec.ForProvider.Chart.PullSecretRef.Namespace == "" {
@@ -127,15 +111,23 @@ func (r *Resolver) ResolveCluster(ctx context.Context, release *clusterv1beta1.R
 			release.Spec.ForProvider.Chart.PullSecretRef.Name)
 	}
 
-	// Build full repository path by combining registry URL and chart name
-	chartName := release.Spec.ForProvider.Chart.Name
-	fullRepoURL := registryURL
-	if chartName != "" && !strings.HasSuffix(registryURL, chartName) {
-		fullRepoURL = strings.TrimSuffix(registryURL, "/") + "/" + chartName
-	}
-
 	// Otherwise, use default credential chain (AWS IRSA, Azure/GCP Workload Identity, etc.)
-	return r.resolveKeychainAuth(ctx, fullRepoURL)
+	return r.resolveKeychainAuth(ctx, keychainScope(release.Spec.ForProvider.Chart.URL,
+		release.Spec.ForProvider.Chart.Repository, release.Spec.ForProvider.Chart.Name))
+}
+
+// keychainScope returns the registry reference used to scope keychain
+// credential lookups. URL, when set, is the actual pull source and takes
+// precedence over Repository; the chart name only participates when resolving
+// from Repository, since a URL already points at the chart.
+func keychainScope(chartURL, repository, chartName string) string {
+	if chartURL != "" {
+		return chartURL
+	}
+	if chartName != "" && !strings.HasSuffix(repository, chartName) {
+		return strings.TrimSuffix(repository, "/") + "/" + chartName
+	}
+	return repository
 }
 
 func (r *Resolver) resolveSecretCredentials(ctx context.Context, namespace, name string) (*helmClient.RepoCreds, error) {

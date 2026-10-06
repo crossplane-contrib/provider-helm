@@ -100,10 +100,12 @@ func TestEffectiveChartDigest(t *testing.T) {
 			specDigest: testDigestA,
 			want:       testDigestA,
 		},
-		"NonOCIURLUsesSpec": {
+		"NonOCIURLYieldsEmpty": {
+			// A digest cannot apply to a non-OCI URL and the deploy rejects
+			// the spec, so no label value applies.
 			chartURL:   "https://charts.example.com/mychart-1.2.3.tgz",
 			specDigest: testDigestA,
-			want:       testDigestA,
+			want:       "",
 		},
 		"OCIURLDigestWins": {
 			chartURL: "oci://registry.example.com/charts/mychart@" + testDigestA,

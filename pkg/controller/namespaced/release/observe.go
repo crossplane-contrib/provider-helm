@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/fieldpath"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
@@ -154,13 +155,28 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 		return true, nil
 	}
 
-	// In URL mode the deployed chart's metadata version is deliberately not
-	// compared: an OCI URL tag is an arbitrary string (e.g. :latest, :stable, a
-	// v-prefixed tag) that need not equal the chart's Chart.yaml version, so
-	// comparing them would report perpetual drift. A tag change is a URL change
-	// and is caught by the url-hash label below.
-	if in.Chart.URL == "" && versionDrifted(in.Chart.Version, ocm.Version) {
+	// The deployed chart's metadata version is compared only when the deploy
+	// selects the chart by the spec version: in repository mode without a
+	// digest, and for an OCI URL without a tag or digest. A digest selects the
+	// chart on its own (Helm pulls it even when no tag matches the spec
+	// version), so comparing there could only loop. An OCI URL tag is an
+	// arbitrary string (e.g. :latest, :stable, a v-prefixed tag) that need not
+	// equal the chart's Chart.yaml version, so comparing it would report
+	// perpetual drift; a tag change is a URL change and is caught by the
+	// url-hash label below.
+	pullsSpecVersion := (in.Chart.URL == "" && in.Chart.Digest == "") || helmClient.URLPullsSpecVersion(in.Chart.URL, in.Chart.Digest)
+	if pullsSpecVersion && versionDrifted(in.Chart.Version, ocm.Version) {
 		return false, nil
+	}
+
+	// A version embedded in an OCI URL that conflicts with the spec version can
+	// never deploy: Helm rejects the pull itself (helm pull oci://.../chart:latest
+	// --version 1.2.3 fails with "chart reference and version mismatch"). Fail
+	// the observation so that the conflict surfaces as a reconcile error before
+	// any deploy is attempted, instead of passing as up to date or sending a
+	// doomed Update through credential and patch resolution first.
+	if err := helmClient.URLVersionConflict(in.Chart.URL, in.Chart.Version); err != nil {
+		return false, err
 	}
 
 	// URL drift is detected via the label written at deploy time. Every release
@@ -196,12 +212,12 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 		}
 		if specDigestEnc == "" && in.Chart.Digest != "" {
 			// The spec pins a digest that does not resolve (it conflicts with
-			// the OCI URL's embedded digest, or the URL is malformed). The
-			// deploy rejects such specs; report drift so that error surfaces
-			// instead of masking the conflict as up-to-date. A URL-embedded
-			// digest that does not fit a label is deliberately not covered:
-			// the deploy accepts it and records it as unpinned, so reporting
-			// drift here would upgrade forever.
+			// the OCI URL's embedded digest, accompanies a non-OCI URL, or the
+			// URL is malformed). The deploy rejects such specs; report drift
+			// so that error surfaces instead of masking the conflict as
+			// up-to-date. A URL-embedded digest that does not fit a label is
+			// deliberately not covered: the deploy accepts it and records it
+			// as unpinned, so reporting drift here would upgrade forever.
 			return false, nil
 		}
 	} else if in.Chart.Digest != "" && s.AtProvider.Digest != "" && in.Chart.Digest != s.AtProvider.Digest {
@@ -240,9 +256,23 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 
 // versionDrifted reports whether the spec pins a chart version other than the
 // deployed one. An empty spec version (digest-only deployments, or not yet
-// late-initialized) and the devel range pin nothing.
+// late-initialized) and the devel range pin nothing. Two versions that parse
+// as semver are compared as such, metadata included, so a v-prefixed spec
+// version (the tag a v-prefixed registry needs) matches the Chart.yaml version
+// it pulled; anything else, such as a range, is compared verbatim.
 func versionDrifted(specVersion, deployedVersion string) bool {
-	return specVersion != "" && specVersion != deployedVersion && specVersion != devel
+	if specVersion == "" || specVersion == devel || specVersion == deployedVersion {
+		return false
+	}
+	spec, err := semver.NewVersion(specVersion)
+	if err != nil {
+		return true
+	}
+	deployed, err := semver.NewVersion(deployedVersion)
+	if err != nil {
+		return true
+	}
+	return !spec.Equal(deployed) || spec.Metadata() != deployed.Metadata()
 }
 
 func isPending(s common.Status) bool {

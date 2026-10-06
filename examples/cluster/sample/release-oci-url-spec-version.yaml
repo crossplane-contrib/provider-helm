@@ -1,0 +1,14 @@
+apiVersion: helm.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: url-spec-version-cluster
+  annotations:
+    uptest.upbound.io/post-assert-hook: testhooks/url-spec-version.sh
+spec:
+  forProvider:
+    chart:
+      url: oci://ghcr.io/stefanprodan/charts/podinfo
+      version: 6.10.0
+    namespace: crossplane-system
+  providerConfigRef:
+    name: helm-provider
