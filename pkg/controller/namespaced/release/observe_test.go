@@ -473,11 +473,12 @@ func Test_isUpToDate(t *testing.T) {
 				err: nil,
 			},
 		},
-		"UpToDate_DigestSpecifiedButNotYetDeployed": {
+		"NotUpToDate_LegacyDigestPinned": {
 			// A release deployed before label support: the status digest is the
-			// only signal and it is empty, so the pin cannot be verified and the
-			// behavior is unchanged. Releases this provider deployed carry the
-			// label and are covered by NotUpToDate_DigestAddedToUnpinnedRelease.
+			// only signal and it records no pin, so a pinned spec is drift. The
+			// upgrade pulls the pinned chart and writes the label. Releases this
+			// provider deployed carry the label and are covered by
+			// NotUpToDate_DigestAddedToUnpinnedRelease.
 			args: args{
 				kube: &test.MockClient{
 					MockGet: nil,
@@ -514,7 +515,49 @@ func Test_isUpToDate(t *testing.T) {
 				},
 			},
 			want: want{
-				out: true,
+				out: false,
+				err: nil,
+			},
+		},
+		"NotUpToDate_LegacyDigestUnpinned": {
+			// A release deployed before label support with a pin recorded in
+			// status: removing the pin from the spec is drift.
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							Name:    testChart,
+							Version: testVersion,
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Raw: nil,
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: testVersion,
+						},
+					},
+					Config: testReleaseConfig,
+				},
+				status: v1beta1.ReleaseStatus{
+					AtProvider: v1beta1.ReleaseObservation{
+						Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+					},
+				},
+			},
+			want: want{
+				out: false,
 				err: nil,
 			},
 		},

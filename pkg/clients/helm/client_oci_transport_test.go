@@ -71,14 +71,11 @@ func isolateRegistryCredentials(t *testing.T) {
 }
 
 // pullWithCreds is pullWithArgs with registry credentials, which make
-// pullChart log in first. Every pull starts from empty credential stores, so
-// a pull without credentials can't reuse an earlier login.
+// pullChart log in first. Every pull starts from empty credential stores and
+// an empty content cache, so a pull can't reuse an earlier login or chart.
 func pullWithCreds(t *testing.T, host string, creds *RepoCreds, apply ArgsApplier) error {
 	t.Helper()
 	isolateRegistryCredentials(t)
-	originalCache := chartCache
-	chartCache = t.TempDir()
-	t.Cleanup(func() { chartCache = originalCache })
 
 	// Init doesn't dial the Kubernetes API, so a non-dialable host is fine.
 	restConfig := &rest.Config{Host: "http://127.0.0.1:0"}
@@ -90,7 +87,9 @@ func pullWithCreds(t *testing.T, host string, creds *RepoCreds, apply ArgsApplie
 	if !ok {
 		t.Fatalf("NewClient(...) did not return a *client")
 	}
-	return cc.pullChart("", "testchart", "0.1.0", "oci://"+host+"/charts", "", creds, t.TempDir())
+	cc.contentCache = t.TempDir()
+	_, err = cc.pullChart("", "testchart", "0.1.0", "oci://"+host+"/charts", "", creds)
+	return err
 }
 
 // requireBasicAuth puts HTTP basic auth in front of h.

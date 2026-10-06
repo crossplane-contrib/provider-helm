@@ -1,0 +1,17 @@
+apiVersion: helm.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: cache-hit-cluster
+  annotations:
+    uptest.upbound.io/post-assert-hook: testhooks/cache-hit.sh
+spec:
+  forProvider:
+    chart:
+      name: podinfo
+      repository: oci://ghcr.io/stefanprodan/charts
+      # podinfo 6.9.4. No other example pins this digest, so a cache hit
+      # logged for it can only come from this Release.
+      digest: sha256:8b862d260d241d573ab286919a5589d4e4e8245a715eb137840bbdbe96020848
+    namespace: crossplane-system
+  providerConfigRef:
+    name: helm-provider

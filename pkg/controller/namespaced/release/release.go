@@ -327,12 +327,6 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 		if err != nil {
 			return managed.ExternalObservation{}, errors.Wrap(err, "cannot get connection details")
 		}
-		// Legacy releases without a digest label: assume the deployed digest
-		// matches the spec once deployed and synced. Labeled releases carry
-		// the deployed digest themselves and never need this.
-		if _, ok := rel.Labels[helmClient.LabelDigestHash]; !ok && cr.Status.AtProvider.Digest == "" {
-			cr.Status.AtProvider.Digest = cr.Spec.ForProvider.Chart.Digest
-		}
 		cr.Status.SetConditions(xpv2.Available())
 	} else {
 		cr.Status.SetConditions(xpv2.Unavailable())

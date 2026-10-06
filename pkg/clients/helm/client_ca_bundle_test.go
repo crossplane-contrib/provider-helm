@@ -388,10 +388,11 @@ func TestReadSystemCABundle(t *testing.T) {
 }
 
 // TestNewClient_CABundleWiring is a white-box test (same package) verifying
-// that a supplied Args.CABundle is actually plumbed into the underlying Helm
-// action structs' CaFile field with the right content - the part of this
-// feature that's specific to this provider's wiring, as opposed to Helm's
-// own CaFile handling, which is Helm's to test.
+// that a supplied Args.CABundle is actually plumbed into the chart
+// downloader's CA file and the underlying Helm action structs' CaFile field
+// with the right content - the part of this feature that's specific to this
+// provider's wiring, as opposed to Helm's own CaFile handling, which is
+// Helm's to test.
 func TestNewClient_CABundleWiring(t *testing.T) {
 	ca := newTestCA(t)
 	// NewClient's action.Configuration.Init doesn't dial anything - it just
@@ -424,7 +425,7 @@ func TestNewClient_CABundleWiring(t *testing.T) {
 		}
 
 		for name, caFile := range map[string]string{
-			"pullClient":    cc.pullClient.CaFile,
+			"downloader":    cc.caFile,
 			"installClient": cc.installClient.CaFile,
 			"upgradeClient": cc.upgradeClient.CaFile,
 		} {
@@ -454,8 +455,8 @@ func TestNewClient_CABundleWiring(t *testing.T) {
 		if !ok {
 			t.Fatalf("NewClient(...) did not return a *client")
 		}
-		if cc.pullClient.CaFile != "" {
-			t.Errorf("pullClient.CaFile = %q, want empty when no CABundle is supplied", cc.pullClient.CaFile)
+		if cc.caFile != "" {
+			t.Errorf("client.caFile = %q, want empty when no CABundle is supplied", cc.caFile)
 		}
 	})
 
@@ -484,15 +485,15 @@ func TestNewClient_CABundleWiring(t *testing.T) {
 			t.Fatalf("NewClient(...) did not return a *client")
 		}
 
-		got, err := os.ReadFile(cc.pullClient.CaFile)
+		got, err := os.ReadFile(cc.caFile)
 		if err != nil {
-			t.Fatalf("reading pullClient.CaFile: %v", err)
+			t.Fatalf("reading client.caFile: %v", err)
 		}
 		if !bytes.Contains(got, systemCA.caPEM) {
-			t.Errorf("pullClient.CaFile does not contain the system CA bundle: %q", got)
+			t.Errorf("client.caFile does not contain the system CA bundle: %q", got)
 		}
 		if !bytes.Contains(got, ca.caPEM) {
-			t.Errorf("pullClient.CaFile does not contain the user-supplied CABundle: %q", got)
+			t.Errorf("client.caFile does not contain the user-supplied CABundle: %q", got)
 		}
 	})
 }
