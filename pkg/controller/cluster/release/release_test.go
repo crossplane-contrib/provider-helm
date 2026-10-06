@@ -354,8 +354,11 @@ func Test_helmExternal_Observe(t *testing.T) {
 	}
 	type want struct {
 		out managed.ExternalObservation
-		err error
+		// digest is status.atProvider.digest after the observation.
+		digest string
+		err    error
 	}
+	const pinnedDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	cases := map[string]struct {
 		args
 		want
@@ -507,6 +510,72 @@ func Test_helmExternal_Observe(t *testing.T) {
 				err: nil,
 			},
 		},
+		"LegacyDigestPinIsDrift": {
+			// A release deployed before label support with no digest recorded
+			// in status: pinning one is drift, and the pin is not copied into
+			// status as if it had been deployed.
+			args: args{
+				localKube: nil,
+				kube:      nil,
+				helm: &MockHelmClient{
+					MockGetLastRelease: func(r string) (hr *release.Release, err error) {
+						return &release.Release{
+							Name: r,
+							Info: &release.Info{
+								Status: common.StatusDeployed,
+							},
+							Chart: &chart.Chart{
+								Metadata: &chart.Metadata{
+									Name:    testChart,
+									Version: testVersion,
+								},
+							},
+							Config: map[string]interface{}{},
+						}, nil
+					},
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					r.Spec.ForProvider.Chart.Digest = pinnedDigest
+				}),
+			},
+			want: want{
+				out: managed.ExternalObservation{ResourceExists: true, ResourceUpToDate: false, ConnectionDetails: managed.ConnectionDetails{}},
+				err: nil,
+			},
+		},
+		"LegacyDigestPinNotRecordedWithoutUpdatePolicy": {
+			// Without the Update policy nothing deploys the pin, so status
+			// keeps reporting that no digest is known to be deployed.
+			args: args{
+				localKube: nil,
+				kube:      nil,
+				helm: &MockHelmClient{
+					MockGetLastRelease: func(r string) (hr *release.Release, err error) {
+						return &release.Release{
+							Name: r,
+							Info: &release.Info{
+								Status: common.StatusDeployed,
+							},
+							Chart: &chart.Chart{
+								Metadata: &chart.Metadata{
+									Name:    testChart,
+									Version: testVersion,
+								},
+							},
+							Config: map[string]interface{}{},
+						}, nil
+					},
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					r.Spec.ManagementPolicies = []xpv2.ManagementAction{xpv2.ManagementActionObserve}
+					r.Spec.ForProvider.Chart.Digest = pinnedDigest
+				}),
+			},
+			want: want{
+				out: managed.ExternalObservation{ResourceExists: true, ResourceUpToDate: true, ConnectionDetails: managed.ConnectionDetails{}},
+				err: nil,
+			},
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -523,6 +592,12 @@ func Test_helmExternal_Observe(t *testing.T) {
 
 			if diff := cmp.Diff(tc.want.out, got); diff != "" {
 				t.Fatalf("e.Observe(...): -want out, +got out: %s", diff)
+			}
+
+			if cr, ok := tc.args.mg.(*v1beta1.Release); ok {
+				if diff := cmp.Diff(tc.want.digest, cr.Status.AtProvider.Digest); diff != "" {
+					t.Errorf("e.Observe(...): -want status digest, +got status digest: %s", diff)
+				}
 			}
 		})
 	}

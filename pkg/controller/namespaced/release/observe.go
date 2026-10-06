@@ -203,8 +203,7 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 	// makes the deployed digest observable. Every release this provider
 	// deployed carries it, empty when the deploy was not pinned, so any
 	// difference from the encoded spec digest is drift: pinned to another
-	// digest, pinned where none was, or unpinned. Releases deployed before
-	// label support fall back to the digest persisted in status.
+	// digest, pinned where none was, or unpinned.
 	specDigestEnc := helmClient.EncodeDigestLabel(helmClient.EffectiveChartDigest(in.Chart.URL, in.Chart.Digest))
 	if deployedDigest, ok := observed.Labels[helmClient.LabelDigestHash]; ok {
 		if deployedDigest != specDigestEnc {
@@ -220,7 +219,15 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 			// as unpinned, so reporting drift here would upgrade forever.
 			return false, nil
 		}
-	} else if in.Chart.Digest != "" && s.AtProvider.Digest != "" && in.Chart.Digest != s.AtProvider.Digest {
+	} else if in.Chart.Digest != s.AtProvider.Digest {
+		// Releases deployed before label support: the digest persisted in
+		// status is the only record of what was deployed. The provider
+		// versions that deployed them stored spec.forProvider.chart.digest
+		// there verbatim, so the spec field is compared, not the effective
+		// digest. Any difference is drift, an empty side included: pinned
+		// where no pin is recorded, or unpinned. The upgrade verifies the
+		// pin by pulling it and writes the label, which takes over from
+		// then on.
 		return false, nil
 	}
 
