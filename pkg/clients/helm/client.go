@@ -549,10 +549,6 @@ func (hc *client) downloadToCache(dl *downloader.ChartDownloader, ref, version s
 // through the content-addressed cache. The index advertises the tarball's
 // digest, so a cached chart skips the tarball download entirely.
 func (hc *client) pullRepoChart(dl *downloader.ChartDownloader, repoURL, name, version string, creds *RepoCreds) (string, error) {
-	if version == devel {
-		version = ""
-	}
-
 	// The entry name only namespaces the transient index cache files; a
 	// random name prevents concurrent reconciles from racing on them,
 	// mirroring helm's own FindChartInRepoURL.

@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -30,6 +31,7 @@ import (
 	chartutil "helm.sh/helm/v4/pkg/chart/v2/util"
 	"helm.sh/helm/v4/pkg/downloader"
 	helmregistry "helm.sh/helm/v4/pkg/registry"
+	repo "helm.sh/helm/v4/pkg/repo/v1"
 	"k8s.io/client-go/rest"
 )
 
@@ -330,6 +332,85 @@ func TestPullChart_OCIDigestServedFromCache(t *testing.T) {
 				FirstPullRequested: afterFirst > before,
 				SecondPullRequests: count() - afterFirst,
 			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("pullChart(...): -want, +got:\n%s", diff)
+			}
+		})
+	}
+}
+
+// serveChartRepository serves a classic chart repository holding one tarball
+// of chart name per version and returns its URL.
+func serveChartRepository(t *testing.T, name string, versions []string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, v := range versions {
+		packageChart(t, name, v, dir)
+	}
+	idx, err := repo.IndexDirectory(dir, "")
+	if err != nil {
+		t.Fatalf("repo.IndexDirectory(...): unexpected error: %v", err)
+	}
+	idx.SortEntries()
+	if err := idx.WriteFile(filepath.Join(dir, "index.yaml"), 0o600); err != nil {
+		t.Fatalf("writing index.yaml: %v", err)
+	}
+
+	srv := httptest.NewServer(http.FileServer(http.Dir(dir)))
+	t.Cleanup(srv.Close)
+
+	return srv.URL
+}
+
+// TestPullChart_ClassicRepository resolves charts through a real repository
+// index: the spec version selects among the index entries as it does in helm,
+// including the devel range, the only way to get a pre-release without naming
+// it.
+func TestPullChart_ClassicRepository(t *testing.T) {
+	released := []string{"1.0.0", "1.1.0", "2.0.0-rc.1"}
+
+	type args struct {
+		versions []string
+		version  string
+	}
+	type want struct {
+		Chart string
+	}
+	cases := map[string]struct {
+		args args
+		want want
+	}{
+		"ExactVersion": {
+			args: args{versions: released, version: "1.0.0"},
+			want: want{Chart: "mychart-1.0.0"},
+		},
+		"NoVersionSelectsLatestStable": {
+			args: args{versions: released},
+			want: want{Chart: "mychart-1.1.0"},
+		},
+		"RangeSelectsHighestMatch": {
+			args: args{versions: released, version: "<1.1.0"},
+			want: want{Chart: "mychart-1.0.0"},
+		},
+		"DevelRangeSelectsPreRelease": {
+			args: args{versions: released, version: devel},
+			want: want{Chart: "mychart-2.0.0-rc.1"},
+		},
+		"DevelRangeOnPreReleaseOnlyRepository": {
+			args: args{versions: []string{"0.1.0-dev.1", "0.1.0-dev.2"}, version: devel},
+			want: want{Chart: "mychart-0.1.0-dev.2"},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			repoURL := serveChartRepository(t, "mychart", tc.args.versions)
+
+			path, err := newPullClient(t, t.TempDir()).pullChart("", "mychart", tc.args.version, repoURL, "", &RepoCreds{})
+			if err != nil {
+				t.Fatalf("pullChart(...): unexpected error: %v", err)
+			}
+
+			got := want{Chart: chartID(t, path)}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("pullChart(...): -want, +got:\n%s", diff)
 			}
