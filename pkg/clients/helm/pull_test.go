@@ -375,6 +375,102 @@ func TestPullChart_OCIDigestServedFromCache(t *testing.T) {
 	}
 }
 
+// TestPullChart_OCIDigestValidatedWhenCached: a tag or version next to a
+// pinned digest is checked against the registry also when the pinned chart is
+// already cached, so a spec does not deploy or fail depending on what other
+// Releases pulled before it. The chart itself still comes from the cache, and
+// a digest on its own leaves nothing to check.
+func TestPullChart_OCIDigestValidatedWhenCached(t *testing.T) {
+	requests := &requestCounter{}
+	srv := httptest.NewServer(requests.wrap(registry.New()))
+	defer srv.Close()
+	host := srv.Listener.Addr().String()
+	repository := "oci://" + host + "/charts"
+
+	pushClient, err := helmregistry.NewClient(helmregistry.ClientOptPlainHTTP())
+	if err != nil {
+		t.Fatalf("helmregistry.NewClient(...) for push setup: unexpected error: %v", err)
+	}
+	digestV1 := pushChart(t, pushClient, host, "testchart", "0.1.0")
+	pushChart(t, pushClient, host, "testchart", "0.2.0")
+
+	type args struct {
+		url        string
+		repository string
+		name       string
+		version    string
+		digest     string
+	}
+	type want struct {
+		Chart         string
+		Failed        bool
+		AskedRegistry bool
+		BlobRequests  int
+	}
+	cases := map[string]struct {
+		args args
+		want want
+	}{
+		"RepositoryDigestOnly": {
+			args: args{repository: repository, name: "testchart", digest: digestV1},
+			want: want{Chart: "testchart-0.1.0"},
+		},
+		"RepositoryDigestWithItsVersion": {
+			args: args{repository: repository, name: "testchart", version: "0.1.0", digest: digestV1},
+			want: want{Chart: "testchart-0.1.0", AskedRegistry: true},
+		},
+		"RepositoryDigestWithUntaggedVersion": {
+			args: args{repository: repository, name: "testchart", version: "9.9.9", digest: digestV1},
+			want: want{Chart: "testchart-0.1.0", AskedRegistry: true},
+		},
+		"RepositoryDigestWithVersionOfAnotherDigest": {
+			args: args{repository: repository, name: "testchart", version: "0.2.0", digest: digestV1},
+			want: want{Failed: true, AskedRegistry: true},
+		},
+		"RepositoryDigestWithTagOfAnotherDigestInChartName": {
+			args: args{repository: repository, name: "testchart:0.2.0", digest: digestV1},
+			want: want{Failed: true, AskedRegistry: true},
+		},
+		"URLDigestOnly": {
+			args: args{url: repository + "/testchart@" + digestV1},
+			want: want{Chart: "testchart-0.1.0"},
+		},
+		"URLDigestWithItsTag": {
+			args: args{url: repository + "/testchart:0.1.0@" + digestV1},
+			want: want{Chart: "testchart-0.1.0", AskedRegistry: true},
+		},
+		"URLDigestWithTagOfAnotherDigest": {
+			args: args{url: repository + "/testchart:0.2.0@" + digestV1},
+			want: want{Failed: true, AskedRegistry: true},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cacheDir := t.TempDir()
+			if _, err := newPullClient(t, cacheDir, plainHTTP).pullChart("", "testchart", "", repository, digestV1, &RepoCreds{}); err != nil {
+				t.Fatalf("pullChart(...) filling the cache: unexpected error: %v", err)
+			}
+			totalBefore, blobsBefore := requests.counts()
+
+			got := want{}
+			path, err := newPullClient(t, cacheDir, plainHTTP).pullChart(tc.args.url, tc.args.name, tc.args.version, tc.args.repository, tc.args.digest, &RepoCreds{})
+			if err != nil {
+				t.Logf("pullChart(...): %v", err)
+				got.Failed = true
+			} else {
+				got.Chart = chartID(t, path)
+			}
+			totalAfter, blobsAfter := requests.counts()
+			got.AskedRegistry = totalAfter > totalBefore
+			got.BlobRequests = blobsAfter - blobsBefore
+
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("pullChart(...): -want, +got:\n%s", diff)
+			}
+		})
+	}
+}
+
 // TestPullChart_OCITagServedFromCache: a chart selected by tag or version is
 // cached under the manifest digest the registry resolves it to. The next pull
 // asks the registry what the tag points at, because a tag can move, and then
@@ -515,6 +611,48 @@ func TestPullChart_OCITagFollowsRegistry(t *testing.T) {
 
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("pullChart(...): -want, +got:\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestOCIRefHasTag(t *testing.T) {
+	const digest = "sha256:c56f4d760bc9da702f231f37fcec89c66b0993f0cb91446f86d014b133c6693f"
+
+	cases := map[string]struct {
+		ref  string
+		want bool
+	}{
+		"Tagged": {
+			ref:  "oci://registry.example.com/charts/mychart:1.2.3",
+			want: true,
+		},
+		"TaggedAtDigest": {
+			ref:  "oci://registry.example.com/charts/mychart:1.2.3@" + digest,
+			want: true,
+		},
+		"TaggedAtDigestWithRegistryPort": {
+			ref:  "oci://127.0.0.1:5000/charts/mychart:1.2.3@" + digest,
+			want: true,
+		},
+		"Untagged": {
+			ref:  "oci://registry.example.com/charts/mychart",
+			want: false,
+		},
+		"UntaggedAtDigest": {
+			ref:  "oci://registry.example.com/charts/mychart@" + digest,
+			want: false,
+		},
+		"UntaggedAtDigestWithRegistryPort": {
+			ref:  "oci://127.0.0.1:5000/charts/mychart@" + digest,
+			want: false,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := ociRefHasTag(tc.ref)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("ociRefHasTag(...): -want, +got:\n%s", diff)
 			}
 		})
 	}

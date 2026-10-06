@@ -594,8 +594,8 @@ func (hc *client) pullRepoChart(dl *downloader.ChartDownloader, repoURL, name, v
 }
 
 // cachedChart returns the content-cache path for a digest-pinned chart when
-// it is already cached, letting digest-pinned deploys skip the registry
-// round-trip entirely. The Info log doubles as the observable signal for
+// it is already cached, letting deploys pinned by digest alone skip the
+// registry round-trip entirely. The Info log doubles as the observable signal for
 // end-to-end cache tests, which assert it via the provider logs.
 func (hc *client) cachedChart(dl *downloader.ChartDownloader, digest string) (string, bool) {
 	key, ok := digestCacheKey(digest)
@@ -617,19 +617,26 @@ func (hc *client) cachedChart(dl *downloader.ChartDownloader, digest string) (st
 // (ValidateReference returns an empty hash for a tag, a version and a bare
 // digest alike), so it downloads on every pull and stores the tarball under
 // its own hash: a key nothing can look up before the next download. The
-// manifest digest is used instead. A pinned digest is its own key, so a cached
-// chart is served without contacting the registry. A tag or version is
-// mutable, so the registry is asked what it points at on every pull, which
-// costs one request, and the answer is the key.
+// manifest digest is used instead. A pinned digest is its own key, so when
+// nothing else selects the chart a cached copy is served without contacting
+// the registry. A tag or version is mutable, so the registry is asked what it
+// points at on every pull, which costs one request: without a digest the
+// answer is the key, next to a digest it must not be another digest. That
+// check runs before the cache lookup, otherwise a spec whose tag points
+// elsewhere would deploy or fail depending on what other Releases pulled
+// before it.
 //
-// The registry is logged in to only once it is needed, so that a cached
-// pinned chart does not depend on it being reachable.
+// The registry is logged in to only once it is needed, so that a cached chart
+// pinned by digest alone does not depend on it being reachable.
 func (hc *client) pullOCIChart(dl *downloader.ChartDownloader, ref, version, digest string, creds *RepoCreds) (string, error) {
 	pinned := digest != ""
 	if pinned {
 		if _, ok := digestCacheKey(digest); !ok {
 			return "", errors.Errorf(errMalformedDigestTmpl, digest)
 		}
+	}
+	digestAlone := pinned && version == "" && !ociRefHasTag(ref)
+	if digestAlone {
 		if chartFilePath, ok := hc.cachedChart(dl, digest); ok {
 			return chartFilePath, nil
 		}
@@ -649,23 +656,33 @@ func (hc *client) pullOCIChart(dl *downloader.ChartDownloader, ref, version, dig
 	pullRef := strings.TrimPrefix(pullURL.String(), registry.OCIScheme+"://")
 
 	if !pinned {
-		desc, err := hc.registryClient.Resolve(pullRef)
-		if err != nil {
-			return "", errors.Wrap(err, errFailedToPullChart)
-		}
-		digest = desc.Digest.String()
-		if _, ok := digestCacheKey(digest); !ok {
-			// Not a sha256 digest, so it cannot key the cache: leave the
-			// pull to helm's downloader.
-			return hc.downloadToCache(dl, ref, version)
-		}
+		return hc.pullOCITagToCache(dl, ref, version, pullRef)
+	}
+	if !digestAlone {
 		if chartFilePath, ok := hc.cachedChart(dl, digest); ok {
 			return chartFilePath, nil
 		}
-		pullRef = ociRefAtDigest(pullRef, digest)
 	}
-
 	return hc.pullOCIDigestToCache(dl, pullRef, digest)
+}
+
+// pullOCITagToCache fetches the chart that the tag in pullRef points at,
+// keyed by the manifest digest the registry resolves the tag to.
+func (hc *client) pullOCITagToCache(dl *downloader.ChartDownloader, ref, version, pullRef string) (string, error) {
+	desc, err := hc.registryClient.Resolve(pullRef)
+	if err != nil {
+		return "", errors.Wrap(err, errFailedToPullChart)
+	}
+	digest := desc.Digest.String()
+	if _, ok := digestCacheKey(digest); !ok {
+		// Not a sha256 digest, so it cannot key the cache: leave the
+		// pull to helm's downloader.
+		return hc.downloadToCache(dl, ref, version)
+	}
+	if chartFilePath, ok := hc.cachedChart(dl, digest); ok {
+		return chartFilePath, nil
+	}
+	return hc.pullOCIDigestToCache(dl, ociRefAtDigest(pullRef, digest), digest)
 }
 
 // pullOCIDigestToCache pulls the chart at pullRef and stores it under digest.
@@ -693,6 +710,13 @@ func (hc *client) pullOCIDigestToCache(dl *downloader.ChartDownloader, pullRef, 
 
 	chartFilePath, err := dl.Cache.Put(key, bytes.NewReader(result.Chart.Data), downloader.CacheChart)
 	return chartFilePath, errors.Wrap(err, errFailedToPullChart)
+}
+
+// ociRefHasTag reports whether an OCI reference carries a tag, with or without
+// a digest after it.
+func ociRefHasTag(ref string) bool {
+	name, _, _ := strings.Cut(ref[strings.LastIndex(ref, "/")+1:], "@")
+	return strings.Contains(name, ":")
 }
 
 // ociRefAtDigest swaps the tag of an OCI reference, if it has one, for digest.
