@@ -28,6 +28,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/registry"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
 	"helm.sh/helm/v4/pkg/chart/v2/loader"
 	chartutil "helm.sh/helm/v4/pkg/chart/v2/util"
 	"helm.sh/helm/v4/pkg/downloader"
@@ -37,8 +38,8 @@ import (
 )
 
 // packageChart creates a chart with the given name and version and saves its
-// tarball into dir.
-func packageChart(t *testing.T, name, version, dir string) string {
+// tarball into dir. edit may change the chart metadata before it is saved.
+func packageChart(t *testing.T, name, version, dir string, edit ...func(*chart.Metadata)) string {
 	t.Helper()
 	chartPath, err := chartutil.Create(name, t.TempDir())
 	if err != nil {
@@ -46,6 +47,9 @@ func packageChart(t *testing.T, name, version, dir string) string {
 	}
 	c := mustLoadChart(t, chartPath)
 	c.Metadata.Version = version
+	for _, e := range edit {
+		e(c.Metadata)
+	}
 	tgzPath, err := chartutil.Save(c, dir)
 	if err != nil {
 		t.Fatalf("chartutil.Save(...): unexpected error: %v", err)
@@ -55,9 +59,9 @@ func packageChart(t *testing.T, name, version, dir string) string {
 
 // pushChart packages a chart with the given name and version, pushes it to
 // <host>/charts with rc and returns its manifest digest.
-func pushChart(t *testing.T, rc *helmregistry.Client, host, name, version string) string {
+func pushChart(t *testing.T, rc *helmregistry.Client, host, name, version string, edit ...func(*chart.Metadata)) string {
 	t.Helper()
-	tgz, err := os.ReadFile(packageChart(t, name, version, t.TempDir()))
+	tgz, err := os.ReadFile(packageChart(t, name, version, t.TempDir(), edit...))
 	if err != nil {
 		t.Fatalf("reading packaged chart: %v", err)
 	}
@@ -66,6 +70,10 @@ func pushChart(t *testing.T, rc *helmregistry.Client, host, name, version string
 		t.Fatalf("Push(...) to test registry: unexpected error: %v", err)
 	}
 	return result.Manifest.Digest
+}
+
+func describedAs(description string) func(*chart.Metadata) {
+	return func(m *chart.Metadata) { m.Description = description }
 }
 
 // newPullClient returns a client built the way a Release gets one, through
@@ -91,17 +99,50 @@ func newPullClient(t *testing.T, cacheDir string, apply ...ArgsApplier) *client 
 	return cc
 }
 
-// chartID loads the chart tarball at path and returns <name>-<version>.
-func chartID(t *testing.T, path string) string {
+// loadPulledChart loads the chart tarball a pull returned.
+func loadPulledChart(t *testing.T, path string) *chart.Chart {
 	t.Helper()
 	c, err := loader.Load(path)
 	if err != nil {
 		t.Fatalf("loader.Load(%q): unexpected error: %v", path, err)
 	}
+	return c
+}
+
+// chartID loads the chart tarball at path and returns <name>-<version>.
+func chartID(t *testing.T, path string) string {
+	t.Helper()
+	c := loadPulledChart(t, path)
 	return c.Metadata.Name + "-" + c.Metadata.Version
 }
 
 func plainHTTP(a *Args) { a.PlainHTTP = true }
+
+// requestCounter counts the requests a test server receives, and separately
+// those for blobs, which is where a registry serves chart content from.
+type requestCounter struct {
+	mu    sync.Mutex
+	total int
+	blobs int
+}
+
+func (c *requestCounter) wrap(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c.mu.Lock()
+		c.total++
+		if strings.Contains(r.URL.Path, "/blobs/") {
+			c.blobs++
+		}
+		c.mu.Unlock()
+		h.ServeHTTP(w, r)
+	})
+}
+
+func (c *requestCounter) counts() (total, blobs int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.total, c.blobs
+}
 
 // TestPullChart_OCIDigest pulls digest-pinned charts from a real in-process
 // registry. A digest selects the chart on its own; a tag or version next to it
@@ -259,22 +300,20 @@ func TestPullChart_OCIDigestCacheHoldsPinnedChart(t *testing.T) {
 
 // TestPullChart_OCIDigestServedFromCache: a digest-pinned chart is stored
 // under its manifest digest, which is not the hash of the tarball, and the
-// next pull of the same pin does not contact the registry.
+// next pull of the same pin does not contact the registry at all. The
+// registry requires credentials, so that covers the login too.
 func TestPullChart_OCIDigestServedFromCache(t *testing.T) {
-	var mu sync.Mutex
-	requests := 0
-	reg := registry.New()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		requests++
-		mu.Unlock()
-		reg.ServeHTTP(w, r)
-	}))
+	const username, password = "user", "secret"
+	creds := &RepoCreds{Username: username, Password: password}
+
+	requests := &requestCounter{}
+	srv := httptest.NewServer(requests.wrap(requireBasicAuth(registry.New(), username, password)))
 	defer srv.Close()
 	host := srv.Listener.Addr().String()
 	repository := "oci://" + host + "/charts"
 
-	pushClient, err := helmregistry.NewClient(helmregistry.ClientOptPlainHTTP())
+	isolateRegistryCredentials(t)
+	pushClient, err := helmregistry.NewClient(helmregistry.ClientOptPlainHTTP(), helmregistry.ClientOptBasicAuth(username, password))
 	if err != nil {
 		t.Fatalf("helmregistry.NewClient(...) for push setup: unexpected error: %v", err)
 	}
@@ -287,10 +326,10 @@ func TestPullChart_OCIDigestServedFromCache(t *testing.T) {
 		digest     string
 	}
 	type want struct {
-		Chart              string
-		CachedUnderDigest  bool
-		FirstPullRequested bool
-		SecondPullRequests int
+		Chart                     string
+		CachedUnderDigest         bool
+		FirstPullAskedRegistry    bool
+		SecondPullRegistryRequest int
 	}
 	cases := map[string]struct {
 		args args
@@ -298,43 +337,214 @@ func TestPullChart_OCIDigestServedFromCache(t *testing.T) {
 	}{
 		"Repository": {
 			args: args{repository: repository, name: "testchart", digest: digest},
-			want: want{Chart: "testchart-0.1.0", CachedUnderDigest: true, FirstPullRequested: true},
+			want: want{Chart: "testchart-0.1.0", CachedUnderDigest: true, FirstPullAskedRegistry: true},
 		},
 		"URL": {
 			args: args{url: repository + "/testchart@" + digest},
-			want: want{Chart: "testchart-0.1.0", CachedUnderDigest: true, FirstPullRequested: true},
+			want: want{Chart: "testchart-0.1.0", CachedUnderDigest: true, FirstPullAskedRegistry: true},
 		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			cacheDir := t.TempDir()
-			count := func() int {
-				mu.Lock()
-				defer mu.Unlock()
-				return requests
-			}
 
-			before := count()
-			if _, err := newPullClient(t, cacheDir, plainHTTP).pullChart(tc.args.url, tc.args.name, "", tc.args.repository, tc.args.digest, &RepoCreds{}); err != nil {
+			before, _ := requests.counts()
+			if _, err := newPullClient(t, cacheDir, plainHTTP).pullChart(tc.args.url, tc.args.name, "", tc.args.repository, tc.args.digest, creds); err != nil {
 				t.Fatalf("pullChart(...): unexpected error: %v", err)
 			}
-			afterFirst := count()
+			afterFirst, _ := requests.counts()
 
-			path, err := newPullClient(t, cacheDir, plainHTTP).pullChart(tc.args.url, tc.args.name, "", tc.args.repository, tc.args.digest, &RepoCreds{})
+			path, err := newPullClient(t, cacheDir, plainHTTP).pullChart(tc.args.url, tc.args.name, "", tc.args.repository, tc.args.digest, creds)
 			if err != nil {
 				t.Fatalf("pullChart(...) second pull: unexpected error: %v", err)
 			}
+			afterSecond, _ := requests.counts()
 
 			key, _ := digestCacheKey(digest)
 			_, cacheErr := (&downloader.DiskCache{Root: cacheDir}).Get(key, downloader.CacheChart)
 			got := want{
-				Chart:              chartID(t, path),
-				CachedUnderDigest:  cacheErr == nil,
-				FirstPullRequested: afterFirst > before,
-				SecondPullRequests: count() - afterFirst,
+				Chart:                     chartID(t, path),
+				CachedUnderDigest:         cacheErr == nil,
+				FirstPullAskedRegistry:    afterFirst > before,
+				SecondPullRegistryRequest: afterSecond - afterFirst,
 			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("pullChart(...): -want, +got:\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestPullChart_OCITagServedFromCache: a chart selected by tag or version is
+// cached under the manifest digest the registry resolves it to. The next pull
+// asks the registry what the tag points at, because a tag can move, and then
+// takes the chart from the cache instead of downloading it again.
+func TestPullChart_OCITagServedFromCache(t *testing.T) {
+	requests := &requestCounter{}
+	srv := httptest.NewServer(requests.wrap(registry.New()))
+	defer srv.Close()
+	host := srv.Listener.Addr().String()
+	repository := "oci://" + host + "/charts"
+
+	pushClient, err := helmregistry.NewClient(helmregistry.ClientOptPlainHTTP())
+	if err != nil {
+		t.Fatalf("helmregistry.NewClient(...) for push setup: unexpected error: %v", err)
+	}
+	pushChart(t, pushClient, host, "testchart", "0.1.0")
+	pushChart(t, pushClient, host, "testchart", "0.2.0")
+
+	type args struct {
+		url        string
+		repository string
+		name       string
+		version    string
+	}
+	type want struct {
+		Chart                   string
+		FirstPullDownloaded     bool
+		SecondPullAskedRegistry bool
+		SecondPullBlobRequests  int
+	}
+	cases := map[string]struct {
+		args args
+		want want
+	}{
+		"URLWithTag": {
+			args: args{url: repository + "/testchart:0.1.0"},
+			want: want{Chart: "testchart-0.1.0", FirstPullDownloaded: true, SecondPullAskedRegistry: true},
+		},
+		"BareURLWithVersion": {
+			args: args{url: repository + "/testchart", version: "0.1.0"},
+			want: want{Chart: "testchart-0.1.0", FirstPullDownloaded: true, SecondPullAskedRegistry: true},
+		},
+		"RepositoryWithVersion": {
+			args: args{repository: repository, name: "testchart", version: "0.1.0"},
+			want: want{Chart: "testchart-0.1.0", FirstPullDownloaded: true, SecondPullAskedRegistry: true},
+		},
+		"RepositoryWithRange": {
+			args: args{repository: repository, name: "testchart", version: "<0.2.0"},
+			want: want{Chart: "testchart-0.1.0", FirstPullDownloaded: true, SecondPullAskedRegistry: true},
+		},
+		"RepositoryWithoutVersion": {
+			args: args{repository: repository, name: "testchart"},
+			want: want{Chart: "testchart-0.2.0", FirstPullDownloaded: true, SecondPullAskedRegistry: true},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cacheDir := t.TempDir()
+
+			_, blobsBefore := requests.counts()
+			if _, err := newPullClient(t, cacheDir, plainHTTP).pullChart(tc.args.url, tc.args.name, tc.args.version, tc.args.repository, "", &RepoCreds{}); err != nil {
+				t.Fatalf("pullChart(...): unexpected error: %v", err)
+			}
+			totalAfterFirst, blobsAfterFirst := requests.counts()
+
+			path, err := newPullClient(t, cacheDir, plainHTTP).pullChart(tc.args.url, tc.args.name, tc.args.version, tc.args.repository, "", &RepoCreds{})
+			if err != nil {
+				t.Fatalf("pullChart(...) second pull: unexpected error: %v", err)
+			}
+			totalAfterSecond, blobsAfterSecond := requests.counts()
+
+			got := want{
+				Chart:                   chartID(t, path),
+				FirstPullDownloaded:     blobsAfterFirst > blobsBefore,
+				SecondPullAskedRegistry: totalAfterSecond > totalAfterFirst,
+				SecondPullBlobRequests:  blobsAfterSecond - blobsAfterFirst,
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("pullChart(...): -want, +got:\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestPullChart_OCITagFollowsRegistry: the cache must not pin a tag to the
+// chart it pointed at first. When a tag is pushed again with other content,
+// the next pull returns that content.
+func TestPullChart_OCITagFollowsRegistry(t *testing.T) {
+	srv := httptest.NewServer(registry.New())
+	defer srv.Close()
+	host := srv.Listener.Addr().String()
+	repository := "oci://" + host + "/charts"
+
+	pushClient, err := helmregistry.NewClient(helmregistry.ClientOptPlainHTTP())
+	if err != nil {
+		t.Fatalf("helmregistry.NewClient(...) for push setup: unexpected error: %v", err)
+	}
+
+	type args struct {
+		name       string
+		url        string
+		repository string
+		version    string
+	}
+	type want struct {
+		BeforeRepush string
+		AfterRepush  string
+	}
+	cases := map[string]struct {
+		args args
+		want want
+	}{
+		"URLWithTag": {
+			args: args{name: "urlchart", url: repository + "/urlchart:1.0.0"},
+			want: want{BeforeRepush: "first push", AfterRepush: "second push"},
+		},
+		"RepositoryWithVersion": {
+			args: args{name: "repochart", repository: repository, version: "1.0.0"},
+			want: want{BeforeRepush: "first push", AfterRepush: "second push"},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cacheDir := t.TempDir()
+			pull := func() string {
+				path, err := newPullClient(t, cacheDir, plainHTTP).pullChart(tc.args.url, tc.args.name, tc.args.version, tc.args.repository, "", &RepoCreds{})
+				if err != nil {
+					t.Fatalf("pullChart(...): unexpected error: %v", err)
+				}
+				return loadPulledChart(t, path).Metadata.Description
+			}
+
+			got := want{}
+			pushChart(t, pushClient, host, tc.args.name, "1.0.0", describedAs("first push"))
+			got.BeforeRepush = pull()
+			pushChart(t, pushClient, host, tc.args.name, "1.0.0", describedAs("second push"))
+			got.AfterRepush = pull()
+
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("pullChart(...): -want, +got:\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestOCIRefAtDigest(t *testing.T) {
+	const digest = "sha256:c56f4d760bc9da702f231f37fcec89c66b0993f0cb91446f86d014b133c6693f"
+
+	cases := map[string]struct {
+		ref  string
+		want string
+	}{
+		"Tagged": {
+			ref:  "registry.example.com/charts/mychart:1.2.3",
+			want: "registry.example.com/charts/mychart@" + digest,
+		},
+		"TaggedWithRegistryPort": {
+			ref:  "127.0.0.1:5000/charts/mychart:1.2.3",
+			want: "127.0.0.1:5000/charts/mychart@" + digest,
+		},
+		"UntaggedWithRegistryPort": {
+			ref:  "127.0.0.1:5000/charts/mychart",
+			want: "127.0.0.1:5000/charts/mychart@" + digest,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := ociRefAtDigest(tc.ref, digest)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("ociRefAtDigest(...): -want, +got:\n%s", diff)
 			}
 		})
 	}

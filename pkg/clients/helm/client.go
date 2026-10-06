@@ -500,12 +500,6 @@ func (hc *client) newChartDownloader(creds *RepoCreds) *downloader.ChartDownload
 // OCI registry, or the classic repository index), never reconstructed
 // filenames.
 func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo, chartDigest string, creds *RepoCreds) (string, error) {
-	if creds.Username != "" && creds.Password != "" {
-		if err := hc.login(chartUrl, chartRepo, creds); err != nil {
-			return "", err
-		}
-	}
-
 	dl := hc.newChartDownloader(creds)
 
 	switch {
@@ -522,20 +516,18 @@ func (hc *client) pullChart(chartUrl, chartName, chartVersion, chartRepo, chartD
 		if err != nil {
 			return "", err
 		}
+		ref := u.String()
 		if effectiveDigest != "" {
 			// Append digest if present (per Helm PR #12690)
-			return hc.fetchOCIRefToCache(dl, u.String()+"@"+effectiveDigest, version, effectiveDigest)
+			ref += "@" + effectiveDigest
 		}
-		return hc.downloadToCache(dl, u.String(), version)
+		return hc.pullOCIChart(dl, ref, version, effectiveDigest, creds)
 	case chartUrl != "":
 		// Direct (non-OCI) URL: nothing advertises a digest up front, so the
 		// tarball is downloaded on every pull and cached by its content hash.
 		return hc.downloadToCache(dl, chartUrl, "")
 	case registry.IsOCI(chartRepo):
-		if chartDigest != "" {
-			return hc.fetchOCIRefToCache(dl, resolveOCIChartRef(chartRepo, chartName, chartDigest), chartVersion, chartDigest)
-		}
-		return hc.downloadToCache(dl, resolveOCIChartRef(chartRepo, chartName, ""), chartVersion)
+		return hc.pullOCIChart(dl, resolveOCIChartRef(chartRepo, chartName, chartDigest), chartVersion, chartDigest, creds)
 	default:
 		return hc.pullRepoChart(dl, chartRepo, chartName, chartVersion, creds)
 	}
@@ -618,37 +610,80 @@ func (hc *client) cachedChart(dl *downloader.ChartDownloader, digest string) (st
 	return chartFilePath, true
 }
 
-// fetchOCIRefToCache pulls a digest-pinned OCI chart through the content
-// cache, keyed by the pinned manifest digest. Helm's own downloader resolves
-// no cache key for install-by-digest references (ValidateReference returns an
-// empty hash for them), which would leave every digest-only pull keyed by the
-// post-download tarball hash: a key nothing can look up before the next
-// download.
+// pullOCIChart fetches an OCI chart through the content cache, keyed by the
+// digest of its manifest. ref carries the digest when the chart is pinned.
 //
-// The entry is served to every Release pinning the digest, so it must hold
-// that manifest's chart and nothing else. The tarball bytes cannot be checked
-// against the digest (it hashes the OCI manifest, not the tarball), so the
-// pull itself is constrained instead: helm validates the reference as it does
-// for its own pulls, rejecting a tag or version that resolves to another
-// digest and returning a URL that pulls by digest alone, and the digest of
-// the manifest actually pulled is compared with the pin. Helm pulls by tag
-// when a reference carries both a tag and a digest, so without these checks a
-// tag smuggled into the chart name or URL would be cached under a digest it
-// does not have.
-func (hc *client) fetchOCIRefToCache(dl *downloader.ChartDownloader, ref, version, digest string) (string, error) {
-	if chartFilePath, ok := hc.cachedChart(dl, digest); ok {
-		return chartFilePath, nil
-	}
-	key, haveKey := digestCacheKey(digest)
-	if !haveKey {
-		return "", errors.Errorf(errMalformedDigestTmpl, digest)
+// Helm's own downloader resolves no cache key for OCI references
+// (ValidateReference returns an empty hash for a tag, a version and a bare
+// digest alike), so it downloads on every pull and stores the tarball under
+// its own hash: a key nothing can look up before the next download. The
+// manifest digest is used instead. A pinned digest is its own key, so a cached
+// chart is served without contacting the registry. A tag or version is
+// mutable, so the registry is asked what it points at on every pull, which
+// costs one request, and the answer is the key.
+//
+// The registry is logged in to only once it is needed, so that a cached
+// pinned chart does not depend on it being reachable.
+func (hc *client) pullOCIChart(dl *downloader.ChartDownloader, ref, version, digest string, creds *RepoCreds) (string, error) {
+	pinned := digest != ""
+	if pinned {
+		if _, ok := digestCacheKey(digest); !ok {
+			return "", errors.Errorf(errMalformedDigestTmpl, digest)
+		}
+		if chartFilePath, ok := hc.cachedChart(dl, digest); ok {
+			return chartFilePath, nil
+		}
 	}
 
+	if err := hc.login(ref, creds); err != nil {
+		return "", err
+	}
+	// helm validates the reference as it does for its own pulls. Next to a
+	// digest it rejects a tag or version that resolves to another digest and
+	// returns a URL that pulls by digest alone; without one it resolves the
+	// version to a tag.
 	_, pullURL, err := dl.ResolveChartVersion(ref, version)
 	if err != nil {
 		return "", errors.Wrap(err, errFailedToPullChart)
 	}
-	result, err := hc.registryClient.Pull(strings.TrimPrefix(pullURL.String(), registry.OCIScheme+"://"))
+	pullRef := strings.TrimPrefix(pullURL.String(), registry.OCIScheme+"://")
+
+	if !pinned {
+		desc, err := hc.registryClient.Resolve(pullRef)
+		if err != nil {
+			return "", errors.Wrap(err, errFailedToPullChart)
+		}
+		digest = desc.Digest.String()
+		if _, ok := digestCacheKey(digest); !ok {
+			// Not a sha256 digest, so it cannot key the cache: leave the
+			// pull to helm's downloader.
+			return hc.downloadToCache(dl, ref, version)
+		}
+		if chartFilePath, ok := hc.cachedChart(dl, digest); ok {
+			return chartFilePath, nil
+		}
+		pullRef = ociRefAtDigest(pullRef, digest)
+	}
+
+	return hc.pullOCIDigestToCache(dl, pullRef, digest)
+}
+
+// pullOCIDigestToCache pulls the chart at pullRef and stores it under digest.
+//
+// The entry is served to every Release that resolves to the digest, so it
+// must hold that manifest's chart and nothing else. The tarball bytes cannot
+// be checked against the digest (it hashes the OCI manifest, not the
+// tarball), so the digest of the manifest actually pulled is compared with it
+// instead. Helm pulls by tag when a reference carries both a tag and a
+// digest, so without this check and the reference validation before it a tag
+// smuggled into the chart name or URL would be cached under a digest it does
+// not have.
+func (hc *client) pullOCIDigestToCache(dl *downloader.ChartDownloader, pullRef, digest string) (string, error) {
+	key, ok := digestCacheKey(digest)
+	if !ok {
+		return "", errors.Errorf(errMalformedDigestTmpl, digest)
+	}
+	result, err := hc.registryClient.Pull(pullRef)
 	if err != nil {
 		return "", errors.Wrap(err, errFailedToPullChart)
 	}
@@ -658,6 +693,14 @@ func (hc *client) fetchOCIRefToCache(dl *downloader.ChartDownloader, ref, versio
 
 	chartFilePath, err := dl.Cache.Put(key, bytes.NewReader(result.Chart.Data), downloader.CacheChart)
 	return chartFilePath, errors.Wrap(err, errFailedToPullChart)
+}
+
+// ociRefAtDigest swaps the tag of an OCI reference, if it has one, for digest.
+func ociRefAtDigest(ref, digest string) string {
+	if i := strings.LastIndex(ref, ":"); i > strings.LastIndex(ref, "/") {
+		ref = ref[:i]
+	}
+	return ref + "@" + digest
 }
 
 // fetchURLToCache downloads chartURL through the content cache. When the
@@ -713,15 +756,11 @@ func digestCacheKey(digest string) ([sha256.Size]byte, bool) {
 // always sets the shared registry client's plainHTTP from WithPlainHTTPLogin,
 // so plainHTTP must be passed here too: otherwise the login goes over HTTPS
 // and the pull that follows does as well.
-func (hc *client) login(chartUrl, chartRepo string, creds *RepoCreds) error {
-	ociURL := chartUrl
-	if chartUrl == "" {
-		ociURL = chartRepo
-	}
-	if !registry.IsOCI(ociURL) {
+func (hc *client) login(ociRef string, creds *RepoCreds) error {
+	if creds.Username == "" || creds.Password == "" {
 		return nil
 	}
-	parsedURL, err := url.Parse(ociURL)
+	parsedURL, err := url.Parse(ociRef)
 	if err != nil {
 		return errors.Wrap(err, errFailedToParseURL)
 	}
