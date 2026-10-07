@@ -33,7 +33,7 @@ GOLANGCILINT_VERSION = 2.14.0
 # ====================================================================================
 # Setup Kubernetes tools
 
-KIND_VERSION = v0.32.0
+KIND_VERSION = v0.33.0
 KIND_NODE_IMAGE_TAG ?= v1.24.0
 UPTEST_VERSION = v2.2.0
 CROSSPLANE_VERSION = 2.4.2
