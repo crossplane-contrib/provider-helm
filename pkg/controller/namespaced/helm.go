@@ -19,6 +19,7 @@ package cluster
 import (
 	"time"
 
+	kubeclient "github.com/crossplane-contrib/provider-kubernetes/pkg/kube/client"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -27,29 +28,20 @@ import (
 )
 
 // Setup creates all Helm controllers with the supplied logger and adds them
-// to the supplied manager.
-func Setup(mgr ctrl.Manager, o controller.Options, timeout time.Duration) error {
-	for _, setup := range []func(ctrl.Manager, controller.Options, time.Duration) error{
-		config.Setup,
-		release.Setup,
-	} {
-		if err := setup(mgr, o, timeout); err != nil {
-			return err
-		}
+// to the supplied manager. The client builder is shared with the controllers
+// of the other scope so that its client cache is shared too.
+func Setup(mgr ctrl.Manager, o controller.Options, timeout time.Duration, clientBuilder kubeclient.Builder) error {
+	if err := config.Setup(mgr, o, timeout); err != nil {
+		return err
 	}
-	return nil
+	return release.Setup(mgr, o, timeout, clientBuilder)
 }
 
 // SetupGated creates all controllers with the supplied logger and adds them to
 // the supplied manager gated.
-func SetupGated(mgr ctrl.Manager, o controller.Options, timeout time.Duration) error {
-	for _, setup := range []func(ctrl.Manager, controller.Options, time.Duration) error{
-		config.SetupGated,
-		release.SetupGated,
-	} {
-		if err := setup(mgr, o, timeout); err != nil {
-			return err
-		}
+func SetupGated(mgr ctrl.Manager, o controller.Options, timeout time.Duration, clientBuilder kubeclient.Builder) error {
+	if err := config.SetupGated(mgr, o, timeout); err != nil {
+		return err
 	}
-	return nil
+	return release.SetupGated(mgr, o, timeout, clientBuilder)
 }

@@ -3,6 +3,7 @@ package release
 import (
 	"context"
 	"testing"
+	"time"
 
 	kubeclient "github.com/crossplane-contrib/provider-kubernetes/pkg/kube/client"
 	kconfig "github.com/crossplane-contrib/provider-kubernetes/pkg/kube/config"
@@ -19,9 +20,11 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/api/types"
 
+	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
@@ -1294,6 +1297,23 @@ func Test_deployOptions(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			if diff := cmp.Diff(tc.want.opts, deployOptions(tc.args.cr)); diff != "" {
 				t.Errorf("deployOptions(...): -want, +got: %s", diff)
+			}
+		})
+	}
+}
+
+func TestSetupRequiresClientBuilder(t *testing.T) {
+	cases := map[string]struct {
+		setup func(ctrl.Manager, controller.Options, time.Duration, kubeclient.Builder) error
+	}{
+		"Setup":      {setup: Setup},
+		"SetupGated": {setup: SetupGated},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			err := tc.setup(nil, controller.Options{}, time.Minute, nil)
+			if diff := cmp.Diff(errors.New(errNilClientBuilder), err, test.EquateErrors()); diff != "" {
+				t.Errorf("%s(...): -want error, +got error:\n%s", name, diff)
 			}
 		})
 	}
