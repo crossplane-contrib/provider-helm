@@ -18,7 +18,9 @@ import (
 	"helm.sh/helm/v4/pkg/storage/driver"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -978,16 +980,16 @@ func Test_helmExternal_Update(t *testing.T) {
 				err: nil,
 			},
 		},
-		"UpgradeDoesNotReAdoptOnceOwnershipTaken": {
-			// Observe rehydrated ownershipTaken from the release label on this
-			// same object before Update ran, so the upgrade must not exercise
-			// takeOwnership again even though the spec still requests it. The
-			// Connect-time view of status cannot be relied on for this: the
-			// runtime reverts status written during Create.
+		"UpgradeReAdoptsWhileTakeOwnershipSet": {
+			// Ownership was already taken, recorded on the release label and
+			// rehydrated by Observe. takeOwnership is still set, so the upgrade
+			// exercises adoption again: that is what takes back a resource
+			// another actor re-stamped since the last deploy.
 			args: args{
 				helm: &MockHelmClient{
 					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
 						want := helmClient.DeployOptions{
+							TakeOwnership: true,
 							Labels: map[string]string{
 								helmClient.LabelDigestHash:     "",
 								helmClient.LabelURLHash:        "",
@@ -1009,10 +1011,11 @@ func Test_helmExternal_Update(t *testing.T) {
 				ownershipTaken: true,
 			},
 		},
-		"LateInitDoesNotReAdoptOnceOwnershipTaken": {
+		"LateInitKeepsOwnershipLabel": {
 			// Late-initialization's Update decodes the persisted status back
 			// into the object, dropping the ownership Observe rehydrated from
-			// the release label, so ownership must be decided before it.
+			// the release label, so the deploy options must be decided before
+			// it or the sticky label would be dropped from this deploy.
 			args: args{
 				localKube: &test.MockClient{
 					MockUpdate: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
@@ -1026,6 +1029,7 @@ func Test_helmExternal_Update(t *testing.T) {
 					},
 					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
 						want := helmClient.DeployOptions{
+							TakeOwnership: true,
 							Labels: map[string]string{
 								helmClient.LabelDigestHash:     "",
 								helmClient.LabelURLHash:        "",
@@ -1253,10 +1257,11 @@ func Test_deployOptions(t *testing.T) {
 				},
 			},
 		},
-		"OwnershipStickyWhenAlreadyTaken": {
-			// Ownership was already taken on a prior deploy: even with
-			// takeOwnership still requested, adoption is not re-exercised, while
-			// the ownership label keeps recording it.
+		"OwnershipRequestedAgainWhenAlreadyTaken": {
+			// Ownership was already taken on a prior deploy. takeOwnership is a
+			// standing claim, so adoption is still exercised: a resource
+			// re-stamped by another actor since that deploy has to be taken
+			// back. Observe is what decides a deploy is needed at all.
 			args: args{
 				cr: helmRelease(func(r *v1beta1.Release) {
 					r.Spec.ForProvider.TakeOwnership = true
@@ -1265,6 +1270,7 @@ func Test_deployOptions(t *testing.T) {
 			},
 			want: want{
 				opts: helmClient.DeployOptions{
+					TakeOwnership: true,
 					Labels: map[string]string{
 						helmClient.LabelDigestHash:     "",
 						helmClient.LabelURLHash:        "",
@@ -1316,5 +1322,187 @@ func TestSetupRequiresClientBuilder(t *testing.T) {
 				t.Errorf("%s(...): -want error, +got error:\n%s", name, diff)
 			}
 		})
+	}
+}
+
+// mapperClient is a MockClient that serves a RESTMapper, which MockClient
+// itself returns nil for. OwnershipDrifted needs one to tell a namespaced
+// kind from a cluster-scoped one.
+type mapperClient struct {
+	client.Client
+}
+
+func (c *mapperClient) RESTMapper() apimeta.RESTMapper {
+	gv := schema.GroupVersion{Group: "", Version: "v1"}
+	m := apimeta.NewDefaultRESTMapper([]schema.GroupVersion{gv})
+	m.Add(gv.WithKind("ConfigMap"), apimeta.RESTScopeNamespace)
+	m.Add(gv.WithKind("Namespace"), apimeta.RESTScopeRoot)
+	return m
+}
+
+func Test_helmExternal_ObserveOwnershipDrift(t *testing.T) {
+	const manifest = "---\n# Source: chart/templates/cm.yaml\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: cm\n"
+
+	// deployedRelease is an otherwise up-to-date release that renders one
+	// ConfigMap, so that nothing but ownership can make it drift.
+	deployedRelease := func(_ string) (*release.Release, error) {
+		return &release.Release{
+			Name:      testReleaseName,
+			Namespace: testNamespace,
+			Info:      &release.Info{},
+			Chart: &chart.Chart{
+				Metadata: &chart.Metadata{Name: testChart, Version: testVersion},
+			},
+			Config:   map[string]interface{}{},
+			Manifest: manifest,
+		}, nil
+	}
+
+	// liveConfigMap serves the rendered resource with the given ownership
+	// metadata, and records whether it was asked for at all.
+	liveConfigMap := func(labels, annotations map[string]string, got *bool) test.MockGetFn {
+		return func(_ context.Context, key client.ObjectKey, obj client.Object) error {
+			*got = true
+			u, ok := obj.(*metav1.PartialObjectMetadata)
+			if !ok {
+				return errors.New("not partial metadata")
+			}
+			u.SetName(key.Name)
+			u.SetNamespace(key.Namespace)
+			u.SetLabels(labels)
+			u.SetAnnotations(annotations)
+			return nil
+		}
+	}
+
+	owned := map[string]string{helmClient.OwnerLabelManagedBy: helmClient.OwnerManagedByHelm}
+	ownedBy := func(relName string) map[string]string {
+		return map[string]string{
+			helmClient.OwnerAnnotationReleaseName:      relName,
+			helmClient.OwnerAnnotationReleaseNamespace: testNamespace,
+		}
+	}
+
+	type want struct {
+		upToDate bool
+		// checked is whether the live resource was looked up at all.
+		checked bool
+		err     error
+	}
+
+	cases := map[string]struct {
+		takeOwnership bool
+		// foreignStamps has the live resource carry ownership metadata that
+		// names another actor.
+		foreignStamps bool
+		// specDrift makes isUpToDate report the spec out of date, the case in
+		// which the ownership check is deliberately skipped.
+		specDrift bool
+		want
+	}{
+		"DriftForcesADeployWhileTakeOwnershipSet": {
+			// The ConfigMap lost Helm's managed-by label to another actor.
+			// Nothing about the chart, values or digest changed, so this is the
+			// only thing that can bring the provider back to re-stamp it.
+			takeOwnership: true,
+			foreignStamps: true,
+			want:          want{upToDate: false, checked: true},
+		},
+		"NoDriftIsNotADeploy": {
+			// Already owned by this release: left alone, so a steady state
+			// with takeOwnership set does not upgrade on every reconcile.
+			takeOwnership: true,
+			want:          want{upToDate: true, checked: true},
+		},
+		"NotCheckedWithoutTakeOwnership": {
+			// Opt-in: a Release that never asked to adopt pays no lookups,
+			// and foreign ownership metadata is not its concern.
+			takeOwnership: false,
+			want:          want{upToDate: true, checked: false},
+		},
+		"CheckSkippedWhenSpecAlreadyOutOfDate": {
+			// Spec drift already owes a deploy, and that deploy adopts
+			// whatever the chart renders regardless of what the check would
+			// have found, so the lookups cannot change this observation.
+			takeOwnership: true,
+			foreignStamps: true,
+			specDrift:     true,
+			want:          want{upToDate: false, checked: false},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			checked := false
+			annotations := ownedBy(testReleaseName)
+			if tc.foreignStamps {
+				annotations = ownedBy("another-release")
+			}
+
+			e := &helmExternal{
+				logger: logging.NewNopLogger(),
+				kube:   &mapperClient{Client: &test.MockClient{MockGet: liveConfigMap(owned, annotations, &checked)}},
+				helm: &MockHelmClient{MockGetLastRelease: func(name string) (*release.Release, error) {
+					rel, err := deployedRelease(name)
+					if err == nil && tc.specDrift {
+						rel.Labels = map[string]string{helmClient.LabelURLHash: "drifted"}
+					}
+					return rel, err
+				}},
+			}
+
+			cr := helmRelease(func(r *v1beta1.Release) {
+				r.Spec.ForProvider.TakeOwnership = tc.takeOwnership
+			})
+
+			got, err := e.Observe(context.Background(), cr)
+			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
+				t.Fatalf("e.Observe(...): -want error, +got error: %s", diff)
+			}
+			// Spec drift and ownership drift both report not up to date; the
+			// checked flag is what tells them apart in this table.
+			if diff := cmp.Diff(tc.want.upToDate, got.ResourceUpToDate); diff != "" {
+				t.Errorf("e.Observe(...) ResourceUpToDate: -want, +got: %s", diff)
+			}
+			if diff := cmp.Diff(tc.want.checked, checked); diff != "" {
+				t.Errorf("e.Observe(...) looked up the live resource: -want, +got: %s", diff)
+			}
+			// Ownership drift describes the resources, not the release: it
+			// must never show up as the spec being out of sync.
+			if cr.Status.Synced != !tc.specDrift {
+				t.Errorf("e.Observe(...) status.synced: want %t, got %t", !tc.specDrift, cr.Status.Synced)
+			}
+		})
+	}
+}
+
+func Test_helmExternal_ObserveOwnershipCheckFails(t *testing.T) {
+	errBoom := errors.New("boom")
+
+	e := &helmExternal{
+		logger: logging.NewNopLogger(),
+		kube: &mapperClient{Client: &test.MockClient{
+			MockGet: func(_ context.Context, _ client.ObjectKey, _ client.Object) error { return errBoom },
+		}},
+		helm: &MockHelmClient{
+			MockGetLastRelease: func(_ string) (*release.Release, error) {
+				return &release.Release{
+					Name:      testReleaseName,
+					Namespace: testNamespace,
+					Info:      &release.Info{},
+					Chart:     &chart.Chart{Metadata: &chart.Metadata{Name: testChart, Version: testVersion}},
+					Config:    map[string]interface{}{},
+					Manifest:  "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: cm\n",
+				}, nil
+			},
+		},
+	}
+
+	cr := helmRelease(func(r *v1beta1.Release) { r.Spec.ForProvider.TakeOwnership = true })
+
+	_, err := e.Observe(context.Background(), cr)
+	want := errors.Wrap(errors.Wrap(errBoom, `cannot get ConfigMap "cm"`), errFailedToCheckOwnership)
+	if diff := cmp.Diff(want, err, test.EquateErrors()); diff != "" {
+		t.Errorf("e.Observe(...): -want error, +got error: %s", diff)
 	}
 }

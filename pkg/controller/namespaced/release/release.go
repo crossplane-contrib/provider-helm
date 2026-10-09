@@ -54,9 +54,9 @@ import (
 const (
 	defaultWaitTimeout = 5 * time.Minute
 
-	helmReleaseNameAnnotation      = "meta.helm.sh/release-name"
-	helmReleaseNamespaceAnnotation = "meta.helm.sh/release-namespace"
-	helmNamespaceLabel             = "app.kubernetes.io/managed-by"
+	helmReleaseNameAnnotation      = helmClient.OwnerAnnotationReleaseName
+	helmReleaseNamespaceAnnotation = helmClient.OwnerAnnotationReleaseNamespace
+	helmNamespaceLabel             = helmClient.OwnerLabelManagedBy
 	helmProviderName               = "provider-helm"
 )
 
@@ -68,6 +68,7 @@ const (
 	errFailedToGetLastRelease     = "failed to get last helm release"
 	errLastReleaseIsNil           = "last helm release is nil"
 	errFailedToCheckIfUpToDate    = "failed to check if release is up to date"
+	errFailedToCheckOwnership     = "failed to check ownership of release resources"
 	errFailedToInstall            = "failed to install release"
 	errFailedToUpgrade            = "failed to upgrade release"
 	errFailedToUninstall          = "failed to uninstall release"
@@ -186,12 +187,17 @@ func withCABundle(caBundle []byte) helmClient.ArgsApplier {
 // status.atProvider from the release labels on this same object, so this sees
 // that ownership was already taken even on the reconcile right after Create,
 // when crossplane-runtime has reverted the status written there.
+//
+// spec.forProvider.takeOwnership is passed through as a standing claim rather
+// than a one-shot adoption: while it is set, every deploy adopts whatever the
+// chart renders. Observe pairs with this by reporting a release whose
+// resources carry foreign ownership metadata as not up to date, so a deploy
+// actually happens to re-stamp them - and by checking for that metadata only
+// when no deploy is owed from other causes, since when one is, this deploy is
+// the re-stamp either way.
 func deployOptions(cr *v1beta1.Release) helmClient.DeployOptions {
-	// Only take ownership if requested AND not already taken. This prevents
-	// silent adoption of resources during upgrades after the initial adoption.
-	takeOwnership := cr.Spec.ForProvider.TakeOwnership && !cr.Status.AtProvider.OwnershipTaken
 	return helmClient.DeployOptions{
-		TakeOwnership: takeOwnership,
+		TakeOwnership: cr.Spec.ForProvider.TakeOwnership,
 		Labels:        releaseLabels(cr.Spec.ForProvider.Chart, ownershipTaken(cr)),
 	}
 }
@@ -199,7 +205,8 @@ func deployOptions(cr *v1beta1.Release) helmClient.DeployOptions {
 // ownershipTaken reports whether adoption has happened for the release once a
 // deploy of cr succeeds: on an earlier deploy or on this one. Recording it on
 // every such deploy also back-fills the label on releases adopted before label
-// support, whose only record of it is the persisted status.
+// support, whose only record of it is the persisted status. It is observability
+// only - it records that adoption happened, and no longer suppresses it.
 func ownershipTaken(cr *v1beta1.Release) bool {
 	return cr.Status.AtProvider.OwnershipTaken || cr.Spec.ForProvider.TakeOwnership
 }
@@ -209,7 +216,7 @@ func ownershipTaken(cr *v1beta1.Release) bool {
 // spec has none, so that every release this provider deployed carries them
 // and a later pin, unpin or URL change is detected as drift against them. The
 // ownership label is sticky: it is only ever added, recording that adoption
-// happened so later upgrades never silently re-adopt.
+// happened.
 func releaseLabels(chart v1beta1.ChartSpec, ownershipTaken bool) map[string]string {
 	labels := map[string]string{
 		helmClient.LabelDigestHash: helmClient.EncodeDigestLabel(helmClient.EffectiveChartDigest(chart.URL, chart.Digest)),
@@ -280,6 +287,32 @@ func (e *helmExternal) Disconnect(ctx context.Context) error {
 	return nil
 }
 
+// checkOwnershipDrift reports whether a resource rendered by rel carries
+// ownership metadata that names another actor, and so needs a deploy to be
+// re-stamped back to this release. It runs only when
+// spec.forProvider.takeOwnership is set and no deploy is owed from other
+// causes: with spec drift a deploy is already happening and will adopt
+// whatever the chart renders, so the lookups could not change the
+// observation's outcome.
+//
+// The drift is deliberately kept out of status.synced and the Available
+// condition, which describe the release against its spec: the release is
+// still the chart, values and version that were asked for, and its workloads
+// are still running. What a resource stamped by somebody else needs is a
+// deploy, so it only forces the observation out of date. Without this the
+// drift is invisible, as Helm validates ownership only for resources it is
+// about to create.
+func (e *helmExternal) checkOwnershipDrift(ctx context.Context, cr *v1beta1.Release, rel *release.Release, specUpToDate bool) (bool, error) {
+	if !cr.Spec.ForProvider.TakeOwnership || !specUpToDate {
+		return false, nil
+	}
+	drifted, err := helmClient.OwnershipDrifted(ctx, e.kube, rel)
+	if err != nil {
+		return false, errors.Wrap(err, errFailedToCheckOwnership)
+	}
+	return drifted, nil
+}
+
 func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
 	cr, ok := mg.(*v1beta1.Release)
 	if !ok {
@@ -326,6 +359,12 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 		return managed.ExternalObservation{}, errors.Wrap(err, errFailedToCheckIfUpToDate)
 	}
 	cr.Status.Synced = s
+
+	ownershipDrifted, err := e.checkOwnershipDrift(ctx, cr, rel, s)
+	if err != nil {
+		return managed.ExternalObservation{}, err
+	}
+
 	cd := managed.ConnectionDetails{}
 	if cr.Status.AtProvider.State == common.StatusDeployed && s {
 		cr.Status.Failed = 0
@@ -341,7 +380,7 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 
 	return managed.ExternalObservation{
 		ResourceExists:    true,
-		ResourceUpToDate:  cr.Status.Synced && !(shouldRollBack(cr) && !rollBackLimitReached(cr)),
+		ResourceUpToDate:  cr.Status.Synced && !ownershipDrifted && !(shouldRollBack(cr) && !rollBackLimitReached(cr)),
 		ConnectionDetails: cd,
 	}, nil
 }
