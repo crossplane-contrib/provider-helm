@@ -124,11 +124,28 @@ type ReleaseParameters struct {
 	// ConfigMap key, defaulting to the key "ca.crt" if Key is not set.
 	// +optional
 	CABundle *ValueFromSource `json:"caBundle,omitempty"`
-	// TakeOwnership ignores Helm ownership validation and adopts pre-existing releases.
-	// This is a ONE-TIME operation: after the first successful deployment, the flag is recorded
-	// in status.atProvider.ownershipTaken and subsequent reconciles use normal Helm validation.
-	// This prevents silent adoption of unrelated resources during chart upgrades.
-	// Use this field to migrate manually-deployed Helm releases into Crossplane management.
+	// TakeOwnership performs a one-time adoption: the first deploy after this
+	// field is set ignores Helm's ownership validation, taking over whatever
+	// the chart renders, and afterwards adoption is never exercised again for
+	// this release. Subsequent deploys still re-stamp ownership metadata
+	// (app.kubernetes.io/managed-by, meta.helm.sh/release-name,
+	// meta.helm.sh/release-namespace) as Helm always does, and while this
+	// field is set every reconcile also compares those values live on every
+	// resource the chart renders, reporting the release out of date when any
+	// differ so a deploy puts them back; resources that already match are
+	// left untouched. Use this field to migrate manually-deployed Helm
+	// releases into Crossplane management, and to keep them there when
+	// another actor re-stamps their ownership metadata. If another controller
+	// contends for the same resources via server-side apply, set
+	// ssaForceConflicts: without it the repair upgrade fails on the conflict,
+	// the release goes to failed state on what was previously an idle poll,
+	// and it stays failed until ssaForceConflicts is set (or this field is
+	// removed). Releases still on client-side apply are exempt from drift
+	// detection: their upgrades cannot rewrite ownership values the chart
+	// renders unchanged, so detection for them would retry forever; they
+	// migrate to server-side apply when ssaForceConflicts is set. Treat
+	// enabling this field on an existing release as a behavior change: drift
+	// detection starts on the provider upgrade that ships it.
 	TakeOwnership bool `json:"takeOwnership,omitempty"`
 	// MaxHistory limits the maximum number of revisions saved per release. Use 0 for no limit.
 	// +optional
@@ -151,9 +168,10 @@ type ReleaseObservation struct {
 	Digest string `json:"digest,omitempty"`
 	// Version is the actual deployed chart version.
 	Version string `json:"version,omitempty"`
-	// OwnershipTaken indicates that spec.forProvider.takeOwnership was used for initial adoption.
-	// Once set to true, subsequent reconciles use normal Helm validation instead of takeOwnership,
-	// preventing silent adoption of unrelated resources during upgrades.
+	// OwnershipTaken indicates that spec.forProvider.takeOwnership was exercised
+	// on this release's initial adoption. It is informational and sticky: it
+	// records that adoption happened, and once set it keeps later deploys from
+	// exercising adoption again (takeOwnership only adopts the first time).
 	OwnershipTaken bool `json:"ownershipTaken,omitempty"`
 }
 

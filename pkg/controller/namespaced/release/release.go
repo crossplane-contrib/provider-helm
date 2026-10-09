@@ -54,9 +54,9 @@ import (
 const (
 	defaultWaitTimeout = 5 * time.Minute
 
-	helmReleaseNameAnnotation      = "meta.helm.sh/release-name"
-	helmReleaseNamespaceAnnotation = "meta.helm.sh/release-namespace"
-	helmNamespaceLabel             = "app.kubernetes.io/managed-by"
+	helmReleaseNameAnnotation      = helmClient.OwnerAnnotationReleaseName
+	helmReleaseNamespaceAnnotation = helmClient.OwnerAnnotationReleaseNamespace
+	helmNamespaceLabel             = helmClient.OwnerLabelManagedBy
 	helmProviderName               = "provider-helm"
 )
 
@@ -68,6 +68,7 @@ const (
 	errFailedToGetLastRelease     = "failed to get last helm release"
 	errLastReleaseIsNil           = "last helm release is nil"
 	errFailedToCheckIfUpToDate    = "failed to check if release is up to date"
+	errFailedToCheckOwnership     = "failed to check ownership of release resources"
 	errFailedToInstall            = "failed to install release"
 	errFailedToUpgrade            = "failed to upgrade release"
 	errFailedToUninstall          = "failed to uninstall release"
@@ -186,9 +187,21 @@ func withCABundle(caBundle []byte) helmClient.ArgsApplier {
 // status.atProvider from the release labels on this same object, so this sees
 // that ownership was already taken even on the reconcile right after Create,
 // when crossplane-runtime has reverted the status written there.
+//
+// TakeOwnership is exercised only for the deploy that performs the initial
+// adoption - the spec requests it and nothing has recorded it yet. The gate
+// then closes for the rest of the release's life. Re-stamping a resource
+// another actor overstamped needs no adoption flag: Helm force-stamps
+// ownership metadata on every upgrade (setMetadataVisitor with force), so
+// Observe reporting such drift as out of date - which triggers the upgrade -
+// is what repairs it. Keeping adoption one-shot in the other direction is
+// equally deliberate: an adopt-every-time deploy would silently take over any
+// pre-existing object a chart bump starts rendering, which is the failure
+// mode this flag's original one-shot design existed to prevent.
 func deployOptions(cr *v1beta1.Release) helmClient.DeployOptions {
-	// Only take ownership if requested AND not already taken. This prevents
-	// silent adoption of resources during upgrades after the initial adoption.
+	// Only take ownership if requested AND not already taken: adoption is a
+	// one-time operation; see the doc above for why later deploys must not
+	// exercise it.
 	takeOwnership := cr.Spec.ForProvider.TakeOwnership && !cr.Status.AtProvider.OwnershipTaken
 	return helmClient.DeployOptions{
 		TakeOwnership: takeOwnership,
@@ -199,7 +212,9 @@ func deployOptions(cr *v1beta1.Release) helmClient.DeployOptions {
 // ownershipTaken reports whether adoption has happened for the release once a
 // deploy of cr succeeds: on an earlier deploy or on this one. Recording it on
 // every such deploy also back-fills the label on releases adopted before label
-// support, whose only record of it is the persisted status.
+// support, whose only record of it is the persisted status. The label is how
+// deployOptions' one-shot gate stays closed on later reconciles, where the
+// runtime may have reverted the status.
 func ownershipTaken(cr *v1beta1.Release) bool {
 	return cr.Status.AtProvider.OwnershipTaken || cr.Spec.ForProvider.TakeOwnership
 }
@@ -209,7 +224,7 @@ func ownershipTaken(cr *v1beta1.Release) bool {
 // spec has none, so that every release this provider deployed carries them
 // and a later pin, unpin or URL change is detected as drift against them. The
 // ownership label is sticky: it is only ever added, recording that adoption
-// happened so later upgrades never silently re-adopt.
+// happened.
 func releaseLabels(chart v1beta1.ChartSpec, ownershipTaken bool) map[string]string {
 	labels := map[string]string{
 		helmClient.LabelDigestHash: helmClient.EncodeDigestLabel(helmClient.EffectiveChartDigest(chart.URL, chart.Digest)),
@@ -280,6 +295,40 @@ func (e *helmExternal) Disconnect(ctx context.Context) error {
 	return nil
 }
 
+// checkOwnershipDrift reports whether a resource rendered by rel carries
+// ownership metadata that names another actor, and so needs a deploy to be
+// re-stamped back to this release. It runs only when
+// spec.forProvider.takeOwnership is set and no deploy is owed from other
+// causes: with spec drift a deploy is already happening, and will re-stamp the
+// metadata whether this is checked or not, so the lookups could not change the
+// observation's outcome. Releases still on client-side apply are excluded
+// inside OwnershipDrifted itself: their upgrades cannot repair the drift,
+// so reporting it would degrade a healthy release into a retry loop.
+//
+// The drift is deliberately kept out of status.synced and the Available
+// condition, which describe the release against its spec: the release is
+// still the chart, values and version that were asked for, and its workloads
+// are still running. What a resource stamped by somebody else needs is a
+// deploy, so it only forces the observation out of date. Without this the
+// drift is invisible, as Helm validates ownership only for resources it is
+// about to create - and the repair itself needs no adoption: the upgrade
+// force-restamps ownership on every rendered resource. Note that if the
+// contended metadata is held by another server-side apply field manager, an
+// upgrade repairs it only when ssaForceConflicts is set; otherwise the
+// upgrade errors, the release goes to failed state on a poll the provider
+// previously left idle, and state stays failed until the conflict is
+// resolved (set ssaForceConflicts, or remove the field from the spec).
+func (e *helmExternal) checkOwnershipDrift(ctx context.Context, cr *v1beta1.Release, rel *release.Release, specUpToDate bool) (bool, error) {
+	if !cr.Spec.ForProvider.TakeOwnership || !specUpToDate {
+		return false, nil
+	}
+	drifted, err := helmClient.OwnershipDrifted(ctx, e.kube, rel)
+	if err != nil {
+		return false, errors.Wrap(err, errFailedToCheckOwnership)
+	}
+	return drifted, nil
+}
+
 func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
 	cr, ok := mg.(*v1beta1.Release)
 	if !ok {
@@ -326,6 +375,12 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 		return managed.ExternalObservation{}, errors.Wrap(err, errFailedToCheckIfUpToDate)
 	}
 	cr.Status.Synced = s
+
+	ownershipDrifted, err := e.checkOwnershipDrift(ctx, cr, rel, s)
+	if err != nil {
+		return managed.ExternalObservation{}, err
+	}
+
 	cd := managed.ConnectionDetails{}
 	if cr.Status.AtProvider.State == common.StatusDeployed && s {
 		cr.Status.Failed = 0
@@ -341,7 +396,7 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 
 	return managed.ExternalObservation{
 		ResourceExists:    true,
-		ResourceUpToDate:  cr.Status.Synced && !(shouldRollBack(cr) && !rollBackLimitReached(cr)),
+		ResourceUpToDate:  cr.Status.Synced && !ownershipDrifted && !(shouldRollBack(cr) && !rollBackLimitReached(cr)),
 		ConnectionDetails: cd,
 	}, nil
 }
