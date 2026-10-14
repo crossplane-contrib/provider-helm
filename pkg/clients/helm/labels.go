@@ -42,9 +42,13 @@ const (
 	// predates label support.
 	LabelURLHash = "release.helm.crossplane.io/url-hash"
 	// LabelOwnershipTaken records that takeOwnership was exercised for this
-	// release. It is sticky: once written it is never removed, so the
-	// provider can suppress silent re-adoption on later upgrades even after
-	// spec.forProvider.takeOwnership is unset.
+	// release. It is sticky: once written it is never removed, so the fact
+	// that the release was adopted stays observable even after
+	// spec.forProvider.takeOwnership is unset. It is also what
+	// deployOptions' one-shot adoption gate reads on later reconciles,
+	// where the runtime may have reverted the persisted status - adoption
+	// never takes ownership twice, while the Observe-side drift check
+	// (see OwnershipDrifted) is what re-stamps metadata after that.
 	LabelOwnershipTaken = "release.helm.crossplane.io/ownership-taken"
 
 	// labelHashHexLen is how many hex characters of a hash fit in a label
