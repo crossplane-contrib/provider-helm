@@ -101,7 +101,10 @@
     }
   ],
   // PackageRules disabled below should be enabled in case of vulnerabilities
+  // This relies on GH dependabot alerts and GH advisory database
   "vulnerabilityAlerts": {"enabled": true},
+  // Also check OSV database for vulnerabilities (includes the Go vulnerability database)
+  "osvVulnerabilityAlerts": true,
   "packageRules": [
     {
       // We need to ignore k8s.io/client-go older versions as they switched to
