@@ -98,6 +98,16 @@
       "matchStrings": ["CROSSPLANE_CLI_VERSION \\??= (?<currentValue>.*?)\\n"],
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "crossplane/cli"
+    },
+    {
+      // We want a PR to bump kubectl-validate versions used through make variables in
+      // the Makefile, taking it from the official Github repository releases.
+      "customType": "regex",
+      "description": "Bump kubectl-validate version in the Makefile",
+      "managerFilePatterns": ["/^Makefile$/"],
+      "matchStrings": ["KUBECTL_VALIDATE_VERSION \\??= (?<currentValue>.*?)\\n"],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "kubernetes-sigs/kubectl-validate"
     }
   ],
   // PackageRules disabled below should be enabled in case of vulnerabilities
@@ -119,9 +129,9 @@
       "matchDatasources": ["go"],
       "groupName": "kubernetes patches",
       "matchUpdateTypes": ["patch", "digest"],
-      // Do not include k8s.io/utils, it has no version tags
-      // let other k8s dependencies auto-manage it transitively
-      "matchPackageNames": ["k8s.io{/,}**", "sigs.k8s.io{/,}**", "!k8s.io/utils{/,}**"],
+      // Do not include k8s.io/utils and k8s.io/kube-openapi, they have no version tags
+      // let other k8s dependencies auto-manage them transitively
+      "matchPackageNames": ["k8s.io{/,}**", "sigs.k8s.io{/,}**", "!k8s.io/utils{/,}**", "!k8s.io/kube-openapi{/,}**"],
     },
     {
       // We want dedicated PRs for each minor and major bumps to kubernetes related
@@ -140,6 +150,7 @@
       "description": "Separate PRs for major/minor/patch Crossplane Go dependencies",
       "matchDatasources": ["go"],
       "matchPackageNames": ["github.com/crossplane{/,}**"],
+      "separateMultipleMinor": true,
       "separateMinorPatch": true,
       "separateMajorMinor": true,
     },
@@ -151,11 +162,20 @@
       "matchPackageNames": ["github.com/crossplane{/,}**"],
     },
     {
-      // Go XP dependencies major/minor with dashboard approval
+      // Go XP dependencies major/minor/digest with dashboard approval
       "matchDatasources": ["go"],
-      "matchUpdateTypes": ["major", "minor"],
+      "matchUpdateTypes": ["major", "minor", "digest"],
       "matchPackageNames": ["github.com/crossplane{/,}**"],
       "dependencyDashboardApproval": true,
+    },
+    {
+      // Explicitly disable k8s.io/utils and k8s.io/kube-openapi digest updates,
+      // they have no version tags, let other k8s dependencies auto-manage them
+      // transitively
+      "matchDatasources": ["go"],
+      "matchUpdateTypes": ["digest"],
+      "enabled": false,
+      "matchPackageNames": ["k8s.io/utils{/,}**", "k8s.io/kube-openapi{/,}**"]
     },
     {
       // We want dedicated PRs for each bump to non-kubernetes and non-XP Go dependencies, but
@@ -184,7 +204,7 @@
     },
     {
       // We want a single PR for bumping Crossplane and Crossplane CLI versions in CI
-      "matchDepNames": ["crossplane/crossplane"],
+      "matchDepNames": ["crossplane/crossplane", "crossplane/cli"],
       "groupName": "crossplane versions in CI",
       "groupSlug": "crossplane-in-ci"
     },
