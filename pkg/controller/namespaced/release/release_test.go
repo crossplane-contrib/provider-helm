@@ -20,6 +20,7 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -892,8 +893,10 @@ func Test_helmExternal_Update(t *testing.T) {
 		mg        resource.Managed
 	}
 	type want struct {
+		out            managed.ExternalUpdate
 		err            error
 		ownershipTaken bool
+		available      bool
 	}
 	cases := map[string]struct {
 		args
@@ -1121,6 +1124,122 @@ func Test_helmExternal_Update(t *testing.T) {
 				err: nil,
 			},
 		},
+		"SuccessMarksDeployedReleaseAvailable": {
+			// The reconciler next observes a successfully updated release only
+			// after the poll interval, so Update reports it available and
+			// returns its connection details itself.
+			args: args{
+				kube: &test.MockClient{
+					MockGet: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+						if key.Name != testSecretName || key.Namespace != testNamespace {
+							return errBoom
+						}
+						*obj.(*unstructured.Unstructured) = unstructured.Unstructured{
+							Object: map[string]interface{}{
+								"metadata": map[string]interface{}{
+									"annotations": map[string]interface{}{
+										helmReleaseNameAnnotation:      testReleaseName,
+										helmReleaseNamespaceAnnotation: testNamespace,
+									},
+								},
+								"data": map[string]interface{}{
+									"db-password": "MTIzNDU=",
+								},
+							},
+						}
+						return nil
+					},
+				},
+				helm: &MockHelmClient{
+					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
+						return &release.Release{
+							Name:      testReleaseName,
+							Namespace: testNamespace,
+							Info:      &release.Info{Status: helmcommon.StatusDeployed},
+						}, nil
+					},
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					r.Status.Failed = 2
+					r.Status.SetConditions(xpv2.Unavailable())
+					r.Spec.ConnectionDetails = []v1beta1.ConnectionDetail{
+						{
+							ObjectReference: corev1.ObjectReference{
+								Kind:       "Secret",
+								Namespace:  testNamespace,
+								Name:       testSecretName,
+								APIVersion: "v1",
+								FieldPath:  "data.db-password",
+							},
+							ToConnectionSecretKey: "password",
+						},
+					}
+				}),
+			},
+			want: want{
+				out: managed.ExternalUpdate{
+					ConnectionDetails: managed.ConnectionDetails{
+						"password": []byte("12345"),
+					},
+				},
+				available: true,
+			},
+		},
+		"SuccessConnectionDetailsNotYetReadable": {
+			// The upgrade itself succeeded, so it is not reported as failed;
+			// the next observation retries reading the connection details.
+			args: args{
+				kube: &test.MockClient{
+					MockGet: test.NewMockGetFn(errBoom),
+				},
+				helm: &MockHelmClient{
+					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
+						return &release.Release{
+							Name:      testReleaseName,
+							Namespace: testNamespace,
+							Info:      &release.Info{Status: helmcommon.StatusDeployed},
+						}, nil
+					},
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					r.Status.SetConditions(xpv2.Unavailable())
+					r.Spec.ConnectionDetails = []v1beta1.ConnectionDetail{
+						{
+							ObjectReference: corev1.ObjectReference{
+								Kind:       "Secret",
+								Namespace:  testNamespace,
+								Name:       testSecretName,
+								APIVersion: "v1",
+								FieldPath:  "data.db-password",
+							},
+							ToConnectionSecretKey: "password",
+						},
+					}
+				}),
+			},
+			want: want{
+				err: nil,
+			},
+		},
+		"SuccessDoesNotMarkFailedReleaseAvailable": {
+			args: args{
+				helm: &MockHelmClient{
+					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
+						return &release.Release{
+							Name:      testReleaseName,
+							Namespace: testNamespace,
+							Info:      &release.Info{Status: helmcommon.StatusFailed},
+						}, nil
+					},
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					r.Status.SetConditions(xpv2.Unavailable())
+				}),
+			},
+			want: want{
+				err: nil,
+			},
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -1131,13 +1250,23 @@ func Test_helmExternal_Update(t *testing.T) {
 				helm:      tc.args.helm,
 				patch:     newPatcher(),
 			}
-			_, gotErr := e.Update(context.Background(), tc.args.mg)
+			got, gotErr := e.Update(context.Background(), tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
 				t.Fatalf("e.Update(...): -want error, +got error: %s", diff)
+			}
+			if diff := cmp.Diff(tc.want.out, got); diff != "" {
+				t.Errorf("e.Update(...): -want, +got: %s", diff)
 			}
 			if cr, ok := tc.args.mg.(*v1beta1.Release); ok {
 				if diff := cmp.Diff(tc.want.ownershipTaken, cr.Status.AtProvider.OwnershipTaken); diff != "" {
 					t.Errorf("e.Update(...): -want status.atProvider.ownershipTaken, +got: %s", diff)
+				}
+				available := cr.Status.GetCondition(xpv2.TypeReady).Equal(xpv2.Available())
+				if diff := cmp.Diff(tc.want.available, available); diff != "" {
+					t.Errorf("e.Update(...): -want available, +got: %s", diff)
+				}
+				if tc.want.available && cr.Status.Failed != 0 {
+					t.Errorf("e.Update(...): want status.failed reset to 0, got %d", cr.Status.Failed)
 				}
 			}
 		})

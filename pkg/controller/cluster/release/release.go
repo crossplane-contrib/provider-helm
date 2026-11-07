@@ -404,26 +404,26 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 
 type deployAction func(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch, opts helmClient.DeployOptions) (*release.Release, error)
 
-func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action deployAction) error { //nolint:gocyclo // easier to follow as a unit
+func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action deployAction) (*release.Release, error) { //nolint:gocyclo // easier to follow as a unit
 	cv, err := composeValuesFromSpec(ctx, e.localKube, cr.Spec.ForProvider.ValuesSpec)
 	if err != nil {
-		return errors.Wrap(err, errFailedToComposeValues)
+		return nil, errors.Wrap(err, errFailedToComposeValues)
 	}
 
 	resolver := registryauth.NewResolver(e.localKube)
 	creds, err := resolver.ResolveCluster(ctx, cr)
 	if err != nil {
-		return errors.Wrap(err, errFailedToGetRepoCreds)
+		return nil, errors.Wrap(err, errFailedToGetRepoCreds)
 	}
 
 	p, err := e.patch.getFromSpec(ctx, e.localKube, cr.Spec.ForProvider.PatchesFrom)
 	if err != nil {
-		return errors.Wrap(err, errFailedToLoadPatches)
+		return nil, errors.Wrap(err, errFailedToLoadPatches)
 	}
 
 	chart, err := e.helm.PullAndLoadChart(cr, creds)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Decided before late-initialization: its Update decodes the persisted
@@ -458,23 +458,23 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action d
 
 	if needsUpdate {
 		if err := e.localKube.Update(ctx, cr); err != nil {
-			return errors.Wrap(err, errFailedToLateInitialize)
+			return nil, errors.Wrap(err, errFailedToLateInitialize)
 		}
 	}
 
 	rel, err := action(meta.GetExternalName(cr), chart, cv, p, opts)
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if rel == nil {
-		return errors.New(errLastReleaseIsNil)
+		return nil, errors.New(errLastReleaseIsNil)
 	}
 
 	sha, err := e.patch.shaOf(p)
 	if err != nil {
-		return errors.Wrap(err, errFailedToUpdatePatchSha)
+		return nil, errors.Wrap(err, errFailedToUpdatePatchSha)
 	}
 	cr.Status.PatchesSha = sha
 	cr.Status.AtProvider = generateObservation(rel)
@@ -482,7 +482,7 @@ func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action d
 	cr.Status.AtProvider.Digest = helmClient.EffectiveChartDigest(cr.Spec.ForProvider.Chart.URL, cr.Spec.ForProvider.Chart.Digest)
 	cr.Status.AtProvider.OwnershipTaken = taken
 
-	return nil
+	return rel, nil
 }
 
 func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
@@ -501,7 +501,8 @@ func (e *helmExternal) Create(ctx context.Context, mg resource.Managed) (managed
 		}
 	}
 
-	return managed.ExternalCreation{}, errors.Wrap(e.deploy(ctx, cr, e.helm.Install), errFailedToInstall)
+	_, err := e.deploy(ctx, cr, e.helm.Install)
+	return managed.ExternalCreation{}, errors.Wrap(err, errFailedToInstall)
 }
 
 func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
@@ -530,7 +531,26 @@ func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed
 	}
 
 	e.logger.Debug("Updating")
-	return managed.ExternalUpdate{}, errors.Wrap(e.deploy(ctx, cr, e.helm.Upgrade), errFailedToUpgrade)
+	rel, err := e.deploy(ctx, cr, e.helm.Upgrade)
+	if err != nil {
+		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToUpgrade)
+	}
+
+	// Once an update succeeds the managed reconciler waits a full poll
+	// interval before observing again, and nothing watches the release. Mark
+	// a deployed release available now, so it is not reported unavailable,
+	// and without its connection details, until the next poll.
+	if cr.Status.AtProvider.State != common.StatusDeployed {
+		return managed.ExternalUpdate{}, nil
+	}
+	cd, err := connectionDetails(ctx, e.kube, cr.Spec.ConnectionDetails, rel.Name, rel.Namespace)
+	if err != nil {
+		e.logger.Debug("Cannot get connection details after upgrade, leaving them to the next observation", "error", err)
+		return managed.ExternalUpdate{}, nil
+	}
+	cr.Status.Failed = 0
+	cr.Status.SetConditions(xpv2.Available())
+	return managed.ExternalUpdate{ConnectionDetails: cd}, nil
 }
 
 func (e *helmExternal) Delete(_ context.Context, mg resource.Managed) (managed.ExternalDelete, error) {
