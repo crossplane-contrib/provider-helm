@@ -538,9 +538,16 @@ func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed
 
 	// Once an update succeeds the managed reconciler waits a full poll
 	// interval before observing again, and nothing watches the release. Mark
-	// a deployed release available now, so it is not reported unavailable,
-	// and without its connection details, until the next poll.
-	if cr.Status.AtProvider.State != common.StatusDeployed {
+	// the release available now, on the same condition Observe uses, so it is
+	// not reported unavailable, and without its connection details, until the
+	// next poll.
+	upToDate, err := isUpToDate(ctx, e.localKube, &cr.Spec, rel, cr.Status)
+	if err != nil {
+		e.logger.Debug("Cannot check the upgraded release, leaving it to the next observation", "error", err)
+		return managed.ExternalUpdate{}, nil
+	}
+	cr.Status.Synced = upToDate
+	if cr.Status.AtProvider.State != common.StatusDeployed || !upToDate {
 		return managed.ExternalUpdate{}, nil
 	}
 	cd, err := connectionDetails(ctx, e.kube, cr.Spec.ConnectionDetails, rel.Name, rel.Namespace)

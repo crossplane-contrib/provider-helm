@@ -897,6 +897,7 @@ func Test_helmExternal_Update(t *testing.T) {
 		err            error
 		ownershipTaken bool
 		available      bool
+		synced         bool
 	}
 	cases := map[string]struct {
 		args
@@ -926,7 +927,8 @@ func Test_helmExternal_Update(t *testing.T) {
 				}),
 			},
 			want: want{
-				err: errBoom,
+				err:    errBoom,
+				synced: true,
 			},
 		},
 		"RetryRollbackFails": {
@@ -945,7 +947,8 @@ func Test_helmExternal_Update(t *testing.T) {
 				}),
 			},
 			want: want{
-				err: errBoom,
+				err:    errBoom,
+				synced: true,
 			},
 		},
 		"RetryRollbackSuccess": {
@@ -964,7 +967,8 @@ func Test_helmExternal_Update(t *testing.T) {
 				}),
 			},
 			want: want{
-				err: nil,
+				err:    nil,
+				synced: true,
 			},
 		},
 		"MaxRetry": {
@@ -980,7 +984,8 @@ func Test_helmExternal_Update(t *testing.T) {
 				}),
 			},
 			want: want{
-				err: nil,
+				err:    nil,
+				synced: true,
 			},
 		},
 		"UpgradeDoesNotReAdoptOnceOwnershipTaken": {
@@ -1151,11 +1156,12 @@ func Test_helmExternal_Update(t *testing.T) {
 					},
 				},
 				helm: &MockHelmClient{
-					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
+					MockUpgrade: func(r string, _ *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
 						return &release.Release{
 							Name:      testReleaseName,
 							Namespace: testNamespace,
 							Info:      &release.Info{Status: helmcommon.StatusDeployed},
+							Chart:     &chart.Chart{Metadata: &chart.Metadata{Name: testChart, Version: testVersion}},
 						}, nil
 					},
 				},
@@ -1183,6 +1189,32 @@ func Test_helmExternal_Update(t *testing.T) {
 					},
 				},
 				available: true,
+				synced:    true,
+			},
+		},
+		"SuccessDoesNotMarkDriftedReleaseAvailable": {
+			// A spec that never converges, such as a version range, is upgraded
+			// on every poll. Update must not report it available or synced,
+			// the same as Observe would not.
+			args: args{
+				helm: &MockHelmClient{
+					MockUpgrade: func(r string, _ *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
+						return &release.Release{
+							Name:      testReleaseName,
+							Namespace: testNamespace,
+							Info:      &release.Info{Status: helmcommon.StatusDeployed},
+							Chart:     &chart.Chart{Metadata: &chart.Metadata{Name: testChart, Version: "6.1.0"}},
+						}, nil
+					},
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					r.Spec.ForProvider.Chart.Version = "^6.0"
+					r.Status.Synced = true
+					r.Status.SetConditions(xpv2.Unavailable())
+				}),
+			},
+			want: want{
+				err: nil,
 			},
 		},
 		"SuccessConnectionDetailsNotYetReadable": {
@@ -1193,11 +1225,12 @@ func Test_helmExternal_Update(t *testing.T) {
 					MockGet: test.NewMockGetFn(errBoom),
 				},
 				helm: &MockHelmClient{
-					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
+					MockUpgrade: func(r string, _ *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
 						return &release.Release{
 							Name:      testReleaseName,
 							Namespace: testNamespace,
 							Info:      &release.Info{Status: helmcommon.StatusDeployed},
+							Chart:     &chart.Chart{Metadata: &chart.Metadata{Name: testChart, Version: testVersion}},
 						}, nil
 					},
 				},
@@ -1218,7 +1251,8 @@ func Test_helmExternal_Update(t *testing.T) {
 				}),
 			},
 			want: want{
-				err: nil,
+				err:    nil,
+				synced: true,
 			},
 		},
 		"SuccessDoesNotMarkFailedReleaseAvailable": {
@@ -1264,6 +1298,9 @@ func Test_helmExternal_Update(t *testing.T) {
 				available := cr.Status.GetCondition(xpv2.TypeReady).Equal(xpv2.Available())
 				if diff := cmp.Diff(tc.want.available, available); diff != "" {
 					t.Errorf("e.Update(...): -want available, +got: %s", diff)
+				}
+				if diff := cmp.Diff(tc.want.synced, cr.Status.Synced); diff != "" {
+					t.Errorf("e.Update(...): -want status.synced, +got: %s", diff)
 				}
 				if tc.want.available && cr.Status.Failed != 0 {
 					t.Errorf("e.Update(...): want status.failed reset to 0, got %d", cr.Status.Failed)
