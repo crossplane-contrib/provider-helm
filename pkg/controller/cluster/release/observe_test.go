@@ -1822,6 +1822,8 @@ func Test_versionDrifted(t *testing.T) {
 		"RangeNotSatisfied":                 {args: args{specVersion: ">=1.0.0 <1.2.0", deployedVersion: "1.2.3"}, want: true},
 		"InvalidConstraint":                 {args: args{specVersion: "~not-a-version", deployedVersion: "1.2.3"}, want: true},
 		"ConstraintNonSemverDeployed":       {args: args{specVersion: "~1.2.0", deployedVersion: "latest"}, want: true},
+		"PartialMajorIsExact":               {args: args{specVersion: "6", deployedVersion: "6.7.1"}, want: true},
+		"PartialMinorIsExact":               {args: args{specVersion: "6.7", deployedVersion: "6.7.1"}, want: true},
 		"NonSemverDeployedComparedVerbatim": {args: args{specVersion: "1.2.3", deployedVersion: "latest"}, want: true},
 	}
 
