@@ -264,12 +264,29 @@ func isUpToDate(ctx context.Context, log logging.Logger, kube client.Client, spe
 // late-initialized) and the devel range pin nothing. Two versions that parse
 // as semver are compared as such, metadata included, so a v-prefixed spec
 // version (the tag a v-prefixed registry needs) matches the Chart.yaml version
-// it pulled; anything else, such as a range, is compared verbatim.
+// it pulled. A spec version that is a semver constraint (e.g. ~1.2.0), which
+// Helm resolves at pull time, has drifted only when the deployed version no
+// longer satisfies it; anything else is compared verbatim.
 func versionDrifted(specVersion, deployedVersion string) bool {
 	if specVersion == "" || specVersion == devel || specVersion == deployedVersion {
 		return false
 	}
 	spec, err := semver.NewVersion(specVersion)
+	if err != nil {
+		return constraintDrifted(specVersion, deployedVersion)
+	}
+	deployed, err := semver.NewVersion(deployedVersion)
+	if err != nil {
+		return true
+	}
+	return !spec.Equal(deployed) || spec.Metadata() != deployed.Metadata()
+}
+
+// constraintDrifted reports whether deployedVersion fails to satisfy the semver
+// constraint specVersion. A spec that is not a valid constraint, or a deployed
+// version that is not semver, is treated as drift.
+func constraintDrifted(specVersion, deployedVersion string) bool {
+	c, err := semver.NewConstraint(specVersion)
 	if err != nil {
 		return true
 	}
@@ -277,7 +294,7 @@ func versionDrifted(specVersion, deployedVersion string) bool {
 	if err != nil {
 		return true
 	}
-	return !spec.Equal(deployed) || spec.Metadata() != deployed.Metadata()
+	return !c.Check(deployed)
 }
 
 func isPending(s common.Status) bool {
