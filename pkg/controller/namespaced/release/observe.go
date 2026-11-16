@@ -25,6 +25,7 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/fieldpath"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
 	corev1 "k8s.io/api/core/v1"
@@ -120,7 +121,7 @@ func normalizeConfig(cfg map[string]interface{}) map[string]interface{} {
 }
 
 // isUpToDate checks whether desired spec up to date with the observed state for a given release
-func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSpec, observed *release.Release, s v1beta1.ReleaseStatus, namespace string) (bool, error) { // nolint:gocyclo
+func isUpToDate(ctx context.Context, log logging.Logger, kube client.Client, spec *v1beta1.ReleaseSpec, observed *release.Release, s v1beta1.ReleaseStatus, namespace string) (bool, error) { // nolint:gocyclo
 	if observed.Info == nil {
 		return false, errors.New(errReleaseInfoNilInObservedRelease)
 	}
@@ -145,7 +146,8 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 	// comparing it against the deployed chart would loop forever after a URL
 	// change to a differently-named chart.
 	if in.Chart.URL == "" && in.Chart.Name != ocm.Name {
-		return false, fmt.Errorf("expected chart name %s, got %s", in.Chart.Name, ocm.Name)
+		log.Debug("Chart name differs from the deployed release, upgrade required", "desired", in.Chart.Name, "observed", ocm.Name)
+		return false, nil
 	}
 
 	mp := sets.New[xpv2.ManagementAction](spec.ManagementPolicies...)

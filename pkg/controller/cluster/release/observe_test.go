@@ -2,10 +2,10 @@ package release
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
 	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
@@ -234,7 +234,7 @@ func Test_isUpToDate(t *testing.T) {
 			},
 			want: want{
 				out: false,
-				err: fmt.Errorf("expected chart name %s, got %s", "another-chart", testChart),
+				err: nil,
 			},
 		},
 		"NotUpToDate_ChartVersionDifferent": {
@@ -1717,7 +1717,7 @@ func Test_isUpToDate(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got, gotErr := isUpToDate(context.Background(), tc.args.kube, tc.args.spec, tc.args.observed, tc.args.status)
+			got, gotErr := isUpToDate(context.Background(), logging.NewNopLogger(), tc.args.kube, tc.args.spec, tc.args.observed, tc.args.status)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
 				t.Fatalf("isUpToDate(...): -want error, +got error: %s", diff)
 			}
