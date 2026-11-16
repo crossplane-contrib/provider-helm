@@ -272,6 +272,76 @@ func Test_isUpToDate(t *testing.T) {
 				err: nil,
 			},
 		},
+		"UpToDate_ChartVersionConstraintSatisfied": {
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							Name:    testChart,
+							Version: "~6.7.0",
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Raw: nil,
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: "6.7.1",
+						},
+					},
+					Config: testReleaseConfig,
+				},
+			},
+			want: want{
+				out: true,
+				err: nil,
+			},
+		},
+		"NotUpToDate_ChartVersionConstraintNotSatisfied": {
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							Name:    testChart,
+							Version: "~6.7.0",
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Raw: nil,
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: "6.8.0",
+						},
+					},
+					Config: testReleaseConfig,
+				},
+			},
+			want: want{
+				out: false,
+				err: nil,
+			},
+		},
 		"NotUpToDate_ConfigIsDifferent": {
 			args: args{
 				kube: &test.MockClient{
@@ -1746,7 +1816,14 @@ func Test_versionDrifted(t *testing.T) {
 		"PrereleaseDiffers":                 {args: args{specVersion: "1.2.3-rc.1", deployedVersion: "1.2.3"}, want: true},
 		"MetadataDiffers":                   {args: args{specVersion: "1.2.3+build.1", deployedVersion: "1.2.3+build.2"}, want: true},
 		"MetadataOnlyOnOneSide":             {args: args{specVersion: "1.2.3", deployedVersion: "1.2.3+build.1"}, want: true},
-		"RangeComparedVerbatim":             {args: args{specVersion: ">=1.0.0", deployedVersion: "1.2.3"}, want: true},
+		"TildeConstraintSatisfied":          {args: args{specVersion: "~6.7.0", deployedVersion: "6.7.1"}, want: false},
+		"TildeConstraintNotSatisfied":       {args: args{specVersion: "~6.7.0", deployedVersion: "6.8.0"}, want: true},
+		"RangeSatisfied":                    {args: args{specVersion: ">=1.0.0", deployedVersion: "1.2.3"}, want: false},
+		"RangeNotSatisfied":                 {args: args{specVersion: ">=1.0.0 <1.2.0", deployedVersion: "1.2.3"}, want: true},
+		"InvalidConstraint":                 {args: args{specVersion: "~not-a-version", deployedVersion: "1.2.3"}, want: true},
+		"ConstraintNonSemverDeployed":       {args: args{specVersion: "~1.2.0", deployedVersion: "latest"}, want: true},
+		"PartialMajorIsExact":               {args: args{specVersion: "6", deployedVersion: "6.7.1"}, want: true},
+		"PartialMinorIsExact":               {args: args{specVersion: "6.7", deployedVersion: "6.7.1"}, want: true},
 		"NonSemverDeployedComparedVerbatim": {args: args{specVersion: "1.2.3", deployedVersion: "latest"}, want: true},
 	}
 

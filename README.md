@@ -58,6 +58,26 @@ release.yaml](examples/cluster/sample/release.yaml).
 kubectl create -f examples/cluster/sample/release.yaml
 ```
 
+## Chart versions and drift
+
+`spec.forProvider.chart.version` accepts either an exact version or a semver
+constraint:
+
+- An exact version, such as `6.7.1` or `v6.7.1`, pins the chart. The `Release`
+  is reported as out of date whenever the deployed chart version differs.
+- A constraint, such as `>=6`, `~6.7.0`, `^6.7.0` or `6.x`, is resolved by Helm
+  when the chart is pulled. The `Release` is reported as out of date only when
+  the deployed chart version no longer satisfies the constraint. A newer chart
+  that also satisfies it is not picked up on its own; it is installed on the
+  next upgrade triggered by another change.
+- A partial version, such as `6` or `6.7`, is treated as an exact version
+  (`6.0.0`, `6.7.0`). Helm may still resolve it to a newer chart such as
+  `6.7.1`, which is then reported as drift on every reconcile. Use explicit
+  range syntax to allow a range of versions.
+- An empty version installs the latest chart. Unless late initialization is
+  disabled by the management policies, the spec is then set to the deployed
+  version, which is treated as an exact version from then on.
+
 ## Design 
 
 See [the design
