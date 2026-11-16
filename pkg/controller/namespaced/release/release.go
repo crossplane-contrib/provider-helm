@@ -370,7 +370,7 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 		return managed.ExternalObservation{ResourceExists: true}, nil
 	}
 
-	s, err := isUpToDate(ctx, e.localKube, &cr.Spec, rel, cr.Status, cr.Namespace)
+	s, err := isUpToDate(ctx, e.logger, e.localKube, &cr.Spec, rel, cr.Status, cr.Namespace)
 	if err != nil {
 		return managed.ExternalObservation{}, errors.Wrap(err, errFailedToCheckIfUpToDate)
 	}
