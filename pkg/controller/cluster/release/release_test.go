@@ -790,6 +790,7 @@ func Test_helmExternal_Update(t *testing.T) {
 		ownershipTaken bool
 		available      bool
 		synced         bool
+		failed         int32
 	}
 	cases := map[string]struct {
 		args
@@ -821,6 +822,7 @@ func Test_helmExternal_Update(t *testing.T) {
 			want: want{
 				err:    errBoom,
 				synced: true,
+				failed: 1,
 			},
 		},
 		"RetryRollbackFails": {
@@ -841,13 +843,25 @@ func Test_helmExternal_Update(t *testing.T) {
 			want: want{
 				err:    errBoom,
 				synced: true,
+				failed: 1,
 			},
 		},
-		"RetryRollbackSuccess": {
+		"RetryRollbackThenUpgrades": {
+			// The reconciler would get to the retry upgrade only after the
+			// poll interval, so Update runs it right after the rollback.
 			args: args{
 				helm: &MockHelmClient{
 					MockRollBack: func(release string) error {
 						return nil
+					},
+					MockUpgrade: func(r string, _ *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
+						return &release.Release{
+							Name:      testReleaseName,
+							Namespace: testNamespace,
+							Version:   5,
+							Info:      &release.Info{Status: common.StatusDeployed},
+							Chart:     &chart.Chart{Metadata: &chart.Metadata{Name: testChart, Version: testVersion}},
+						}, nil
 					},
 				},
 				mg: helmRelease(func(r *v1beta1.Release) {
@@ -856,11 +870,95 @@ func Test_helmExternal_Update(t *testing.T) {
 					r.Status.Synced = true
 					r.Status.AtProvider.Revision = 3
 					r.Status.AtProvider.State = common.StatusFailed
+					r.Status.SetConditions(xpv2.Unavailable())
 				}),
 			},
 			want: want{
-				err:    nil,
+				out:       managed.ExternalUpdate{ConnectionDetails: managed.ConnectionDetails{}},
+				available: true,
+				synced:    true,
+			},
+		},
+		"RetryUpgradeFailsKeepsRetryCount": {
+			args: args{
+				helm: &MockHelmClient{
+					MockRollBack: func(release string) error {
+						return nil
+					},
+					MockUpgrade: func(r string, _ *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
+						return nil, errBoom
+					},
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					l := int32(3)
+					r.Spec.RollbackRetriesLimit = &l
+					r.Status.Failed = 1
+					r.Status.Synced = true
+					r.Status.AtProvider.Revision = 3
+					r.Status.AtProvider.State = common.StatusFailed
+				}),
+			},
+			want: want{
+				err:    errors.Wrap(errBoom, errFailedToUpgrade),
 				synced: true,
+				failed: 2,
+			},
+		},
+		"RetryUninstallThenInstalls": {
+			// A failed first revision has nothing to roll back to, so it is
+			// uninstalled and installed again in the same call.
+			args: args{
+				helm: &MockHelmClient{
+					MockUninstall: func(release string) error {
+						return nil
+					},
+					MockInstall: func(r string, _ *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
+						return &release.Release{
+							Name:      testReleaseName,
+							Namespace: testNamespace,
+							Version:   1,
+							Info:      &release.Info{Status: common.StatusDeployed},
+							Chart:     &chart.Chart{Metadata: &chart.Metadata{Name: testChart, Version: testVersion}},
+						}, nil
+					},
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					l := int32(3)
+					r.Spec.RollbackRetriesLimit = &l
+					r.Status.Synced = true
+					r.Status.AtProvider.Revision = 1
+					r.Status.AtProvider.State = common.StatusFailed
+					r.Status.SetConditions(xpv2.Unavailable())
+				}),
+			},
+			want: want{
+				out:       managed.ExternalUpdate{ConnectionDetails: managed.ConnectionDetails{}},
+				available: true,
+				synced:    true,
+			},
+		},
+		"RetryInstallFails": {
+			args: args{
+				helm: &MockHelmClient{
+					MockUninstall: func(release string) error {
+						return nil
+					},
+					MockInstall: func(r string, _ *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
+						return nil, errBoom
+					},
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					l := int32(3)
+					r.Spec.RollbackRetriesLimit = &l
+					r.Status.Synced = true
+					r.Status.AtProvider.Revision = 1
+					r.Status.AtProvider.State = common.StatusFailed
+				}),
+			},
+			want: want{
+				err:    errors.Wrap(errBoom, errFailedToInstall),
+				synced: true,
+				failed: 1,
 			},
 		},
 		"MaxRetry": {
@@ -878,6 +976,7 @@ func Test_helmExternal_Update(t *testing.T) {
 			want: want{
 				err:    nil,
 				synced: true,
+				failed: 3,
 			},
 		},
 		"UpgradeDoesNotReAdoptOnceOwnershipTaken": {
@@ -1194,8 +1293,8 @@ func Test_helmExternal_Update(t *testing.T) {
 				if diff := cmp.Diff(tc.want.synced, cr.Status.Synced); diff != "" {
 					t.Errorf("e.Update(...): -want status.synced, +got: %s", diff)
 				}
-				if tc.want.available && cr.Status.Failed != 0 {
-					t.Errorf("e.Update(...): want status.failed reset to 0, got %d", cr.Status.Failed)
+				if diff := cmp.Diff(tc.want.failed, cr.Status.Failed); diff != "" {
+					t.Errorf("e.Update(...): -want status.failed, +got: %s", diff)
 				}
 			}
 		})

@@ -512,29 +512,41 @@ func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed
 		return managed.ExternalUpdate{}, errors.New(errNotRelease)
 	}
 
+	action, errFailedToDeploy := e.helm.Upgrade, errFailedToUpgrade
 	if shouldRollBack(cr) {
 		e.logger.Debug("Last release failed")
-		if !rollBackLimitReached(cr) {
-			// Rollback
-			e.logger.Debug("Will rollback/uninstall to retry")
-			cr.Status.Failed++
-			// If it's the first revision of a Release, rollback would fail since there is no previous revision.
-			// We need to uninstall to retry.
-			if cr.Status.AtProvider.Revision == 1 {
-				e.logger.Debug("Uninstalling")
-				return managed.ExternalUpdate{}, e.helm.Uninstall(meta.GetExternalName(cr))
-			}
-			e.logger.Debug("Rolling back to previous release version")
-			return managed.ExternalUpdate{}, e.helm.Rollback(meta.GetExternalName(cr))
+		if rollBackLimitReached(cr) {
+			e.logger.Debug("Reached max rollback retries, will not retry")
+			return managed.ExternalUpdate{}, nil
 		}
-		e.logger.Debug("Reached max rollback retries, will not retry")
-		return managed.ExternalUpdate{}, nil
+		e.logger.Debug("Will rollback/uninstall to retry")
+		cr.Status.Failed++
+		// The retry runs below, in this same call: the managed reconciler
+		// would otherwise only get to it after a full poll interval.
+		// If it's the first revision of a Release, rollback would fail since there is no previous revision.
+		// We need to uninstall to retry, and install again.
+		if cr.Status.AtProvider.Revision == 1 {
+			e.logger.Debug("Uninstalling")
+			if err := e.helm.Uninstall(meta.GetExternalName(cr)); err != nil {
+				return managed.ExternalUpdate{}, err
+			}
+			action, errFailedToDeploy = e.helm.Install, errFailedToInstall
+		} else {
+			e.logger.Debug("Rolling back to previous release version")
+			if err := e.helm.Rollback(meta.GetExternalName(cr)); err != nil {
+				return managed.ExternalUpdate{}, err
+			}
+		}
 	}
 
+	// Late-initialization in deploy reloads the persisted status, which
+	// would drop the retry counted above.
+	failed := cr.Status.Failed
 	e.logger.Debug("Updating")
-	rel, err := e.deploy(ctx, cr, e.helm.Upgrade)
+	rel, err := e.deploy(ctx, cr, action)
+	cr.Status.Failed = failed
 	if err != nil {
-		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToUpgrade)
+		return managed.ExternalUpdate{}, errors.Wrap(err, errFailedToDeploy)
 	}
 
 	// Once an update succeeds the managed reconciler waits a full poll
