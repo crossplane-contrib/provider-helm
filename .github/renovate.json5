@@ -238,6 +238,24 @@
       // We want dedicated PRs for each major bump to Github Actions
       "matchDepTypes": ["action"],
       "pinDigests": true
+    },
+    {
+      // structured-merge-diff must stay on the major version used by
+      // k8s.io/apimachinery and k8s.io/kube-openapi, mixing majors breaks the
+      // build. Let it be managed transitively by the k8s dependencies.
+      "matchDatasources": ["go"],
+      "matchPackageNames": ["sigs.k8s.io/structured-merge-diff{/,}**"],
+      "enabled": false
+    },
+    {
+      // We want a dedicated PR for minor and patch bumps of helm, even though
+      // other non-kubernetes Go dependencies are only bumped for vulnerabilities.
+      "matchDatasources": ["go"],
+      "matchPackageNames": ["helm.sh/helm/v4"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "enabled": true,
+      "groupName": "helm",
+      "groupSlug": "helm"
     }
   ]
 }
