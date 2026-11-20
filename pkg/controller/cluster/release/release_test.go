@@ -607,6 +607,56 @@ func Test_helmExternal_Observe(t *testing.T) {
 	}
 }
 
+func Test_helmExternal_ObserveReadyObservedGeneration(t *testing.T) {
+	cases := map[string]struct {
+		status common.Status
+		want   xpv2.Condition
+	}{
+		"Available": {
+			status: common.StatusDeployed,
+			want:   xpv2.Available(),
+		},
+		"Unavailable": {
+			status: common.StatusFailed,
+			want:   xpv2.Unavailable(),
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cr := helmRelease()
+			e := &helmExternal{
+				logger: logging.NewNopLogger(),
+				helm: &MockHelmClient{
+					MockGetLastRelease: func(r string) (*release.Release, error) {
+						return &release.Release{
+							Name: r,
+							Info: &release.Info{Status: tc.status},
+							Chart: &chart.Chart{
+								Metadata: &chart.Metadata{Name: testChart, Version: testVersion},
+							},
+							Config: map[string]interface{}{},
+						}, nil
+					},
+				},
+			}
+
+			// An unchanged Ready status must still track each observed generation.
+			for _, generation := range []int64{1, 2} {
+				cr.SetGeneration(generation)
+				if _, err := e.Observe(context.Background(), cr); err != nil {
+					t.Fatalf("e.Observe(...): unexpected error: %v", err)
+				}
+				got := cr.GetCondition(xpv2.TypeReady)
+				want := tc.want.WithObservedGeneration(generation)
+				want.LastTransitionTime = got.LastTransitionTime
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Errorf("e.Observe(...): -want Ready condition, +got Ready condition: %s", diff)
+				}
+			}
+		})
+	}
+}
+
 func Test_helmExternal_Create(t *testing.T) {
 	type args struct {
 		localKube client.Client
