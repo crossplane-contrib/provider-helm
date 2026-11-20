@@ -390,9 +390,9 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 		if err != nil {
 			return managed.ExternalObservation{}, errors.Wrap(err, "cannot get connection details")
 		}
-		cr.Status.SetConditions(xpv2.Available())
+		cr.Status.SetConditions(xpv2.Available().WithObservedGeneration(cr.GetGeneration()))
 	} else {
-		cr.Status.SetConditions(xpv2.Unavailable())
+		cr.Status.SetConditions(xpv2.Unavailable().WithObservedGeneration(cr.GetGeneration()))
 	}
 
 	return managed.ExternalObservation{
