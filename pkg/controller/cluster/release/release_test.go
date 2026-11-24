@@ -1325,6 +1325,10 @@ func Test_helmExternal_Update(t *testing.T) {
 				helm:      tc.args.helm,
 				patch:     newPatcher(),
 			}
+			const testGeneration = 3
+			if cr, ok := tc.args.mg.(*v1beta1.Release); ok {
+				cr.SetGeneration(testGeneration)
+			}
 			got, gotErr := e.Update(context.Background(), tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, gotErr, test.EquateErrors()); diff != "" {
 				t.Fatalf("e.Update(...): -want error, +got error: %s", diff)
@@ -1339,6 +1343,9 @@ func Test_helmExternal_Update(t *testing.T) {
 				available := cr.Status.GetCondition(xpv2.TypeReady).Equal(xpv2.Available())
 				if diff := cmp.Diff(tc.want.available, available); diff != "" {
 					t.Errorf("e.Update(...): -want available, +got: %s", diff)
+				}
+				if available && cr.Status.GetCondition(xpv2.TypeReady).ObservedGeneration != testGeneration {
+					t.Errorf("e.Update(...): -want Ready observedGeneration %d, +got %d", testGeneration, cr.Status.GetCondition(xpv2.TypeReady).ObservedGeneration)
 				}
 				if diff := cmp.Diff(tc.want.synced, cr.Status.Synced); diff != "" {
 					t.Errorf("e.Update(...): -want status.synced, +got: %s", diff)

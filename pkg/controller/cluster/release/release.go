@@ -568,7 +568,7 @@ func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed
 		return managed.ExternalUpdate{}, nil
 	}
 	cr.Status.Failed = 0
-	cr.Status.SetConditions(xpv2.Available())
+	cr.Status.SetConditions(xpv2.Available().WithObservedGeneration(cr.GetGeneration()))
 	return managed.ExternalUpdate{ConnectionDetails: cd}, nil
 }
 
