@@ -12,6 +12,9 @@ type Args struct {
 	Timeout time.Duration
 	// SkipCRDs skips CRDs creation during Helm release install or upgrade.
 	SkipCRDs bool
+	// SkipSchemaValidation skips validating values against the chart's
+	// values.schema.json during Helm release install or upgrade.
+	SkipSchemaValidation bool
 	// InsecureSkipTLSVerify skips tls certificate checks for the chart download
 	InsecureSkipTLSVerify bool
 	// PlainHTTP uses HTTP connections for the chart download
