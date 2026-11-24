@@ -25,6 +25,7 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/fieldpath"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
 	corev1 "k8s.io/api/core/v1"
@@ -116,7 +117,7 @@ func normalizeConfig(cfg map[string]interface{}) map[string]interface{} {
 }
 
 // isUpToDate checks whether desired spec up to date with the observed state for a given release
-func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSpec, observed *release.Release, s v1beta1.ReleaseStatus) (bool, error) { // nolint:gocyclo
+func isUpToDate(ctx context.Context, log logging.Logger, kube client.Client, spec *v1beta1.ReleaseSpec, observed *release.Release, s v1beta1.ReleaseStatus) (bool, error) { // nolint:gocyclo
 	if observed.Info == nil {
 		return false, errors.New(errReleaseInfoNilInObservedRelease)
 	}
@@ -141,6 +142,7 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 	// comparing it against the deployed chart would loop forever after a URL
 	// change to a differently-named chart.
 	if in.Chart.URL == "" && in.Chart.Name != ocm.Name {
+		log.Debug("Chart name differs from the deployed release, upgrade required", "desired", in.Chart.Name, "observed", ocm.Name)
 		return false, nil
 	}
 
@@ -262,12 +264,29 @@ func isUpToDate(ctx context.Context, kube client.Client, spec *v1beta1.ReleaseSp
 // late-initialized) and the devel range pin nothing. Two versions that parse
 // as semver are compared as such, metadata included, so a v-prefixed spec
 // version (the tag a v-prefixed registry needs) matches the Chart.yaml version
-// it pulled; anything else, such as a range, is compared verbatim.
+// it pulled. A spec version that is a semver constraint (e.g. ~1.2.0), which
+// Helm resolves at pull time, has drifted only when the deployed version no
+// longer satisfies it; anything else is compared verbatim.
 func versionDrifted(specVersion, deployedVersion string) bool {
 	if specVersion == "" || specVersion == devel || specVersion == deployedVersion {
 		return false
 	}
 	spec, err := semver.NewVersion(specVersion)
+	if err != nil {
+		return constraintDrifted(specVersion, deployedVersion)
+	}
+	deployed, err := semver.NewVersion(deployedVersion)
+	if err != nil {
+		return true
+	}
+	return !spec.Equal(deployed) || spec.Metadata() != deployed.Metadata()
+}
+
+// constraintDrifted reports whether deployedVersion fails to satisfy the semver
+// constraint specVersion. A spec that is not a valid constraint, or a deployed
+// version that is not semver, is treated as drift.
+func constraintDrifted(specVersion, deployedVersion string) bool {
+	c, err := semver.NewConstraint(specVersion)
 	if err != nil {
 		return true
 	}
@@ -275,7 +294,7 @@ func versionDrifted(specVersion, deployedVersion string) bool {
 	if err != nil {
 		return true
 	}
-	return !spec.Equal(deployed) || spec.Metadata() != deployed.Metadata()
+	return !c.Check(deployed)
 }
 
 func isPending(s common.Status) bool {

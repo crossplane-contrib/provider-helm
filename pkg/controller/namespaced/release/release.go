@@ -370,7 +370,7 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 		return managed.ExternalObservation{ResourceExists: true}, nil
 	}
 
-	s, err := isUpToDate(ctx, e.localKube, &cr.Spec, rel, cr.Status, cr.Namespace)
+	s, err := isUpToDate(ctx, e.logger, e.localKube, &cr.Spec, rel, cr.Status, cr.Namespace)
 	if err != nil {
 		return managed.ExternalObservation{}, errors.Wrap(err, errFailedToCheckIfUpToDate)
 	}
@@ -389,9 +389,9 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 		if err != nil {
 			return managed.ExternalObservation{}, errors.Wrap(err, "cannot get connection details")
 		}
-		cr.Status.SetConditions(xpv2.Available())
+		cr.Status.SetConditions(xpv2.Available().WithObservedGeneration(cr.GetGeneration()))
 	} else {
-		cr.Status.SetConditions(xpv2.Unavailable())
+		cr.Status.SetConditions(xpv2.Unavailable().WithObservedGeneration(cr.GetGeneration()))
 	}
 
 	return managed.ExternalObservation{
@@ -554,7 +554,7 @@ func (e *helmExternal) Update(ctx context.Context, mg resource.Managed) (managed
 	// the release available now, on the same condition Observe uses, so it is
 	// not reported unavailable, and without its connection details, until the
 	// next poll.
-	upToDate, err := isUpToDate(ctx, e.localKube, &cr.Spec, rel, cr.Status, cr.Namespace)
+	upToDate, err := isUpToDate(ctx, e.logger, e.localKube, &cr.Spec, rel, cr.Status, cr.Namespace)
 	if err != nil {
 		e.logger.Debug("Cannot check the upgraded release, leaving it to the next observation", "error", err)
 		return managed.ExternalUpdate{}, nil

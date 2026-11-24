@@ -36,6 +36,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	"helm.sh/helm/v4/pkg/action"
+	ci "helm.sh/helm/v4/pkg/chart"
 	chart "helm.sh/helm/v4/pkg/chart/v2"
 	"helm.sh/helm/v4/pkg/chart/v2/loader"
 	"helm.sh/helm/v4/pkg/cli"
@@ -102,6 +103,7 @@ var systemCACandidates = []string{
 const (
 	errFailedToPullChart             = "failed to pull chart"
 	errFailedToLoadChart             = "failed to load chart"
+	errMissingChartDependencies      = "chart dependencies are missing, run 'helm dependency build' before packaging the chart"
 	errFailedToParseURL              = "failed to parse URL"
 	errFailedToLogin                 = "failed to login to registry"
 	errUnexpectedOCIUrlTmpl          = "url not prefixed with oci://, got [%s]"
@@ -906,7 +908,22 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 	if err != nil {
 		return nil, errors.Wrap(err, errFailedToLoadChart)
 	}
+	if err := checkDependencies(chart); err != nil {
+		return nil, errors.Wrap(err, errMissingChartDependencies)
+	}
 	return chart, nil
+}
+
+// checkDependencies fails when Chart.yaml declares a dependency that the chart
+// archive does not bundle in charts/. Helm's install and upgrade actions render
+// only the bundled subcharts and skip the missing ones silently; the Helm CLI
+// runs this check before calling them, and so must the provider.
+func checkDependencies(c *chart.Chart) error {
+	declared := make([]ci.Dependency, len(c.Metadata.Dependencies))
+	for i, d := range c.Metadata.Dependencies {
+		declared[i] = d
+	}
+	return action.CheckDependencies(c, declared)
 }
 
 func (hc *client) GetLastRelease(name string) (*release.Release, error) {
