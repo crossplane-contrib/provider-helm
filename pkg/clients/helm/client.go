@@ -36,6 +36,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	"helm.sh/helm/v4/pkg/action"
+	ci "helm.sh/helm/v4/pkg/chart"
 	chart "helm.sh/helm/v4/pkg/chart/v2"
 	"helm.sh/helm/v4/pkg/chart/v2/loader"
 	"helm.sh/helm/v4/pkg/cli"
@@ -102,6 +103,8 @@ var systemCACandidates = []string{
 const (
 	errFailedToPullChart             = "failed to pull chart"
 	errFailedToLoadChart             = "failed to load chart"
+	errFailedToCheckChartDeps        = "failed to check chart dependencies"
+	errChartDepsMissing              = "chart declares dependencies that are missing from the chart archive"
 	errFailedToParseURL              = "failed to parse URL"
 	errFailedToLogin                 = "failed to login to registry"
 	errUnexpectedOCIUrlTmpl          = "url not prefixed with oci://, got [%s]"
@@ -906,7 +909,25 @@ func (hc *client) PullAndLoadChart(mg resource.Managed, creds *RepoCreds) (*char
 	if err != nil {
 		return nil, errors.Wrap(err, errFailedToLoadChart)
 	}
+	if err := checkChartDependencies(chart); err != nil {
+		return nil, err
+	}
 	return chart, nil
+}
+
+// checkChartDependencies rejects a chart that declares dependencies in
+// Chart.yaml but does not ship them in its charts/ directory. Helm's install
+// and upgrade actions render only the subcharts present in the archive, so
+// without this check such a release silently omits them and reports success.
+func checkChartDependencies(chrt *chart.Chart) error {
+	ac, err := ci.NewAccessor(chrt)
+	if err != nil {
+		return errors.Wrap(err, errFailedToCheckChartDeps)
+	}
+	if err := action.CheckDependencies(chrt, ac.MetaDependencies()); err != nil {
+		return errors.Wrap(err, errChartDepsMissing)
+	}
+	return nil
 }
 
 func (hc *client) GetLastRelease(name string) (*release.Release, error) {
