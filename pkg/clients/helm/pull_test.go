@@ -25,7 +25,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/registry"
 	chart "helm.sh/helm/v4/pkg/chart/v2"
@@ -35,6 +37,8 @@ import (
 	helmregistry "helm.sh/helm/v4/pkg/registry"
 	repo "helm.sh/helm/v4/pkg/repo/v1"
 	"k8s.io/client-go/rest"
+
+	clusterv1beta1 "github.com/crossplane-contrib/provider-helm/apis/cluster/release/v1beta1"
 )
 
 // packageChart creates a chart with the given name and version and saves its
@@ -778,6 +782,111 @@ func TestPullChart_ClassicRepository(t *testing.T) {
 			got := want{Chart: chartID(t, path), Accept: tarballAccept()}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("pullChart(...): -want, +got:\n%s", diff)
+			}
+		})
+	}
+}
+
+// packageUmbrellaChart saves into dir an umbrella chart whose Chart.yaml
+// declares declared and whose charts/ directory bundles a subchart for each
+// name in bundled, the way a tarball built without `helm dependency build`
+// can disagree with its own Chart.yaml.
+func packageUmbrellaChart(t *testing.T, dir string, declared []*chart.Dependency, bundled []string) string {
+	t.Helper()
+	umbrella := &chart.Chart{Metadata: &chart.Metadata{
+		APIVersion:   chart.APIVersionV2,
+		Name:         "umbrella",
+		Version:      "1.0.0",
+		Dependencies: declared,
+	}}
+	for _, name := range bundled {
+		umbrella.AddDependency(&chart.Chart{Metadata: &chart.Metadata{
+			APIVersion: chart.APIVersionV2,
+			Name:       name,
+			Version:    "1.0.0",
+		}})
+	}
+	tgzPath, err := chartutil.Save(umbrella, dir)
+	if err != nil {
+		t.Fatalf("chartutil.Save(...): unexpected error: %v", err)
+	}
+	return tgzPath
+}
+
+// TestPullAndLoadChart_Dependencies loads umbrella charts from a URL: every
+// dependency declared in Chart.yaml must be bundled in charts/, whatever its
+// condition, as the Helm CLI requires before it installs or upgrades.
+func TestPullAndLoadChart_Dependencies(t *testing.T) {
+	type args struct {
+		declared []*chart.Dependency
+		bundled  []string
+	}
+	type want struct {
+		subcharts []string
+		err       error
+	}
+	cases := map[string]struct {
+		args args
+		want want
+	}{
+		"NoDependencies": {
+			want: want{subcharts: []string{}},
+		},
+		"DependencyBundled": {
+			args: args{
+				declared: []*chart.Dependency{{Name: "postgresql", Version: "1.0.0"}},
+				bundled:  []string{"postgresql"},
+			},
+			want: want{subcharts: []string{"postgresql"}},
+		},
+		"AliasedDependencyBundled": {
+			args: args{
+				declared: []*chart.Dependency{{Name: "postgresql", Version: "1.0.0", Alias: "db"}},
+				bundled:  []string{"postgresql"},
+			},
+			want: want{subcharts: []string{"postgresql"}},
+		},
+		"DependencyMissing": {
+			args: args{
+				declared: []*chart.Dependency{{Name: "postgresql", Version: "1.0.0"}},
+			},
+			want: want{err: errors.Wrap(errors.New("found in Chart.yaml, but missing in charts/ directory: postgresql"), errMissingChartDependencies)},
+		},
+		"DisabledDependencyMissing": {
+			args: args{
+				declared: []*chart.Dependency{{Name: "postgresql", Version: "1.0.0", Condition: "postgresql.enabled"}},
+			},
+			want: want{err: errors.Wrap(errors.New("found in Chart.yaml, but missing in charts/ directory: postgresql"), errMissingChartDependencies)},
+		},
+		"OneOfTwoDependenciesMissing": {
+			args: args{
+				declared: []*chart.Dependency{{Name: "postgresql", Version: "1.0.0"}, {Name: "redis", Version: "1.0.0"}},
+				bundled:  []string{"postgresql"},
+			},
+			want: want{err: errors.Wrap(errors.New("found in Chart.yaml, but missing in charts/ directory: redis"), errMissingChartDependencies)},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			tgzPath := packageUmbrellaChart(t, dir, tc.args.declared, tc.args.bundled)
+			srv := httptest.NewServer(http.FileServer(http.Dir(dir)))
+			t.Cleanup(srv.Close)
+			rel := &clusterv1beta1.Release{Spec: clusterv1beta1.ReleaseSpec{ForProvider: clusterv1beta1.ReleaseParameters{
+				Chart: clusterv1beta1.ChartSpec{URL: srv.URL + "/" + filepath.Base(tgzPath)},
+			}}}
+
+			loaded, err := newPullClient(t, t.TempDir()).PullAndLoadChart(rel, &RepoCreds{})
+
+			got := want{err: err}
+			if loaded != nil {
+				got.subcharts = []string{}
+				for _, d := range loaded.Dependencies() {
+					got.subcharts = append(got.subcharts, d.Name())
+				}
+			}
+			if diff := cmp.Diff(tc.want, got, cmp.AllowUnexported(want{}), test.EquateErrors()); diff != "" {
+				t.Errorf("PullAndLoadChart(...): -want, +got:\n%s", diff)
 			}
 		})
 	}
