@@ -157,6 +157,19 @@ type ReleaseParameters struct {
 	// See https://kubernetes.io/docs/reference/using-api/server-side-apply/#conflicts
 	// +optional
 	SSAForceConflicts bool `json:"ssaForceConflicts,omitempty"`
+	// Labels are added to the Helm release, like helm install --labels, for
+	// example to select releases with helm list --selector. Changing them
+	// upgrades the release, which creates a new revision, and a label removed
+	// here is removed from the release. Helm's reserved names (name, owner,
+	// status, version, createdAt, modifiedAt), keys under
+	// release.helm.crossplane.io/, where the provider keeps its own labels,
+	// and the value "null", which Helm treats as a deletion, aren't allowed.
+	// At most 64 labels can be set.
+	// +optional
+	// +kubebuilder:validation:MaxProperties=64
+	// +kubebuilder:validation:XValidation:rule="self.all(k, !(k in ['name', 'owner', 'status', 'version', 'createdAt', 'modifiedAt']) && !k.startsWith('release.helm.crossplane.io/'))",message="labels must not use Helm's reserved names (name, owner, status, version, createdAt, modifiedAt) or the release.helm.crossplane.io/ prefix"
+	// +kubebuilder:validation:XValidation:rule="self.all(k, self[k] != 'null')",message="label values must not be \"null\", which Helm treats as a deletion"
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // ReleaseObservation are the observable fields of a Release.

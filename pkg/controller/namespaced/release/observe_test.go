@@ -851,6 +851,188 @@ func Test_isUpToDate(t *testing.T) {
 				err: nil,
 			},
 		},
+		"UpToDate_UserLabelsMatch": {
+			// Helm's system labels and the provider's own are not user labels, so only team is compared.
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							Name:    testChart,
+							Version: testVersion,
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+						Labels: map[string]string{"team": "platform"},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: testVersion,
+						},
+					},
+					Config: testReleaseConfig,
+					Labels: map[string]string{
+						"name":                     "my-release",
+						"owner":                    "helm",
+						"status":                   "deployed",
+						"version":                  "2",
+						helmClient.LabelDigestHash: "",
+						helmClient.LabelURLHash:    "",
+						"team":                     "platform",
+					},
+				},
+				status: v1beta1.ReleaseStatus{},
+			},
+			want: want{
+				out: true,
+				err: nil,
+			},
+		},
+		"NotUpToDate_UserLabelAdded": {
+			// A label added to the spec is written by an upgrade.
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							Name:    testChart,
+							Version: testVersion,
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+						Labels: map[string]string{"team": "platform"},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: testVersion,
+						},
+					},
+					Config: testReleaseConfig,
+					Labels: map[string]string{
+						"name":                     "my-release",
+						"owner":                    "helm",
+						"status":                   "deployed",
+						"version":                  "2",
+						helmClient.LabelDigestHash: "",
+						helmClient.LabelURLHash:    "",
+					},
+				},
+				status: v1beta1.ReleaseStatus{},
+			},
+			want: want{
+				out: false,
+				err: nil,
+			},
+		},
+		"NotUpToDate_UserLabelRemoved": {
+			// A label removed from the spec is removed by an upgrade.
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							Name:    testChart,
+							Version: testVersion,
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: testVersion,
+						},
+					},
+					Config: testReleaseConfig,
+					Labels: map[string]string{
+						"name":                     "my-release",
+						"owner":                    "helm",
+						"status":                   "deployed",
+						"version":                  "2",
+						helmClient.LabelDigestHash: "",
+						helmClient.LabelURLHash:    "",
+						"team":                     "platform",
+					},
+				},
+				status: v1beta1.ReleaseStatus{},
+			},
+			want: want{
+				out: false,
+				err: nil,
+			},
+		},
+		"NotUpToDate_UserLabelChanged": {
+			// A changed label value is written by an upgrade.
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							Name:    testChart,
+							Version: testVersion,
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+						Labels: map[string]string{"team": "infra"},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: testVersion,
+						},
+					},
+					Config: testReleaseConfig,
+					Labels: map[string]string{
+						"name":                     "my-release",
+						"owner":                    "helm",
+						"status":                   "deployed",
+						"version":                  "2",
+						helmClient.LabelDigestHash: "",
+						helmClient.LabelURLHash:    "",
+						"team":                     "platform",
+					},
+				},
+				status: v1beta1.ReleaseStatus{},
+			},
+			want: want{
+				out: false,
+				err: nil,
+			},
+		},
 		"UpToDate_DigestLabelMatches": {
 			// The label records the deployed digest; an empty status digest
 			// (e.g. wiped after Create) must not matter.

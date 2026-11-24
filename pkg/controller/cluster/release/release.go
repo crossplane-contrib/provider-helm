@@ -18,6 +18,7 @@ package release
 
 import (
 	"context"
+	"maps"
 	"time"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
@@ -206,7 +207,7 @@ func deployOptions(cr *v1beta1.Release) helmClient.DeployOptions {
 	takeOwnership := cr.Spec.ForProvider.TakeOwnership && !cr.Status.AtProvider.OwnershipTaken
 	return helmClient.DeployOptions{
 		TakeOwnership: takeOwnership,
-		Labels:        releaseLabels(cr.Spec.ForProvider.Chart, ownershipTaken(cr)),
+		Labels:        releaseLabels(cr.Spec.ForProvider.Chart, ownershipTaken(cr), cr.Spec.ForProvider.Labels),
 	}
 }
 
@@ -225,12 +226,16 @@ func ownershipTaken(cr *v1beta1.Release) bool {
 // spec has none, so that every release this provider deployed carries them
 // and a later pin, unpin or URL change is detected as drift against them. The
 // ownership label is sticky: it is only ever added, recording that adoption
-// happened.
-func releaseLabels(chart v1beta1.ChartSpec, ownershipTaken bool) map[string]string {
-	labels := map[string]string{
-		helmClient.LabelDigestHash: helmClient.EncodeDigestLabel(helmClient.EffectiveChartDigest(chart.URL, chart.Digest)),
-		helmClient.LabelURLHash:    helmClient.EncodeURLLabel(chart.URL),
+// happened. The user labels from spec.forProvider.labels come first; the
+// provider's own are set over them, although validation already keeps their
+// keys apart.
+func releaseLabels(chart v1beta1.ChartSpec, ownershipTaken bool, userLabels map[string]string) map[string]string {
+	labels := maps.Clone(userLabels)
+	if labels == nil {
+		labels = map[string]string{}
 	}
+	labels[helmClient.LabelDigestHash] = helmClient.EncodeDigestLabel(helmClient.EffectiveChartDigest(chart.URL, chart.Digest))
+	labels[helmClient.LabelURLHash] = helmClient.EncodeURLLabel(chart.URL)
 	if ownershipTaken {
 		labels[helmClient.LabelOwnershipTaken] = "true"
 	}

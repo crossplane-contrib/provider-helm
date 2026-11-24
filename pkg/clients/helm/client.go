@@ -103,6 +103,7 @@ var systemCACandidates = []string{
 const (
 	errFailedToPullChart             = "failed to pull chart"
 	errFailedToLoadChart             = "failed to load chart"
+	errFailedToGetPreviousRelease    = "failed to get the previous release revision"
 	errMissingChartDependencies      = "chart dependencies are missing, run 'helm dependency build' before packaging the chart"
 	errFailedToParseURL              = "failed to parse URL"
 	errFailedToLogin                 = "failed to login to registry"
@@ -132,8 +133,9 @@ type DeployOptions struct {
 	// TakeOwnership ignores the check for helm annotations and takes ownership
 	// of the existing resources.
 	TakeOwnership bool
-	// Labels are custom release labels stored with the release. On upgrade
-	// helm merges them over the previous release's labels.
+	// Labels are the custom labels the release should carry: the provider's
+	// own and the user labels from spec.forProvider.labels. On upgrade, user
+	// labels of the previous revision that are missing here are removed.
 	Labels map[string]string
 }
 
@@ -965,7 +967,12 @@ func (hc *client) Upgrade(name string, chrt *chart.Chart, vals map[string]interf
 	// Reset values so that source of truth for desired state is always the CR itself
 	hc.upgradeClient.ResetValues = true
 	hc.upgradeClient.TakeOwnership = opts.TakeOwnership
-	hc.upgradeClient.Labels = opts.Labels
+
+	previous, err := hc.GetLastRelease(name)
+	if err != nil {
+		return nil, errors.Wrap(err, errFailedToGetPreviousRelease)
+	}
+	hc.upgradeClient.Labels = labelsForUpgrade(previous.Labels, opts.Labels)
 
 	if len(patches) > 0 {
 		hc.upgradeClient.PostRenderer = &KustomizationRender{

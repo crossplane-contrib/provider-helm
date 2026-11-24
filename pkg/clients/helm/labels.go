@@ -19,9 +19,12 @@ package helm
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"maps"
+	"slices"
 	"strings"
 
 	"helm.sh/helm/v4/pkg/registry"
+	"helm.sh/helm/v4/pkg/storage/driver"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
@@ -31,6 +34,10 @@ import (
 // crossplane-runtime resets after a successful Create, and unlike the spec,
 // they live on the external resource itself.
 const (
+	// LabelPrefix is the key prefix of the labels the provider writes itself.
+	// spec.forProvider.labels can't use it.
+	LabelPrefix = "release.helm.crossplane.io/"
+
 	// LabelDigestHash carries the encoded chart digest the release was
 	// deployed from. Empty when the deploy was not digest-pinned, so that a
 	// digest pinned later is detected as drift; absent only when the release
@@ -50,6 +57,10 @@ const (
 	// never takes ownership twice, while the Observe-side drift check
 	// (see OwnershipDrifted) is what re-stamps metadata after that.
 	LabelOwnershipTaken = "release.helm.crossplane.io/ownership-taken"
+
+	// labelValueDelete is the label value Helm's upgrade treats as "remove
+	// this key" when it merges the given labels over the previous revision's.
+	labelValueDelete = "null"
 
 	// labelHashHexLen is how many hex characters of a hash fit in a label
 	// value next to a "sha256-" style algorithm prefix: Kubernetes caps label
@@ -123,4 +134,38 @@ func EffectiveChartDigest(chartURL, specDigest string) string {
 		return ""
 	}
 	return d
+}
+
+// UserLabels returns the labels of a release that come from
+// spec.forProvider.labels: all of them except Helm's system labels, which
+// release storage adds to every revision, and the provider's own under
+// LabelPrefix.
+func UserLabels(labels map[string]string) map[string]string {
+	user := map[string]string{}
+	for k, v := range labels {
+		if slices.Contains(driver.GetSystemLabels(), k) || strings.HasPrefix(k, LabelPrefix) {
+			continue
+		}
+		user[k] = v
+	}
+	return user
+}
+
+// labelsForUpgrade returns the labels to give Helm's upgrade so that the new
+// revision carries exactly the desired user labels. The upgrade merges the
+// labels it gets over the previous revision's and deletes only keys whose
+// value is "null", so every user label of the previous revision that isn't
+// desired is sent as "null". The provider's own labels are never removed this
+// way: the ownership label is sticky by design.
+func labelsForUpgrade(previous, desired map[string]string) map[string]string {
+	labels := maps.Clone(desired)
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	for k := range UserLabels(previous) {
+		if _, ok := desired[k]; !ok {
+			labels[k] = labelValueDelete
+		}
+	}
+	return labels
 }

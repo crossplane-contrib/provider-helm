@@ -17,10 +17,18 @@ limitations under the License.
 package helm
 
 import (
+	"io"
 	"strings"
 	"testing"
 
+	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
 	"github.com/google/go-cmp/cmp"
+	"helm.sh/helm/v4/pkg/action"
+	"helm.sh/helm/v4/pkg/chart/common"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
+	kubefake "helm.sh/helm/v4/pkg/kube/fake"
+	"helm.sh/helm/v4/pkg/storage"
+	"helm.sh/helm/v4/pkg/storage/driver"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
@@ -135,6 +143,152 @@ func TestEffectiveChartDigest(t *testing.T) {
 			got := EffectiveChartDigest(tc.chartURL, tc.specDigest)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("EffectiveChartDigest() -want, +got:\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestUserLabels(t *testing.T) {
+	cases := map[string]struct {
+		labels map[string]string
+		want   map[string]string
+	}{
+		"Nil": {
+			want: map[string]string{},
+		},
+		"SystemAndProviderLabelsDropped": {
+			labels: map[string]string{
+				"name":              "my-release",
+				"owner":             "helm",
+				"status":            "deployed",
+				"version":           "3",
+				"createdAt":         "1764000000",
+				"modifiedAt":        "1764000000",
+				LabelDigestHash:     "",
+				LabelURLHash:        "",
+				LabelOwnershipTaken: "true",
+				"team":              "platform",
+				"example.com/tier":  "backend",
+			},
+			want: map[string]string{
+				"team":             "platform",
+				"example.com/tier": "backend",
+			},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if diff := cmp.Diff(tc.want, UserLabels(tc.labels)); diff != "" {
+				t.Errorf("UserLabels(...): -want, +got:\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestLabelsForUpgrade(t *testing.T) {
+	type args struct {
+		previous map[string]string
+		desired  map[string]string
+	}
+	cases := map[string]struct {
+		args args
+		want map[string]string
+	}{
+		"NoPreviousUserLabels": {
+			args: args{
+				previous: map[string]string{LabelURLHash: ""},
+				desired:  map[string]string{LabelURLHash: "", "team": "platform"},
+			},
+			want: map[string]string{LabelURLHash: "", "team": "platform"},
+		},
+		"RemovedUserLabelSentAsNull": {
+			args: args{
+				previous: map[string]string{"team": "platform", "tier": "backend"},
+				desired:  map[string]string{"team": "platform"},
+			},
+			want: map[string]string{"team": "platform", "tier": labelValueDelete},
+		},
+		"ProviderAndSystemLabelsNeverRemoved": {
+			// The ownership label is sticky, and Helm sets its system labels
+			// on every revision itself.
+			args: args{
+				previous: map[string]string{
+					LabelOwnershipTaken: "true",
+					"owner":             "helm",
+					"status":            "deployed",
+				},
+				desired: map[string]string{LabelURLHash: ""},
+			},
+			want: map[string]string{LabelURLHash: ""},
+		},
+		"NilDesired": {
+			args: args{
+				previous: map[string]string{"team": "platform"},
+			},
+			want: map[string]string{"team": labelValueDelete},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if diff := cmp.Diff(tc.want, labelsForUpgrade(tc.args.previous, tc.args.desired)); diff != "" {
+				t.Errorf("labelsForUpgrade(...): -want, +got:\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestUpgradeReplacesUserLabels installs and upgrades a release through real
+// Helm actions on in-memory release storage, and checks the labels the new
+// revision carries: Helm itself would keep every label of the previous
+// revision that the upgrade doesn't override.
+func TestUpgradeReplacesUserLabels(t *testing.T) {
+	chrt := &chart.Chart{
+		Metadata: &chart.Metadata{APIVersion: chart.APIVersionV2, Name: "labels", Version: "0.1.0"},
+		Templates: []*common.File{{
+			Name: "templates/configmap.yaml",
+			Data: []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: {{ .Release.Name }}\n"),
+		}},
+	}
+	installed := map[string]string{LabelURLHash: "", LabelOwnershipTaken: "true", "team": "platform", "tier": "backend"}
+
+	cases := map[string]struct {
+		desired map[string]string
+		want    map[string]string
+	}{
+		"UserLabelRemovedAndChanged": {
+			desired: map[string]string{LabelURLHash: "", "team": "infra"},
+			want:    map[string]string{LabelURLHash: "", LabelOwnershipTaken: "true", "team": "infra"},
+		},
+		"AllUserLabelsRemoved": {
+			desired: map[string]string{LabelURLHash: ""},
+			want:    map[string]string{LabelURLHash: "", LabelOwnershipTaken: "true"},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := &action.Configuration{
+				Releases:     storage.Init(driver.NewMemory()),
+				KubeClient:   &kubefake.PrintingKubeClient{Out: io.Discard},
+				Capabilities: common.DefaultCapabilities,
+			}
+			install := action.NewInstall(cfg)
+			install.Namespace = "default"
+			hc := &client{
+				log:           logging.NewNopLogger(),
+				getClient:     action.NewGet(cfg),
+				installClient: install,
+				upgradeClient: action.NewUpgrade(cfg),
+			}
+
+			if _, err := hc.Install("labels", chrt, nil, nil, DeployOptions{Labels: installed}); err != nil {
+				t.Fatalf("Install(...): unexpected error: %v", err)
+			}
+			rel, err := hc.Upgrade("labels", chrt, nil, nil, DeployOptions{Labels: tc.desired})
+			if err != nil {
+				t.Fatalf("Upgrade(...): unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.want, rel.Labels); diff != "" {
+				t.Errorf("Upgrade(...) release labels: -want, +got:\n%s", diff)
 			}
 		})
 	}

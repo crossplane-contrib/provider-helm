@@ -53,6 +53,8 @@ expect_cel_rejection() {
 
 MSG_NAME_REPOSITORY_REQUIRED="chart name and repository are required when url is not set"
 MSG_DIGEST_NEEDS_OCI="digest is only supported for OCI registries"
+MSG_LABEL_RESERVED="labels must not use Helm's reserved names"
+MSG_LABEL_NULL="label values must not be \"null\""
 
 for SCOPE in cluster namespaced; do
   if [ "${SCOPE}" = "cluster" ]; then
@@ -114,6 +116,63 @@ spec:
       repository: oci://ghcr.io/stefanprodan/charts
       digest: sha256:c56f4d760bc9da702f231f37fcec89c66b0993f0cb91446f86d014b133c6693f
     namespace: default
+  providerConfigRef:
+    name: ${PROVIDER_CONFIG_NAME}
+    ${PROVIDER_CONFIG_KIND_LINE}
+MANIFEST
+
+  expect_cel_rejection "${SCOPE} label with a Helm reserved name" "${MSG_LABEL_RESERVED}" <<MANIFEST
+apiVersion: ${API_VERSION}
+kind: Release
+metadata:
+  name: cel-reject-reserved-label
+  ${NAMESPACE_LINE}
+spec:
+  forProvider:
+    chart:
+      name: podinfo
+      repository: oci://ghcr.io/stefanprodan/charts
+    namespace: default
+    labels:
+      owner: platform
+  providerConfigRef:
+    name: ${PROVIDER_CONFIG_NAME}
+    ${PROVIDER_CONFIG_KIND_LINE}
+MANIFEST
+
+  expect_cel_rejection "${SCOPE} label under the provider's own prefix" "${MSG_LABEL_RESERVED}" <<MANIFEST
+apiVersion: ${API_VERSION}
+kind: Release
+metadata:
+  name: cel-reject-provider-prefix-label
+  ${NAMESPACE_LINE}
+spec:
+  forProvider:
+    chart:
+      name: podinfo
+      repository: oci://ghcr.io/stefanprodan/charts
+    namespace: default
+    labels:
+      release.helm.crossplane.io/url-hash: ""
+  providerConfigRef:
+    name: ${PROVIDER_CONFIG_NAME}
+    ${PROVIDER_CONFIG_KIND_LINE}
+MANIFEST
+
+  expect_cel_rejection "${SCOPE} label with the value null" "${MSG_LABEL_NULL}" <<MANIFEST
+apiVersion: ${API_VERSION}
+kind: Release
+metadata:
+  name: cel-reject-null-label
+  ${NAMESPACE_LINE}
+spec:
+  forProvider:
+    chart:
+      name: podinfo
+      repository: oci://ghcr.io/stefanprodan/charts
+    namespace: default
+    labels:
+      team: "null"
   providerConfigRef:
     name: ${PROVIDER_CONFIG_NAME}
     ${PROVIDER_CONFIG_KIND_LINE}

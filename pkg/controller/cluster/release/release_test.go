@@ -1262,6 +1262,23 @@ func Test_deployOptions(t *testing.T) {
 				},
 			},
 		},
+		"UserLabelsUnderProviderLabels": {
+			args: args{
+				cr: helmRelease(func(r *v1beta1.Release) {
+					r.Spec.ForProvider.Labels = map[string]string{"team": "platform", "example.com/tier": "backend"}
+				}),
+			},
+			want: want{
+				opts: helmClient.DeployOptions{
+					Labels: map[string]string{
+						"team":                     "platform",
+						"example.com/tier":         "backend",
+						helmClient.LabelDigestHash: "",
+						helmClient.LabelURLHash:    "",
+					},
+				},
+			},
+		},
 		"OwnershipStickyWhenAlreadyTaken": {
 			// Ownership was already taken on a prior deploy: even with
 			// takeOwnership still requested, adoption is not re-exercised on
