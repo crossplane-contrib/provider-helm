@@ -49,6 +49,7 @@ type conversionData struct {
 	TakeOwnership         bool                       `json:"takeOwnership,omitempty"`
 	MaxHistory            int                        `json:"maxHistory,omitempty"`
 	SSAForceConflicts     bool                       `json:"ssaForceConflicts,omitempty"`
+	Labels                map[string]string          `json:"labels,omitempty"`
 	ConnectionDetails     []v1beta1.ConnectionDetail `json:"connectionDetails,omitempty"`
 	ObservedDigest        string                     `json:"observedDigest,omitempty"`
 	ObservedVersion       string                     `json:"observedVersion,omitempty"`
@@ -98,6 +99,7 @@ func (src *Release) ConvertTo(dstRaw conversion.Hub) error {
 	dst.Spec.ForProvider.TakeOwnership = cd.TakeOwnership
 	dst.Spec.ForProvider.MaxHistory = cd.MaxHistory
 	dst.Spec.ForProvider.SSAForceConflicts = cd.SSAForceConflicts
+	dst.Spec.ForProvider.Labels = cd.Labels
 	dst.Spec.ConnectionDetails = cd.ConnectionDetails
 	dst.Status.AtProvider.Digest = cd.ObservedDigest
 	dst.Status.AtProvider.Version = cd.ObservedVersion
@@ -138,6 +140,7 @@ func (dst *Release) ConvertFrom(srcRaw conversion.Hub) error {
 		TakeOwnership:         src.Spec.ForProvider.TakeOwnership,
 		MaxHistory:            src.Spec.ForProvider.MaxHistory,
 		SSAForceConflicts:     src.Spec.ForProvider.SSAForceConflicts,
+		Labels:                src.Spec.ForProvider.Labels,
 		ConnectionDetails:     src.Spec.ConnectionDetails,
 		ObservedDigest:        src.Status.AtProvider.Digest,
 		ObservedVersion:       src.Status.AtProvider.Version,

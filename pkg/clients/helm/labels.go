@@ -19,9 +19,14 @@ package helm
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
+	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	"helm.sh/helm/v4/pkg/registry"
+	"helm.sh/helm/v4/pkg/storage/driver"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
@@ -31,6 +36,10 @@ import (
 // crossplane-runtime resets after a successful Create, and unlike the spec,
 // they live on the external resource itself.
 const (
+	// LabelPrefix is the key prefix of the labels the provider writes itself.
+	// spec.forProvider.labels can't use it.
+	LabelPrefix = "release.helm.crossplane.io/"
+
 	// LabelDigestHash carries the encoded chart digest the release was
 	// deployed from. Empty when the deploy was not digest-pinned, so that a
 	// digest pinned later is detected as drift; absent only when the release
@@ -50,6 +59,14 @@ const (
 	// never takes ownership twice, while the Observe-side drift check
 	// (see OwnershipDrifted) is what re-stamps metadata after that.
 	LabelOwnershipTaken = "release.helm.crossplane.io/ownership-taken"
+
+	// userLabelMarkerPrefix starts the key of the marker UserLabelMarker
+	// returns for each label from spec.forProvider.labels.
+	userLabelMarkerPrefix = LabelPrefix + "user-"
+
+	// labelValueDelete is the label value Helm's upgrade treats as "remove
+	// this key" when it merges the given labels over the previous revision's.
+	labelValueDelete = "null"
 
 	// labelHashHexLen is how many hex characters of a hash fit in a label
 	// value next to a "sha256-" style algorithm prefix: Kubernetes caps label
@@ -123,4 +140,102 @@ func EffectiveChartDigest(chartURL, specDigest string) string {
 		return ""
 	}
 	return d
+}
+
+// ValidateUserLabels returns an error naming every label from
+// spec.forProvider.labels that can't be written to a release: Helm's reserved
+// names, keys under LabelPrefix, the value "null", and keys or values that
+// aren't valid Kubernetes labels. The CRD rejects the first three at
+// admission, but not on a write through the v1alpha1 API, which carries the
+// labels in its conversion annotation, and it doesn't check label syntax.
+func ValidateUserLabels(labels map[string]string) error {
+	var problems []string
+	for _, k := range slices.Sorted(maps.Keys(labels)) {
+		v := labels[k]
+		switch {
+		case slices.Contains(driver.GetSystemLabels(), k):
+			problems = append(problems, fmt.Sprintf("%q is reserved by Helm", k))
+		case strings.HasPrefix(k, LabelPrefix):
+			problems = append(problems, fmt.Sprintf("%q is under the provider's prefix %s", k, LabelPrefix))
+		}
+		for _, msg := range validation.IsQualifiedName(k) {
+			problems = append(problems, fmt.Sprintf("key %q: %s", k, msg))
+		}
+		if v == labelValueDelete {
+			problems = append(problems, fmt.Sprintf("value of %q is %q, which Helm treats as a deletion", k, v))
+		}
+		for _, msg := range validation.IsValidLabelValue(v) {
+			problems = append(problems, fmt.Sprintf("value of %q: %s", k, msg))
+		}
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(problems, "; "))
+}
+
+// UserLabelMarker returns the key of the label that records that the provider
+// applied the user label key: LabelPrefix, "user-" and the first 56 hex
+// characters of the key's sha256, a valid label name. Helm keeps release
+// labels only as labels of the release Secret, so anything that labels the
+// Secret adds a release label; the marker is what tells a label from
+// spec.forProvider.labels apart from those. It is written with the label and
+// copied with it to every later revision, a rollback included.
+func UserLabelMarker(key string) string {
+	sum := sha256.Sum256([]byte(key))
+	return userLabelMarkerPrefix + hex.EncodeToString(sum[:])[:labelHashHexLen]
+}
+
+// MarkUserLabels returns the user labels together with a marker for each, as
+// they are written to a release.
+func MarkUserLabels(user map[string]string) map[string]string {
+	labels := make(map[string]string, 2*len(user))
+	for k, v := range user {
+		labels[k] = v
+		labels[UserLabelMarker(k)] = ""
+	}
+	return labels
+}
+
+// UserLabels returns the labels of a release that the provider applied from
+// spec.forProvider.labels: those whose marker the release carries. Helm's
+// system labels, the provider's own labels and labels anyone else put on the
+// release are left out.
+func UserLabels(labels map[string]string) map[string]string {
+	user := map[string]string{}
+	for k, v := range labels {
+		if slices.Contains(driver.GetSystemLabels(), k) || strings.HasPrefix(k, LabelPrefix) {
+			continue
+		}
+		if _, ok := labels[UserLabelMarker(k)]; ok {
+			user[k] = v
+		}
+	}
+	return user
+}
+
+// labelsForUpgrade returns the labels to give Helm's upgrade so that the new
+// revision carries exactly the desired user labels. The upgrade merges the
+// labels it gets over the previous revision's and deletes only keys whose
+// value is "null", so every user label the provider applied to the previous
+// revision that isn't desired is sent as "null", and so is every marker that
+// isn't desired. Labels anyone else put on the release are kept, and the
+// provider's own labels are never removed this way: the ownership label is
+// sticky by design.
+func labelsForUpgrade(previous, desired map[string]string) map[string]string {
+	labels := maps.Clone(desired)
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	for k := range UserLabels(previous) {
+		if _, ok := desired[k]; !ok {
+			labels[k] = labelValueDelete
+		}
+	}
+	for k := range previous {
+		if _, ok := desired[k]; !ok && strings.HasPrefix(k, userLabelMarkerPrefix) {
+			labels[k] = labelValueDelete
+		}
+	}
+	return labels
 }

@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -230,6 +231,15 @@ func isUpToDate(ctx context.Context, log logging.Logger, kube client.Client, spe
 		// where no pin is recorded, or unpinned. The upgrade verifies the
 		// pin by pulling it and writes the label, which takes over from
 		// then on.
+		return false, nil
+	}
+
+	// The user labels the provider applied, the ones with a marker, are
+	// compared with the spec: a label added, changed or removed in the spec
+	// needs an upgrade, which writes the new set, and so does a spec label the
+	// release carries without its marker. Labels anyone else put on the
+	// release don't count.
+	if !maps.Equal(helmClient.UserLabels(observed.Labels), in.Labels) {
 		return false, nil
 	}
 

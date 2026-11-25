@@ -83,6 +83,7 @@ const (
 	errFailedToUpdatePatchSha  = "failed to update patch sha"
 	errFailedToLateInitialize  = "failed to update chart spec with late-initialized values"
 	errFailedToCreateNamespace = "failed to create namespace for release"
+	errInvalidUserLabels       = "invalid spec.forProvider.labels"
 )
 
 // Setup adds a controller that reconciles Release managed resources.
@@ -206,7 +207,7 @@ func deployOptions(cr *v1beta1.Release) helmClient.DeployOptions {
 	takeOwnership := cr.Spec.ForProvider.TakeOwnership && !cr.Status.AtProvider.OwnershipTaken
 	return helmClient.DeployOptions{
 		TakeOwnership: takeOwnership,
-		Labels:        releaseLabels(cr.Spec.ForProvider.Chart, ownershipTaken(cr)),
+		Labels:        releaseLabels(cr.Spec.ForProvider.Chart, ownershipTaken(cr), cr.Spec.ForProvider.Labels),
 	}
 }
 
@@ -225,12 +226,13 @@ func ownershipTaken(cr *v1beta1.Release) bool {
 // spec has none, so that every release this provider deployed carries them
 // and a later pin, unpin or URL change is detected as drift against them. The
 // ownership label is sticky: it is only ever added, recording that adoption
-// happened.
-func releaseLabels(chart v1beta1.ChartSpec, ownershipTaken bool) map[string]string {
-	labels := map[string]string{
-		helmClient.LabelDigestHash: helmClient.EncodeDigestLabel(helmClient.EffectiveChartDigest(chart.URL, chart.Digest)),
-		helmClient.LabelURLHash:    helmClient.EncodeURLLabel(chart.URL),
-	}
+// happened. The user labels from spec.forProvider.labels come first, each with
+// the marker that records the provider applied it; the provider's own are set
+// over them, although validation already keeps their keys apart.
+func releaseLabels(chart v1beta1.ChartSpec, ownershipTaken bool, userLabels map[string]string) map[string]string {
+	labels := helmClient.MarkUserLabels(userLabels)
+	labels[helmClient.LabelDigestHash] = helmClient.EncodeDigestLabel(helmClient.EffectiveChartDigest(chart.URL, chart.Digest))
+	labels[helmClient.LabelURLHash] = helmClient.EncodeURLLabel(chart.URL)
 	if ownershipTaken {
 		labels[helmClient.LabelOwnershipTaken] = "true"
 	}
@@ -405,6 +407,13 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 type deployAction func(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch, opts helmClient.DeployOptions) (*release.Release, error)
 
 func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action deployAction) error { //nolint:gocyclo // easier to follow as a unit
+	// Checked before anything is pulled or deployed: Helm would apply the
+	// chart's CRDs on install before the release Secret with the labels is
+	// refused.
+	if err := helmClient.ValidateUserLabels(cr.Spec.ForProvider.Labels); err != nil {
+		return errors.Wrap(err, errInvalidUserLabels)
+	}
+
 	cv, err := composeValuesFromSpec(ctx, e.localKube, cr.Spec.ForProvider.ValuesSpec, cr.Namespace)
 	if err != nil {
 		return errors.Wrap(err, errFailedToComposeValues)

@@ -672,6 +672,32 @@ spec:
                     description: InsecureSkipTLSVerify skips tls certificate checks
                       for the chart download
                     type: boolean
+                  labels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      Labels are added to the Helm release, like helm install --labels, for
+                      example to select releases with helm list --selector. Changing them
+                      upgrades the release, which creates a new revision and runs the chart's
+                      upgrade hooks. A label removed here is removed from the release, while
+                      labels anything else put on the release are left alone: each label set
+                      here comes with a release.helm.crossplane.io/user-<hash> label that
+                      marks it as the provider's. Keys and values must be valid Kubernetes
+                      labels. Helm's reserved names (name, owner, status, version, createdAt,
+                      modifiedAt), keys under release.helm.crossplane.io/, where the provider
+                      keeps its own labels, and the value "null", which Helm treats as a
+                      deletion, aren't allowed. At most 64 labels can be set.
+                    maxProperties: 64
+                    type: object
+                    x-kubernetes-validations:
+                    - message: labels must not use Helm's reserved names (name, owner,
+                        status, version, createdAt, modifiedAt) or the release.helm.crossplane.io/
+                        prefix
+                      rule: self.all(k, !(k in ['name', 'owner', 'status', 'version',
+                        'createdAt', 'modifiedAt']) && !k.startsWith('release.helm.crossplane.io/'))
+                    - message: label values must not be "null", which Helm treats
+                        as a deletion
+                      rule: self.all(k, self[k] != 'null')
                   maxHistory:
                     default: 20
                     description: MaxHistory limits the maximum number of revisions

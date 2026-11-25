@@ -1,0 +1,20 @@
+apiVersion: helm.m.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: example-labels-namespaced
+  namespace: crossplane-system
+  annotations:
+    uptest.upbound.io/post-assert-hook: testhooks/user-labels.sh
+spec:
+  forProvider:
+    chart:
+      name: podinfo
+      repository: oci://ghcr.io/stefanprodan/charts
+      version: 6.10.0
+    namespace: crossplane-system
+    labels:
+      team: platform
+      example.com/tier: backend
+  providerConfigRef:
+    name: helm-provider-cluster
+    kind: ClusterProviderConfig
