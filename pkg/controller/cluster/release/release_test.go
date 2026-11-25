@@ -1047,6 +1047,27 @@ func Test_helmExternal_Update(t *testing.T) {
 				ownershipTaken: true,
 			},
 		},
+		"InvalidUserLabels": {
+			// A "null" value reaches an existing Release through a v1alpha1
+			// write; upgrading with it would delete the label and upgrade
+			// again on every reconcile.
+			args: args{
+				helm: &MockHelmClient{
+					MockPullAndLoadChart: func(mg resource.Managed, creds *helmClient.RepoCreds) (*chart.Chart, error) {
+						return nil, errBoom
+					},
+					MockUpgrade: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
+						return nil, errBoom
+					},
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					r.Spec.ForProvider.Labels = map[string]string{"team": "null"}
+				}),
+			},
+			want: want{
+				err: errors.Wrap(errors.Wrap(errors.New(`value of "team" is "null", which Helm treats as a deletion`), errInvalidUserLabels), errFailedToUpgrade),
+			},
+		},
 		"UpgradeFailed": {
 			args: args{
 				helm: &MockHelmClient{
