@@ -58,6 +58,10 @@ const (
 	// (see OwnershipDrifted) is what re-stamps metadata after that.
 	LabelOwnershipTaken = "release.helm.crossplane.io/ownership-taken"
 
+	// userLabelMarkerPrefix starts the key of the marker UserLabelMarker
+	// returns for each label from spec.forProvider.labels.
+	userLabelMarkerPrefix = LabelPrefix + "user-"
+
 	// labelValueDelete is the label value Helm's upgrade treats as "remove
 	// this key" when it merges the given labels over the previous revision's.
 	labelValueDelete = "null"
@@ -136,17 +140,42 @@ func EffectiveChartDigest(chartURL, specDigest string) string {
 	return d
 }
 
-// UserLabels returns the labels of a release that come from
-// spec.forProvider.labels: all of them except Helm's system labels, which
-// release storage adds to every revision, and the provider's own under
-// LabelPrefix.
+// UserLabelMarker returns the key of the label that records that the provider
+// applied the user label key: LabelPrefix, "user-" and the first 56 hex
+// characters of the key's sha256, a valid label name. Helm keeps release
+// labels only as labels of the release Secret, so anything that labels the
+// Secret adds a release label; the marker is what tells a label from
+// spec.forProvider.labels apart from those. It is written with the label and
+// copied with it to every later revision, a rollback included.
+func UserLabelMarker(key string) string {
+	sum := sha256.Sum256([]byte(key))
+	return userLabelMarkerPrefix + hex.EncodeToString(sum[:])[:labelHashHexLen]
+}
+
+// MarkUserLabels returns the user labels together with a marker for each, as
+// they are written to a release.
+func MarkUserLabels(user map[string]string) map[string]string {
+	labels := make(map[string]string, 2*len(user))
+	for k, v := range user {
+		labels[k] = v
+		labels[UserLabelMarker(k)] = ""
+	}
+	return labels
+}
+
+// UserLabels returns the labels of a release that the provider applied from
+// spec.forProvider.labels: those whose marker the release carries. Helm's
+// system labels, the provider's own labels and labels anyone else put on the
+// release are left out.
 func UserLabels(labels map[string]string) map[string]string {
 	user := map[string]string{}
 	for k, v := range labels {
 		if slices.Contains(driver.GetSystemLabels(), k) || strings.HasPrefix(k, LabelPrefix) {
 			continue
 		}
-		user[k] = v
+		if _, ok := labels[UserLabelMarker(k)]; ok {
+			user[k] = v
+		}
 	}
 	return user
 }
@@ -154,9 +183,11 @@ func UserLabels(labels map[string]string) map[string]string {
 // labelsForUpgrade returns the labels to give Helm's upgrade so that the new
 // revision carries exactly the desired user labels. The upgrade merges the
 // labels it gets over the previous revision's and deletes only keys whose
-// value is "null", so every user label of the previous revision that isn't
-// desired is sent as "null". The provider's own labels are never removed this
-// way: the ownership label is sticky by design.
+// value is "null", so every user label the provider applied to the previous
+// revision that isn't desired is sent as "null", and so is every marker that
+// isn't desired. Labels anyone else put on the release are kept, and the
+// provider's own labels are never removed this way: the ownership label is
+// sticky by design.
 func labelsForUpgrade(previous, desired map[string]string) map[string]string {
 	labels := maps.Clone(desired)
 	if labels == nil {
@@ -164,6 +195,11 @@ func labelsForUpgrade(previous, desired map[string]string) map[string]string {
 	}
 	for k := range UserLabels(previous) {
 		if _, ok := desired[k]; !ok {
+			labels[k] = labelValueDelete
+		}
+	}
+	for k := range previous {
+		if _, ok := desired[k]; !ok && strings.HasPrefix(k, userLabelMarkerPrefix) {
 			labels[k] = labelValueDelete
 		}
 	}

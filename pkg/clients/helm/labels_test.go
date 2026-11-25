@@ -148,6 +148,49 @@ func TestEffectiveChartDigest(t *testing.T) {
 	}
 }
 
+func TestUserLabelMarker(t *testing.T) {
+	got := UserLabelMarker("example.com/tier")
+	if got != UserLabelMarker("example.com/tier") {
+		t.Errorf("UserLabelMarker() is not deterministic")
+	}
+	if got == UserLabelMarker("example.com/tiers") {
+		t.Errorf("UserLabelMarker() collides for different keys")
+	}
+	if !strings.HasPrefix(got, userLabelMarkerPrefix) {
+		t.Errorf("UserLabelMarker() = %q, want prefix %q", got, userLabelMarkerPrefix)
+	}
+	if errs := validation.IsQualifiedName(got); len(errs) != 0 {
+		t.Errorf("UserLabelMarker() = %q is not a valid label key: %v", got, errs)
+	}
+}
+
+func TestMarkUserLabels(t *testing.T) {
+	cases := map[string]struct {
+		user map[string]string
+		want map[string]string
+	}{
+		"Nil": {
+			want: map[string]string{},
+		},
+		"EachLabelMarked": {
+			user: map[string]string{"team": "platform", "example.com/tier": "backend"},
+			want: map[string]string{
+				"team":                              "platform",
+				UserLabelMarker("team"):             "",
+				"example.com/tier":                  "backend",
+				UserLabelMarker("example.com/tier"): "",
+			},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if diff := cmp.Diff(tc.want, MarkUserLabels(tc.user)); diff != "" {
+				t.Errorf("MarkUserLabels(...): -want, +got:\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestUserLabels(t *testing.T) {
 	cases := map[string]struct {
 		labels map[string]string
@@ -158,21 +201,37 @@ func TestUserLabels(t *testing.T) {
 		},
 		"SystemAndProviderLabelsDropped": {
 			labels: map[string]string{
-				"name":              "my-release",
-				"owner":             "helm",
-				"status":            "deployed",
-				"version":           "3",
-				"createdAt":         "1764000000",
-				"modifiedAt":        "1764000000",
-				LabelDigestHash:     "",
-				LabelURLHash:        "",
-				LabelOwnershipTaken: "true",
-				"team":              "platform",
-				"example.com/tier":  "backend",
+				"name":                              "my-release",
+				"owner":                             "helm",
+				"status":                            "deployed",
+				"version":                           "3",
+				"createdAt":                         "1764000000",
+				"modifiedAt":                        "1764000000",
+				LabelDigestHash:                     "",
+				LabelURLHash:                        "",
+				LabelOwnershipTaken:                 "true",
+				"team":                              "platform",
+				UserLabelMarker("team"):             "",
+				"example.com/tier":                  "backend",
+				UserLabelMarker("example.com/tier"): "",
 			},
 			want: map[string]string{
 				"team":             "platform",
 				"example.com/tier": "backend",
+			},
+		},
+		"LabelsWithoutMarkerLeftOut": {
+			// Labels an admission policy, kubectl label or helm --labels put on
+			// the release Secret, and a marker whose label is gone.
+			labels: map[string]string{
+				"team":                     "platform",
+				UserLabelMarker("team"):    "",
+				"policy.example.com/scan":  "passed",
+				"cost-center":              "1234",
+				UserLabelMarker("removed"): "",
+			},
+			want: map[string]string{
+				"team": "platform",
 			},
 		},
 	}
@@ -197,16 +256,41 @@ func TestLabelsForUpgrade(t *testing.T) {
 		"NoPreviousUserLabels": {
 			args: args{
 				previous: map[string]string{LabelURLHash: ""},
-				desired:  map[string]string{LabelURLHash: "", "team": "platform"},
+				desired:  map[string]string{LabelURLHash: "", "team": "platform", UserLabelMarker("team"): ""},
 			},
-			want: map[string]string{LabelURLHash: "", "team": "platform"},
+			want: map[string]string{LabelURLHash: "", "team": "platform", UserLabelMarker("team"): ""},
 		},
 		"RemovedUserLabelSentAsNull": {
 			args: args{
-				previous: map[string]string{"team": "platform", "tier": "backend"},
-				desired:  map[string]string{"team": "platform"},
+				previous: map[string]string{
+					"team":                  "platform",
+					UserLabelMarker("team"): "",
+					"tier":                  "backend",
+					UserLabelMarker("tier"): "",
+				},
+				desired: map[string]string{"team": "platform", UserLabelMarker("team"): ""},
 			},
-			want: map[string]string{"team": "platform", "tier": labelValueDelete},
+			want: map[string]string{
+				"team":                  "platform",
+				UserLabelMarker("team"): "",
+				"tier":                  labelValueDelete,
+				UserLabelMarker("tier"): labelValueDelete,
+			},
+		},
+		"LabelsWithoutMarkerKept": {
+			// Helm keeps the previous revision's labels it isn't told to delete.
+			args: args{
+				previous: map[string]string{"policy.example.com/scan": "passed", "cost-center": "1234"},
+				desired:  map[string]string{LabelURLHash: ""},
+			},
+			want: map[string]string{LabelURLHash: ""},
+		},
+		"MarkerWithoutLabelSentAsNull": {
+			args: args{
+				previous: map[string]string{UserLabelMarker("removed"): ""},
+				desired:  map[string]string{LabelURLHash: ""},
+			},
+			want: map[string]string{LabelURLHash: "", UserLabelMarker("removed"): labelValueDelete},
 		},
 		"ProviderAndSystemLabelsNeverRemoved": {
 			// The ownership label is sticky, and Helm sets its system labels
@@ -223,9 +307,9 @@ func TestLabelsForUpgrade(t *testing.T) {
 		},
 		"NilDesired": {
 			args: args{
-				previous: map[string]string{"team": "platform"},
+				previous: map[string]string{"team": "platform", UserLabelMarker("team"): ""},
 			},
-			want: map[string]string{"team": labelValueDelete},
+			want: map[string]string{"team": labelValueDelete, UserLabelMarker("team"): labelValueDelete},
 		},
 	}
 	for name, tc := range cases {
@@ -240,7 +324,8 @@ func TestLabelsForUpgrade(t *testing.T) {
 // TestUpgradeReplacesUserLabels installs and upgrades a release through real
 // Helm actions on in-memory release storage, and checks the labels the new
 // revision carries: Helm itself would keep every label of the previous
-// revision that the upgrade doesn't override.
+// revision that the upgrade doesn't override, which is what keeps labels set
+// outside the provider.
 func TestUpgradeReplacesUserLabels(t *testing.T) {
 	chrt := &chart.Chart{
 		Metadata: &chart.Metadata{APIVersion: chart.APIVersionV2, Name: "labels", Version: "0.1.0"},
@@ -249,19 +334,35 @@ func TestUpgradeReplacesUserLabels(t *testing.T) {
 			Data: []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: {{ .Release.Name }}\n"),
 		}},
 	}
-	installed := map[string]string{LabelURLHash: "", LabelOwnershipTaken: "true", "team": "platform", "tier": "backend"}
+	// policy.example.com/scan stands for a label set on the release outside the
+	// provider, which upgrades must keep.
+	installed := map[string]string{
+		LabelURLHash:              "",
+		LabelOwnershipTaken:       "true",
+		"team":                    "platform",
+		UserLabelMarker("team"):   "",
+		"tier":                    "backend",
+		UserLabelMarker("tier"):   "",
+		"policy.example.com/scan": "passed",
+	}
 
 	cases := map[string]struct {
 		desired map[string]string
 		want    map[string]string
 	}{
 		"UserLabelRemovedAndChanged": {
-			desired: map[string]string{LabelURLHash: "", "team": "infra"},
-			want:    map[string]string{LabelURLHash: "", LabelOwnershipTaken: "true", "team": "infra"},
+			desired: map[string]string{LabelURLHash: "", "team": "infra", UserLabelMarker("team"): ""},
+			want: map[string]string{
+				LabelURLHash:              "",
+				LabelOwnershipTaken:       "true",
+				"team":                    "infra",
+				UserLabelMarker("team"):   "",
+				"policy.example.com/scan": "passed",
+			},
 		},
 		"AllUserLabelsRemoved": {
 			desired: map[string]string{LabelURLHash: ""},
-			want:    map[string]string{LabelURLHash: "", LabelOwnershipTaken: "true"},
+			want:    map[string]string{LabelURLHash: "", LabelOwnershipTaken: "true", "policy.example.com/scan": "passed"},
 		},
 	}
 	for name, tc := range cases {

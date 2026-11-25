@@ -881,6 +881,102 @@ func Test_isUpToDate(t *testing.T) {
 					},
 					Config: testReleaseConfig,
 					Labels: map[string]string{
+						"name":                             "my-release",
+						"owner":                            "helm",
+						"status":                           "deployed",
+						"version":                          "2",
+						helmClient.LabelDigestHash:         "",
+						helmClient.LabelURLHash:            "",
+						"team":                             "platform",
+						helmClient.UserLabelMarker("team"): "",
+					},
+				},
+				status: v1beta1.ReleaseStatus{},
+			},
+			want: want{
+				out: true,
+				err: nil,
+			},
+		},
+		"UpToDate_LabelsWithoutMarkerIgnored": {
+			// A label anyone else put on the release has no marker and is no drift,
+			// so an admission policy that labels Secrets can't make every
+			// Release upgrade.
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							Name:    testChart,
+							Version: testVersion,
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: testVersion,
+						},
+					},
+					Config: testReleaseConfig,
+					Labels: map[string]string{
+						"name":                     "my-release",
+						"owner":                    "helm",
+						"status":                   "deployed",
+						"version":                  "2",
+						helmClient.LabelDigestHash: "",
+						helmClient.LabelURLHash:    "",
+						"policy.example.com/scan":  "passed",
+					},
+				},
+				status: v1beta1.ReleaseStatus{},
+			},
+			want: want{
+				out: true,
+				err: nil,
+			},
+		},
+		"NotUpToDate_UserLabelWithoutMarker": {
+			// A spec label the release carries without its marker, e.g. set with
+			// helm install --labels before adoption, is written by an upgrade,
+			// which adds the marker.
+			args: args{
+				kube: &test.MockClient{
+					MockGet: nil,
+				},
+				spec: &v1beta1.ReleaseSpec{
+					ForProvider: v1beta1.ReleaseParameters{
+						Chart: v1beta1.ChartSpec{
+							Name:    testChart,
+							Version: testVersion,
+						},
+						ValuesSpec: v1beta1.ValuesSpec{
+							Values: runtime.RawExtension{
+								Raw: []byte(testReleaseConfigStr),
+							},
+						},
+						Labels: map[string]string{"team": "platform"},
+					},
+				},
+				observed: &release.Release{
+					Info: &release.Info{},
+					Chart: &chart.Chart{
+						Metadata: &chart.Metadata{
+							Name:    testChart,
+							Version: testVersion,
+						},
+					},
+					Config: testReleaseConfig,
+					Labels: map[string]string{
 						"name":                     "my-release",
 						"owner":                    "helm",
 						"status":                   "deployed",
@@ -893,7 +989,7 @@ func Test_isUpToDate(t *testing.T) {
 				status: v1beta1.ReleaseStatus{},
 			},
 			want: want{
-				out: true,
+				out: false,
 				err: nil,
 			},
 		},
@@ -971,13 +1067,14 @@ func Test_isUpToDate(t *testing.T) {
 					},
 					Config: testReleaseConfig,
 					Labels: map[string]string{
-						"name":                     "my-release",
-						"owner":                    "helm",
-						"status":                   "deployed",
-						"version":                  "2",
-						helmClient.LabelDigestHash: "",
-						helmClient.LabelURLHash:    "",
-						"team":                     "platform",
+						"name":                             "my-release",
+						"owner":                            "helm",
+						"status":                           "deployed",
+						"version":                          "2",
+						helmClient.LabelDigestHash:         "",
+						helmClient.LabelURLHash:            "",
+						"team":                             "platform",
+						helmClient.UserLabelMarker("team"): "",
 					},
 				},
 				status: v1beta1.ReleaseStatus{},
@@ -1017,13 +1114,14 @@ func Test_isUpToDate(t *testing.T) {
 					},
 					Config: testReleaseConfig,
 					Labels: map[string]string{
-						"name":                     "my-release",
-						"owner":                    "helm",
-						"status":                   "deployed",
-						"version":                  "2",
-						helmClient.LabelDigestHash: "",
-						helmClient.LabelURLHash:    "",
-						"team":                     "platform",
+						"name":                             "my-release",
+						"owner":                            "helm",
+						"status":                           "deployed",
+						"version":                          "2",
+						helmClient.LabelDigestHash:         "",
+						helmClient.LabelURLHash:            "",
+						"team":                             "platform",
+						helmClient.UserLabelMarker("team"): "",
 					},
 				},
 				status: v1beta1.ReleaseStatus{},

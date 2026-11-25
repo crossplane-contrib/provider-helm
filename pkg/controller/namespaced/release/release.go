@@ -18,7 +18,6 @@ package release
 
 import (
 	"context"
-	"maps"
 	"time"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
@@ -225,14 +224,11 @@ func ownershipTaken(cr *v1beta1.Release) bool {
 // spec has none, so that every release this provider deployed carries them
 // and a later pin, unpin or URL change is detected as drift against them. The
 // ownership label is sticky: it is only ever added, recording that adoption
-// happened. The user labels from spec.forProvider.labels come first; the
-// provider's own are set over them, although validation already keeps their
-// keys apart.
+// happened. The user labels from spec.forProvider.labels come first, each with
+// the marker that records the provider applied it; the provider's own are set
+// over them, although validation already keeps their keys apart.
 func releaseLabels(chart v1beta1.ChartSpec, ownershipTaken bool, userLabels map[string]string) map[string]string {
-	labels := maps.Clone(userLabels)
-	if labels == nil {
-		labels = map[string]string{}
-	}
+	labels := helmClient.MarkUserLabels(userLabels)
 	labels[helmClient.LabelDigestHash] = helmClient.EncodeDigestLabel(helmClient.EffectiveChartDigest(chart.URL, chart.Digest))
 	labels[helmClient.LabelURLHash] = helmClient.EncodeURLLabel(chart.URL)
 	if ownershipTaken {

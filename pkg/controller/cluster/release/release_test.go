@@ -1262,7 +1262,7 @@ func Test_deployOptions(t *testing.T) {
 				},
 			},
 		},
-		"UserLabelsUnderProviderLabels": {
+		"UserLabelsMarkedUnderProviderLabels": {
 			args: args{
 				cr: helmRelease(func(r *v1beta1.Release) {
 					r.Spec.ForProvider.Labels = map[string]string{"team": "platform", "example.com/tier": "backend"}
@@ -1271,10 +1271,12 @@ func Test_deployOptions(t *testing.T) {
 			want: want{
 				opts: helmClient.DeployOptions{
 					Labels: map[string]string{
-						"team":                     "platform",
-						"example.com/tier":         "backend",
-						helmClient.LabelDigestHash: "",
-						helmClient.LabelURLHash:    "",
+						"team":                             "platform",
+						helmClient.UserLabelMarker("team"): "",
+						"example.com/tier":                 "backend",
+						helmClient.UserLabelMarker("example.com/tier"): "",
+						helmClient.LabelDigestHash:                     "",
+						helmClient.LabelURLHash:                        "",
 					},
 				},
 			},

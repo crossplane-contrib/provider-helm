@@ -230,9 +230,11 @@ func isUpToDate(ctx context.Context, log logging.Logger, kube client.Client, spe
 		return false, nil
 	}
 
-	// User labels are compared with the release's labels other than Helm's
-	// system labels and the provider's own: a label added, changed or removed
-	// in the spec needs an upgrade, which writes the new set.
+	// The user labels the provider applied, the ones with a marker, are
+	// compared with the spec: a label added, changed or removed in the spec
+	// needs an upgrade, which writes the new set, and so does a spec label the
+	// release carries without its marker. Labels anyone else put on the
+	// release don't count.
 	if !maps.Equal(helmClient.UserLabels(observed.Labels), in.Labels) {
 		return false, nil
 	}
