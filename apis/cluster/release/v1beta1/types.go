@@ -119,6 +119,9 @@ type ReleaseParameters struct {
 	ValuesSpec `json:",inline"`
 	// SkipCRDs skips installation of CRDs for the release.
 	SkipCRDs bool `json:"skipCRDs,omitempty"`
+	// SkipSchemaValidation skips validating the values against the chart's
+	// values.schema.json during install and upgrade.
+	SkipSchemaValidation bool `json:"skipSchemaValidation,omitempty"`
 	// InsecureSkipTLSVerify skips tls certificate checks for the chart download
 	InsecureSkipTLSVerify bool `json:"insecureSkipTLSVerify,omitempty"`
 	// PlainHTTP uses insecure HTTP connections for the chart download

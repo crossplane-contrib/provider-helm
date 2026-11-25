@@ -255,6 +255,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	ic.WaitStrategy = waitStrategy
 	ic.Timeout = args.Timeout
 	ic.SkipCRDs = args.SkipCRDs
+	ic.SkipSchemaValidation = args.SkipSchemaValidation
 	ic.InsecureSkipTLSVerify = args.InsecureSkipTLSVerify
 	ic.PlainHTTP = args.PlainHTTP
 	ic.CaFile = caFile
@@ -264,6 +265,7 @@ func NewClient(log logging.Logger, restConfig *rest.Config, argAppliers ...ArgsA
 	uc.WaitStrategy = waitStrategy
 	uc.Timeout = args.Timeout
 	uc.SkipCRDs = args.SkipCRDs
+	uc.SkipSchemaValidation = args.SkipSchemaValidation
 	uc.InsecureSkipTLSVerify = args.InsecureSkipTLSVerify
 	uc.PlainHTTP = args.PlainHTTP
 	uc.CaFile = caFile

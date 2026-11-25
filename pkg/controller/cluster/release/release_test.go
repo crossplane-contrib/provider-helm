@@ -1170,6 +1170,7 @@ func Test_withRelease(t *testing.T) {
 					r.Spec.ForProvider.Wait = true
 					r.Spec.ForProvider.WaitTimeout = &timeout
 					r.Spec.ForProvider.SkipCRDs = true
+					r.Spec.ForProvider.SkipSchemaValidation = true
 					r.Spec.ForProvider.InsecureSkipTLSVerify = true
 					r.Spec.ForProvider.PlainHTTP = true
 				}),
@@ -1180,6 +1181,7 @@ func Test_withRelease(t *testing.T) {
 					Wait:                  true,
 					Timeout:               10 * time.Minute,
 					SkipCRDs:              true,
+					SkipSchemaValidation:  true,
 					InsecureSkipTLSVerify: true,
 					PlainHTTP:             true,
 				},
