@@ -175,6 +175,7 @@ spec:
                     - UpboundTokens
                     - AWSWebIdentityCredentials
                     - NebiusServiceAccountCredentials
+                    - CoreWeaveAPIToken
                     type: string
                 required:
                 - source
