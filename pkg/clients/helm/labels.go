@@ -19,10 +19,12 @@ package helm
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
 
+	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	"helm.sh/helm/v4/pkg/registry"
 	"helm.sh/helm/v4/pkg/storage/driver"
 	"k8s.io/apimachinery/pkg/util/validation"
@@ -138,6 +140,38 @@ func EffectiveChartDigest(chartURL, specDigest string) string {
 		return ""
 	}
 	return d
+}
+
+// ValidateUserLabels returns an error naming every label from
+// spec.forProvider.labels that can't be written to a release: Helm's reserved
+// names, keys under LabelPrefix, the value "null", and keys or values that
+// aren't valid Kubernetes labels. The CRD rejects the first three at
+// admission, but not on a write through the v1alpha1 API, which carries the
+// labels in its conversion annotation, and it doesn't check label syntax.
+func ValidateUserLabels(labels map[string]string) error {
+	var problems []string
+	for _, k := range slices.Sorted(maps.Keys(labels)) {
+		v := labels[k]
+		switch {
+		case slices.Contains(driver.GetSystemLabels(), k):
+			problems = append(problems, fmt.Sprintf("%q is reserved by Helm", k))
+		case strings.HasPrefix(k, LabelPrefix):
+			problems = append(problems, fmt.Sprintf("%q is under the provider's prefix %s", k, LabelPrefix))
+		}
+		for _, msg := range validation.IsQualifiedName(k) {
+			problems = append(problems, fmt.Sprintf("key %q: %s", k, msg))
+		}
+		if v == labelValueDelete {
+			problems = append(problems, fmt.Sprintf("value of %q is %q, which Helm treats as a deletion", k, v))
+		}
+		for _, msg := range validation.IsValidLabelValue(v) {
+			problems = append(problems, fmt.Sprintf("value of %q: %s", k, msg))
+		}
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(problems, "; "))
 }
 
 // UserLabelMarker returns the key of the label that records that the provider

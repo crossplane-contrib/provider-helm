@@ -163,10 +163,11 @@ type ReleaseParameters struct {
 	// upgrade hooks. A label removed here is removed from the release, while
 	// labels anything else put on the release are left alone: each label set
 	// here comes with a release.helm.crossplane.io/user-<hash> label that
-	// marks it as the provider's. Helm's reserved names (name, owner, status,
-	// version, createdAt, modifiedAt), keys under release.helm.crossplane.io/,
-	// where the provider keeps its own labels, and the value "null", which
-	// Helm treats as a deletion, aren't allowed. At most 64 labels can be set.
+	// marks it as the provider's. Keys and values must be valid Kubernetes
+	// labels. Helm's reserved names (name, owner, status, version, createdAt,
+	// modifiedAt), keys under release.helm.crossplane.io/, where the provider
+	// keeps its own labels, and the value "null", which Helm treats as a
+	// deletion, aren't allowed. At most 64 labels can be set.
 	// +optional
 	// +kubebuilder:validation:MaxProperties=64
 	// +kubebuilder:validation:XValidation:rule="self.all(k, !(k in ['name', 'owner', 'status', 'version', 'createdAt', 'modifiedAt']) && !k.startsWith('release.helm.crossplane.io/'))",message="labels must not use Helm's reserved names (name, owner, status, version, createdAt, modifiedAt) or the release.helm.crossplane.io/ prefix"

@@ -83,6 +83,7 @@ const (
 	errFailedToUpdatePatchSha  = "failed to update patch sha"
 	errFailedToLateInitialize  = "failed to update chart spec with late-initialized values"
 	errFailedToCreateNamespace = "failed to create namespace for release"
+	errInvalidUserLabels       = "invalid spec.forProvider.labels"
 )
 
 // Setup adds a controller that reconciles Release managed resources.
@@ -405,6 +406,13 @@ func (e *helmExternal) Observe(ctx context.Context, mg resource.Managed) (manage
 type deployAction func(release string, chart *chart.Chart, vals map[string]interface{}, patches []ktype.Patch, opts helmClient.DeployOptions) (*release.Release, error)
 
 func (e *helmExternal) deploy(ctx context.Context, cr *v1beta1.Release, action deployAction) error { //nolint:gocyclo // easier to follow as a unit
+	// Checked before anything is pulled or deployed: Helm would apply the
+	// chart's CRDs on install before the release Secret with the labels is
+	// refused.
+	if err := helmClient.ValidateUserLabels(cr.Spec.ForProvider.Labels); err != nil {
+		return errors.Wrap(err, errInvalidUserLabels)
+	}
+
 	cv, err := composeValuesFromSpec(ctx, e.localKube, cr.Spec.ForProvider.ValuesSpec, cr.Namespace)
 	if err != nil {
 		return errors.Wrap(err, errFailedToComposeValues)

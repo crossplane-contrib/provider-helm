@@ -859,6 +859,29 @@ func Test_helmExternal_Create(t *testing.T) {
 				err: nil,
 			},
 		},
+		"InvalidUserLabels": {
+			// Nothing is pulled or deployed: Helm would install the chart's
+			// CRDs before refusing the release Secret.
+			args: args{
+				helm: &MockHelmClient{
+					MockPullAndLoadChart: func(mg resource.Managed, creds *helmClient.RepoCreds) (*chart.Chart, error) {
+						return nil, errBoom
+					},
+					MockInstall: func(r string, chart *chart.Chart, vals map[string]interface{}, patches []types.Patch, opts helmClient.DeployOptions) (hr *release.Release, err error) {
+						return nil, errBoom
+					},
+				},
+				kube: &test.MockClient{
+					MockCreate: test.NewMockCreateFn(nil),
+				},
+				mg: helmRelease(func(r *v1beta1.Release) {
+					r.Spec.ForProvider.Labels = map[string]string{"owner": "me"}
+				}),
+			},
+			want: want{
+				err: errors.Wrap(errors.Wrap(errors.New(`"owner" is reserved by Helm`), errInvalidUserLabels), errFailedToInstall),
+			},
+		},
 		"CreateNamespaceFailed": {
 			args: args{
 				kube: &test.MockClient{

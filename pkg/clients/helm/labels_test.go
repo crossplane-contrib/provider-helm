@@ -21,7 +21,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
 	"github.com/google/go-cmp/cmp"
 	"helm.sh/helm/v4/pkg/action"
 	"helm.sh/helm/v4/pkg/chart/common"
@@ -143,6 +145,54 @@ func TestEffectiveChartDigest(t *testing.T) {
 			got := EffectiveChartDigest(tc.chartURL, tc.specDigest)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("EffectiveChartDigest() -want, +got:\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestValidateUserLabels(t *testing.T) {
+	syntax := func(prefix string, msgs []string) string {
+		return prefix + ": " + strings.Join(msgs, "; "+prefix+": ")
+	}
+	longValue := strings.Repeat("a", 64)
+
+	cases := map[string]struct {
+		labels map[string]string
+		want   error
+	}{
+		"Nil": {},
+		"Valid": {
+			labels: map[string]string{"team": "platform", "example.com/tier": "backend", "empty": ""},
+		},
+		"ReservedName": {
+			labels: map[string]string{"owner": "me"},
+			want:   errors.New(`"owner" is reserved by Helm`),
+		},
+		"ProviderPrefix": {
+			labels: map[string]string{LabelOwnershipTaken: "true"},
+			want:   errors.New(`"release.helm.crossplane.io/ownership-taken" is under the provider's prefix release.helm.crossplane.io/`),
+		},
+		"NullValue": {
+			labels: map[string]string{"team": "null"},
+			want:   errors.New(`value of "team" is "null", which Helm treats as a deletion`),
+		},
+		"InvalidKey": {
+			labels: map[string]string{"my team": "platform"},
+			want:   errors.New(syntax(`key "my team"`, validation.IsQualifiedName("my team"))),
+		},
+		"InvalidValue": {
+			labels: map[string]string{"team": longValue},
+			want:   errors.New(syntax(`value of "team"`, validation.IsValidLabelValue(longValue))),
+		},
+		"EveryProblemInKeyOrder": {
+			labels: map[string]string{"team": "null", "owner": "me"},
+			want:   errors.New(`"owner" is reserved by Helm; value of "team" is "null", which Helm treats as a deletion`),
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if diff := cmp.Diff(tc.want, ValidateUserLabels(tc.labels), test.EquateErrors()); diff != "" {
+				t.Errorf("ValidateUserLabels(...): -want, +got:\n%s", diff)
 			}
 		})
 	}
