@@ -1,7 +1,7 @@
 apiVersion: helm.m.crossplane.io/v1beta1
 kind: Release
 metadata:
-  name: example-labels
+  name: example-labels-namespaced
   namespace: crossplane-system
   annotations:
     uptest.upbound.io/post-assert-hook: testhooks/user-labels.sh

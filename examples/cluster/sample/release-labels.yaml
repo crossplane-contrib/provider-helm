@@ -1,7 +1,7 @@
 apiVersion: helm.crossplane.io/v1beta1
 kind: Release
 metadata:
-  name: example-labels
+  name: example-labels-cluster
   annotations:
     uptest.upbound.io/post-assert-hook: testhooks/user-labels.sh
 spec:
